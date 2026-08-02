@@ -1,0 +1,21 @@
+pve_endpoint  = "https://192.168.50.13:8006/"
+pve_host      = "192.168.50.13"
+pve_node      = "pve3"
+pve_api_token = "terraform@pve!tf=12345678-90ab-cdef-1234-567890abcdef"
+
+eleve          = 3
+ssh_public_key = "ssh-ed25519 AAAAC3Nza... eleve3@formation"
+
+# Récupérez le nom exact avec :  pveam list local
+lxc_template_alpine = "local:vztmpl/alpine-3.22-default_20250617_amd64.tar.xz"
+
+# Pour surcharger un VMID de template :
+# templates = { debian = 390, ubuntu = 391, rocky = 392 }
+
+# Pour ajouter une machine au parc, décommentez et complétez :
+# machines = {
+#   "web01" = { template = "ubuntu", vnet = "vdmz", cores = 2, memory = 2048, tags = ["web","dmz","ubuntu"] }
+#   "app01" = { template = "debian", vnet = "vint", cores = 2, memory = 2048, tags = ["app","interne","debian"] }
+#   "db01"  = { template = "rocky",  vnet = "vint", cores = 2, memory = 3072, tags = ["db","interne","rocky"] }
+#   "web02" = { template = "ubuntu", vnet = "vdmz", cores = 1, memory = 1024, tags = ["web","dmz","ubuntu"] }
+# }

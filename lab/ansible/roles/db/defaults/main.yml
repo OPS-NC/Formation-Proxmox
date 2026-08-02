@@ -1,0 +1,7 @@
+---
+db_name: applab
+db_user: applab
+db_password: "changez-moi"
+db_allowed_network: "10.0.0.0/8"
+db_conf_path: /etc/postgresql/17/main/postgresql.conf
+db_hba_path: /etc/postgresql/17/main/pg_hba.conf

@@ -1,0 +1,344 @@
+# TP 01 — Installation de Proxmox VE 9 🏗️
+
+⏱️ **1 h 30** · Jour 1
+
+Objectif : passer d'une machine nue à un hyperviseur Proxmox VE 9 propre, à jour,
+accessible en HTTPS et en SSH.
+
+📖 Doc : <https://pve.proxmox.com/pve-docs/chapter-pve-installation.html>
+
+---
+
+## 1. Un peu de contexte avant de cliquer 🧠
+
+Proxmox VE, ce n'est pas « un OS de virtualisation » mystérieux : c'est une **Debian**
+(la 13 « Trixie » pour PVE 9) avec :
+
+- un **noyau Ubuntu** (meilleur support matériel récent),
+- **KVM/QEMU** pour les machines virtuelles complètes,
+- **LXC** pour les conteneurs système,
+- **`pve-cluster`** et son système de fichiers distribué **`pmxcfs`** monté sur `/etc/pve`,
+- une **API REST** et une interface web en `:8006`.
+
+```
+   ┌──────────────────────────────────────────────────────┐
+   │  Interface web (8006)   ·   API REST   ·   CLI (pve*)│
+   ├──────────────────────────────────────────────────────┤
+   │        pve-cluster  →  /etc/pve  (pmxcfs, corosync)  │
+   ├───────────────────────┬──────────────────────────────┤
+   │   QEMU/KVM (VM)       │       LXC (conteneurs)       │
+   ├───────────────────────┴──────────────────────────────┤
+   │   Debian 13  +  noyau Ubuntu  +  ZFS / LVM / Ceph    │
+   └──────────────────────────────────────────────────────┘
+```
+
+🧠 **`/etc/pve` est magique** : ce n'est pas un vrai répertoire sur disque, c'est une
+base SQLite exposée en système de fichiers et **répliquée sur tous les nœuds du
+cluster**. Tout ce qu'on y écrit apparaît instantanément partout. C'est là que vivent
+les configs de VM, le SDN, le firewall, les utilisateurs.
+
+---
+
+## 2. Préparer la clé USB
+
+Sur votre PC Ubuntu :
+
+```bash
+# 1. Récupérer l'ISO (dernière 9.x)
+#    https://www.proxmox.com/en/downloads
+ls -lh ~/Téléchargements/proxmox-ve_9*.iso
+
+# 2. Identifier la clé USB (ATTENTION à ne pas se tromper de disque)
+lsblk -o NAME,SIZE,MODEL,TRAN | grep usb
+
+# 3. Écrire l'image (remplacez sdX par VOTRE clé)
+sudo dd if=~/Téléchargements/proxmox-ve_9.x-1.iso of=/dev/sdX \
+        bs=4M status=progress oflag=direct conv=fsync
+sync
+```
+
+🪤 `dd` ne demande **aucune confirmation**. Relisez la ligne deux fois.
+
+---
+
+## 3. Installation graphique
+
+Bootez sur la clé, choisissez **Install Proxmox VE (Graphical)**.
+
+### 3.1 Choix du système de fichiers
+
+L'écran « Target Harddisk » → bouton **Options**.
+
+| Choix | Quand | Avantages | Inconvénients |
+|---|---|---|---|
+| **ext4** (LVM) | 1 seul disque, machine modeste | simple, léger, snapshot LVM-thin | pas de checksums, pas de réplication |
+| **ZFS RAID0** | 1 disque, on veut jouer avec ZFS | snapshots instantanés, compression, réplication entre nœuds | RAM gourmande (≈ 1 Go / To d'ARC) |
+| **ZFS RAID1** | 2 disques identiques | tolérance de panne disque | perte de moitié de la capacité |
+
+👉 **Pour ce lab** : `ext4` si vous avez 16 Go de RAM, `ZFS RAID1` si vous avez
+2 disques et ≥ 32 Go. Le jour 4 (réplication) est plus riche en ZFS, mais tout le
+reste fonctionne à l'identique.
+
+Laissez `hdsize`, `swapsize`, `maxroot`, `maxvz` par défaut sauf consigne du formateur.
+
+### 3.2 Localisation
+
+| Champ | Valeur |
+|---|---|
+| Country | `France` (ou `New Caledonia`) |
+| Time zone | celui de la salle |
+| Keyboard | `French` |
+
+### 3.3 Mot de passe et e-mail
+
+Mot de passe root : **`Formation2026!`** (identique pour tous, c'est un lab).
+E-mail : `eleveN@formation.local` — il doit être syntaxiquement valide, pas réel.
+
+### 3.4 Réseau — ⚠️ l'étape à ne pas rater
+
+| Champ | Valeur (élève N) |
+|---|---|
+| Management interface | votre carte Ethernet (`enp1s0`, `eno1`…) |
+| Hostname (FQDN) | `pveN.lab.local` ← **le FQDN est obligatoire** |
+| IP address (CIDR) | `192.168.50.1N/24` |
+| Gateway | `192.168.50.254` |
+| DNS server | `192.168.50.254` |
+
+🪤 **Pièges classiques :**
+- Un hostname sans domaine (`pve3` au lieu de `pve3.lab.local`) → refusé.
+- Une IP en DHCP → au reboot elle change, l'interface web devient introuvable, et la
+  mise en cluster du jour 4 casse.
+- Se tromper de carte réseau (Wi-Fi, IPMI) → pas de réseau au reboot.
+
+Validez, **Install**, patientez, retirez la clé au reboot.
+
+---
+
+## 4. Premier contact
+
+### 4.1 Interface web 🌐
+
+```
+https://192.168.50.1N:8006
+```
+
+Le certificat est auto-signé → « Avancé » → « Continuer ».
+Login : `root`, Realm : **Linux PAM standard authentication**.
+
+Un bandeau apparaît : *« You do not have a valid subscription »*. C'est normal, on
+n'a pas d'abonnement. On le traite au TP 02.
+
+### 4.2 SSH 🖥️
+
+Depuis votre PC :
+
+```bash
+ssh-copy-id root@192.168.50.1N     # injecte votre clé publique
+ssh root@192.168.50.1N
+```
+
+Vérifiez immédiatement :
+
+```bash
+pveversion -v | head -5
+hostnamectl
+ip -br a
+ip route
+cat /etc/network/interfaces
+```
+
+Vous devez voir un bridge `vmbr0` de ce genre :
+
+```
+auto lo
+iface lo inet loopback
+
+iface enp1s0 inet manual
+
+auto vmbr0
+iface vmbr0 inet static
+        address 192.168.50.13/24
+        gateway 192.168.50.254
+        bridge-ports enp1s0
+        bridge-stp off
+        bridge-fd 0
+```
+
+🧠 **Comprendre `vmbr0`** : l'installateur a « déplacé » l'IP de la carte physique vers
+un **bridge Linux**. La carte physique devient un simple port de ce switch virtuel.
+L'hôte et les VM sont branchés sur le même switch, donc sur le même LAN.
+
+```
+                       ┌──────── vmbr0 (switch virtuel) ────────┐
+                       │                                        │
+   LAN ─── enp1s0 ─────┤  IP hôte 192.168.50.13/24              │
+                       │                                        │
+                       │   ┌──────┐   ┌──────┐   ┌──────┐       │
+                       └───┤ VM 1 ├───┤ VM 2 ├───┤ CT 1 ├───────┘
+                           └──────┘   └──────┘   └──────┘
+```
+
+---
+
+## 5. Configurer les dépôts (sans abonnement) 📦
+
+Proxmox VE 9 utilise le format **deb822** (`.sources`), plus les anciens `.list`.
+
+```bash
+# Désactiver les dépôts « enterprise » (payants, renvoient 401)
+mv /etc/apt/sources.list.d/pve-enterprise.sources \
+   /etc/apt/sources.list.d/pve-enterprise.sources.disabled 2>/dev/null
+mv /etc/apt/sources.list.d/ceph.sources \
+   /etc/apt/sources.list.d/ceph.sources.disabled 2>/dev/null
+```
+
+```bash
+# Activer le dépôt « no-subscription »
+cat > /etc/apt/sources.list.d/pve-no-subscription.sources <<'EOF'
+Types: deb
+URIs: http://download.proxmox.com/debian/pve
+Suites: trixie
+Components: pve-no-subscription
+Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
+EOF
+```
+
+```bash
+apt update && apt full-upgrade -y
+```
+
+> 💡 Tout ceci est faisable en clic-clic : `Datacenter → pveN → Updates → Repositories`.
+> On le fait en CLI pour comprendre ce qui se passe réellement.
+
+### Retirer le bandeau d'abonnement (facultatif, lab uniquement)
+
+```bash
+sed -i.bak "s/data.status !== 'Active'/false/g" \
+  /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+systemctl restart pveproxy
+```
+
+⚠️ Ce patch est écrasé à chaque mise à jour de `proxmox-widget-toolkit`.
+En production, **achetez un abonnement** : c'est ce qui finance le projet et vous donne
+le dépôt `pve-enterprise`, testé et stable.
+
+---
+
+## 6. Hygiène de base 🧼
+
+```bash
+# Paquets utiles pour la suite de la formation
+apt install -y vim tmux htop iftop tcpdump ethtool bridge-utils \
+               frr frr-pythontools dnsmasq
+```
+
+🧠 On installe **`frr` + `frr-pythontools`** dès maintenant : ce sont les prérequis de
+la zone EVPN du jour 4. Les installer à froid évite un « pourquoi mon BGP ne monte
+pas » à J+2. Et **`dnsmasq`** pour le DHCP du SDN, qu'il faut désactiver en tant que
+service système :
+
+```bash
+systemctl disable --now dnsmasq
+systemctl status dnsmasq --no-pager | head -3   # doit être inactive/disabled
+```
+
+🪤 Si `dnsmasq` tourne en service système, il occupe le port 53/67 et **les instances
+`dnsmasq@<zone>` du SDN ne démarreront pas**.
+
+### Heure : indispensable pour le cluster
+
+```bash
+timedatectl set-timezone Pacific/Noumea    # ou Europe/Paris
+timedatectl status
+chronyc sources -v 2>/dev/null || systemctl status systemd-timesyncd --no-pager | head -3
+```
+
+🧠 Corosync (le cluster du jour 4) est **très sensible** à la dérive d'horloge.
+Un décalage de quelques secondes entre nœuds = des perturbations de quorum.
+
+### Résolution de noms locale
+
+Éditez `/etc/hosts` pour y mettre **tous les nœuds** de la salle. On prépare le jour 4.
+
+```
+127.0.0.1       localhost.localdomain localhost
+192.168.50.11   pve1.lab.local pve1
+192.168.50.12   pve2.lab.local pve2
+192.168.50.13   pve3.lab.local pve3
+192.168.50.14   pve4.lab.local pve4
+192.168.50.15   pve5.lab.local pve5
+192.168.50.16   pve6.lab.local pve6
+192.168.50.40   nfs.lab.local nfs
+192.168.50.41   pbs.lab.local pbs
+```
+
+🪤 **La ligne de votre propre nœud doit contenir votre vraie IP**, pas `127.0.1.1`.
+Sinon Corosync s'annonce sur la loopback et le cluster ne se forme pas.
+
+```bash
+hostname --ip-address     # doit renvoyer 192.168.50.1N, pas 127.x
+```
+
+---
+
+## 7. Un compte non-root pour l'interface web 👤
+
+Bonne pratique : ne pas travailler en `root@pam` au quotidien.
+
+```bash
+pveum user add eleve@pve --password 'Formation2026!' --comment "Compte de TP"
+pveum aclmod / --users eleve@pve --roles PVEAdmin
+pveum user list
+```
+
+Reconnectez-vous en `eleve@pve` (realm **Proxmox VE authentication server**) pour
+vérifier. Notez que ce compte ne peut pas ouvrir de shell root sur le nœud : c'est le
+but.
+
+---
+
+## 8. Reboot de validation
+
+```bash
+reboot
+```
+
+Après le redémarrage :
+
+```bash
+ssh root@192.168.50.1N
+pveversion
+systemctl --failed
+ip -br a
+ping -c2 192.168.50.254
+ping -c2 9.9.9.9
+```
+
+---
+
+## ✅ Checklist de validation
+
+- [ ] `pveversion` renvoie une version **9.x**
+- [ ] L'interface web répond en `https://192.168.50.1N:8006`
+- [ ] SSH par clé fonctionne (pas de mot de passe demandé)
+- [ ] `apt update` ne renvoie **aucune** erreur 401
+- [ ] `hostname --ip-address` renvoie `192.168.50.1N`
+- [ ] `ping pve1` … `ping pve6` fonctionnent (au fur et à mesure des installs)
+- [ ] `dpkg -l | grep frr-pythontools` renvoie une ligne
+- [ ] `systemctl is-enabled dnsmasq` renvoie `disabled`
+- [ ] `systemctl --failed` est vide
+- [ ] Le fuseau horaire est correct
+
+---
+
+## 🎁 Bonus si vous avez de l'avance
+
+1. **Fail2ban sur l'interface web** :
+   `apt install fail2ban`, puis créer un jail sur `/var/log/daemon.log` filtrant
+   `pvedaemon.*authentication failure`.
+2. **Certificat Let's Encrypt** : `Datacenter → ACME`. Ne marchera pas sans DNS
+   public — mais lisez l'écran, c'est instructif.
+3. **Comparez `ip -d link show vmbr0`** avec la sortie de `brctl show` et repérez
+   la table d'apprentissage MAC : `bridge fdb show br vmbr0`.
+
+➡️ Suite : [TP 02 — Premiers pas et stockages](02-premiers-pas-stockage.md)

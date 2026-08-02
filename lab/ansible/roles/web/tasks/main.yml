@@ -1,0 +1,56 @@
+---
+- name: Installer nginx
+  ansible.builtin.package:
+    name: nginx
+    state: present
+
+- name: Créer la racine web
+  ansible.builtin.file:
+    path: "{{ web_root }}"
+    state: directory
+    mode: "0755"
+
+- name: Déployer la page d'accueil
+  ansible.builtin.template:
+    src: index.html.j2
+    dest: "{{ web_root }}/index.html"
+    mode: "0644"
+  notify: recharger nginx
+
+- name: Déployer la configuration du site
+  ansible.builtin.template:
+    src: site.conf.j2
+    dest: "{{ web_conf_dir }}/lab.conf"
+    mode: "0644"
+  notify: recharger nginx
+
+- name: Retirer le site par défaut (Debian/Ubuntu)
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  when: ansible_os_family == 'Debian'
+  notify: recharger nginx
+
+- name: Valider la configuration nginx
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Démarrer et activer nginx
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true
+
+- name: Vérifier que le service répond
+  ansible.builtin.uri:
+    url: "http://localhost:{{ web_listen_port }}/"
+    status_code: 200
+    return_content: true
+  register: page
+  retries: 5
+  delay: 2
+  until: page.status == 200
+
+- name: Confirmer le contenu servi
+  ansible.builtin.debug:
+    msg: "{{ (page.content | regex_search('<h1>(.*)</h1>', '\\1') | first) | default('page servie') }}"

@@ -1,0 +1,20 @@
+# network-config (version 2) — pour un cas où l'on veut piloter finement le réseau
+# au lieu de laisser Proxmox générer la configuration depuis --ipconfig0.
+#
+#   qm set <vmid> --cicustom "network=local:snippets/network-config-static.yaml"
+#
+# ⚠ Le nom de l'interface varie : ens18 (q35 + virtio), eth0 (i440fx), enp6s18…
+#   Vérifiez avec « ip -br link » dans la VM avant de figer quoi que ce soit.
+
+version: 2
+ethernets:
+  ens18:
+    dhcp4: false
+    addresses:
+      - 10.3.10.50/24
+    gateway4: 10.3.10.1
+    nameservers:
+      search: [lab.local]
+      addresses: [10.3.10.1, 9.9.9.9]
+    # ⭐ En EVPN, décommentez : 1500 − 50 octets d'entête VXLAN
+    # mtu: 1450

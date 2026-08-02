@@ -1,0 +1,16 @@
+# Copiez en terraform.tfvars et renseignez VOS valeurs.
+# ⚠ terraform.tfvars ne doit JAMAIS être commité (voir .gitignore).
+
+pve_endpoint  = "https://192.168.50.13:8006/"
+pve_host      = "192.168.50.13"
+pve_node      = "pve3"
+pve_api_token = "terraform@pve!tf=12345678-90ab-cdef-1234-567890abcdef"
+
+eleve = 3
+
+ssh_public_key = "ssh-ed25519 AAAAC3Nza... eleve3@formation"
+
+# Optionnel : par défaut, VMID du template = eleve * 100 + 90
+# template_debian = 390
+
+vnet = "vint"

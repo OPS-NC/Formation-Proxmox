@@ -1,0 +1,5 @@
+---
+web_root: /var/www/html
+web_conf_dir: /etc/nginx/sites-enabled
+web_listen_port: 80
+web_upstream: ""

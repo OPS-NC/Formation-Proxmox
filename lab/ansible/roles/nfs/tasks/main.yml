@@ -1,0 +1,64 @@
+---
+- name: Installer le serveur NFS et les outils disque
+  ansible.builtin.apt:
+    name:
+      - nfs-kernel-server
+      - parted
+      - xfsprogs
+    state: present
+    update_cache: true
+
+- name: Partitionner le disque de données
+  community.general.parted:
+    device: "{{ nfs_device }}"
+    number: 1
+    state: present
+    fs_type: xfs
+    part_end: "100%"
+
+- name: Formater en XFS
+  community.general.filesystem:
+    fstype: xfs
+    dev: "{{ nfs_device }}1"
+
+- name: Monter le volume de données
+  ansible.posix.mount:
+    path: "{{ nfs_root }}"
+    src: "{{ nfs_device }}1"
+    fstype: xfs
+    opts: defaults,noatime
+    state: mounted
+
+- name: Créer l'arborescence des exports
+  ansible.builtin.file:
+    path: "{{ nfs_root }}/{{ item }}"
+    state: directory
+    owner: nobody
+    group: nogroup
+    mode: "0777"
+  loop: "{{ nfs_exports }}"
+
+- name: Écrire /etc/exports
+  ansible.builtin.template:
+    src: exports.j2
+    dest: /etc/exports
+    mode: "0644"
+  notify: recharger les exports
+
+- name: Démarrer et activer le serveur NFS
+  ansible.builtin.service:
+    name: nfs-server
+    state: started
+    enabled: true
+
+- name: Appliquer les exports avant de vérifier
+  ansible.builtin.meta: flush_handlers
+
+- name: Lister les exports actifs
+  ansible.builtin.command: exportfs -v
+  changed_when: false
+  register: exp
+
+- name: Afficher les exports
+  ansible.builtin.debug:
+    var: exp.stdout_lines

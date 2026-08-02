@@ -1,0 +1,8 @@
+╔══════════════════════════════════════════════════════════════╗
+║  {{ inventory_hostname.ljust(58) }}║
+║  {{ (ansible_distribution ~ ' ' ~ ansible_distribution_version).ljust(58) }}║
+║  {{ ('Rôles : ' ~ (group_names | reject('match', '^(all|ungrouped)$') | join(', ')))[:58].ljust(58) }}║
+║                                                              ║
+║  Machine gérée par Ansible.                                  ║
+║  Toute modification manuelle sera écrasée au prochain apply. ║
+╚══════════════════════════════════════════════════════════════╝

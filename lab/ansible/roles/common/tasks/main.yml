@@ -1,0 +1,76 @@
+---
+- name: Afficher la distribution détectée
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} — {{ ansible_distribution }}
+      {{ ansible_distribution_version }} ({{ ansible_pkg_mgr }})
+
+- name: Rafraîchir le cache de paquets (Debian/Ubuntu)
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_os_family == 'Debian'
+
+- name: Installer les paquets de base
+  ansible.builtin.package:
+    name: "{{ common_packages }}"
+    state: present
+  register: pkg
+  retries: 3
+  delay: 5
+  until: pkg is succeeded
+
+- name: Régler le fuseau horaire
+  community.general.timezone:
+    name: "{{ common_timezone }}"
+
+- name: Déployer la bannière de connexion
+  ansible.builtin.template:
+    src: motd.j2
+    dest: /etc/motd
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Créer le compte d'administration
+  ansible.builtin.user:
+    name: "{{ common_admin_user }}"
+    groups: "{{ 'sudo' if ansible_os_family == 'Debian' else 'wheel' }}"
+    append: true
+    shell: /bin/bash
+    state: present
+
+- name: Autoriser sudo sans mot de passe pour ce compte
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/10-{{ common_admin_user }}"
+    content: "{{ common_admin_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    mode: "0440"
+    validate: "visudo -cf %s"
+
+- name: Installer la clé SSH de l'administrateur
+  ansible.posix.authorized_key:
+    user: "{{ common_admin_user }}"
+    key: "{{ lookup('file', lookup('env', 'HOME') + '/.ssh/id_ed25519.pub') }}"
+    state: present
+
+- name: Durcir SSH — désactiver l'authentification par mot de passe
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PasswordAuthentication'
+    line: 'PasswordAuthentication no'
+    validate: 'sshd -t -f %s'
+  notify: redemarrer ssh
+
+- name: Installer l'exporteur de métriques (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name: prometheus-node-exporter
+    state: present
+  when: ansible_os_family == 'Debian'
+  notify: activer node-exporter
+
+- name: S'assurer que l'agent QEMU tourne
+  ansible.builtin.service:
+    name: qemu-guest-agent
+    state: started
+    enabled: true
+  failed_when: false   # absent dans les conteneurs LXC : ce n'est pas une erreur

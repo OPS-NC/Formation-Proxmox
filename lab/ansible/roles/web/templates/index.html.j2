@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>{{ inventory_hostname }}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0f1115; color: #e6e6e6;
+           text-align: center; padding-top: 5em; margin: 0; }
+    h1   { font-size: 2.4em; margin-bottom: .2em; }
+    code { background: #1c1f27; padding: .2em .55em; border-radius: 5px; color: #7fd1b9; }
+    p    { margin: .6em 0; color: #b9bec9; }
+    .tag { display:inline-block; background:#232838; border-radius:99px;
+           padding:.15em .8em; margin:.15em; font-size:.85em; }
+  </style>
+</head>
+<body>
+  <h1>🌍 {{ inventory_hostname }}</h1>
+  <p>OS : <code>{{ ansible_distribution }} {{ ansible_distribution_version }}</code></p>
+  <p>IP : <code>{{ ansible_default_ipv4.address | default('n/a') }}</code></p>
+  <p>Nœud Proxmox : <code>{{ proxmox_node | default('?') }}</code></p>
+  <p>
+    {% for g in group_names | reject('match', '^(all|ungrouped)$') %}
+    <span class="tag">{{ g }}</span>
+    {% endfor %}
+  </p>
+  <p style="margin-top:2.5em;font-size:.85em;opacity:.6">
+    Déployé par Ansible le {{ ansible_date_time.iso8601 }}
+  </p>
+</body>
+</html>

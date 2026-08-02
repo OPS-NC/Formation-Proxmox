@@ -1,0 +1,59 @@
+#cloud-config
+# Serveur web — TP 11
+# ⚠ La première ligne DOIT être exactement « #cloud-config ».
+# Valider avant usage : cloud-init schema --config-file user-data-web.yaml --annotate
+
+hostname: web01
+manage_etc_hosts: true
+
+users:
+  - name: eleve
+    groups: [sudo, adm]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: false
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAA_REMPLACEZ_PAR_VOTRE_CLE eleve@formation
+
+package_update: true
+package_upgrade: true
+packages:
+  - nginx
+  - qemu-guest-agent
+  - curl
+  - htop
+  - prometheus-node-exporter
+
+write_files:
+  - path: /var/www/html/index.html
+    permissions: '0644'
+    content: |
+      <!doctype html>
+      <html lang="fr">
+      <head><meta charset="utf-8"><title>Lab Proxmox</title>
+      <style>
+        body{font-family:system-ui,sans-serif;background:#111;color:#eee;
+             text-align:center;padding-top:6em}
+        code{background:#222;padding:.2em .5em;border-radius:4px}
+      </style></head>
+      <body>
+        <h1>🚀 Déployé par Terraform + cloud-init</h1>
+        <p>Hôte : <code id="h">…</code></p>
+        <p>Formation Proxmox VE 9 — jour 3</p>
+      </body></html>
+
+  - path: /etc/nginx/conf.d/lab.conf
+    permissions: '0644'
+    content: |
+      server {
+        listen 8080;
+        location /health { return 200 "ok\n"; add_header Content-Type text/plain; }
+      }
+
+runcmd:
+  - [ bash, -lc, 'sed -i "s|<code id=\"h\">…</code>|<code>$(hostname)</code>|" /var/www/html/index.html' ]
+  - [ systemctl, enable, --now, qemu-guest-agent ]
+  - [ systemctl, enable, --now, nginx ]
+  - [ systemctl, enable, --now, prometheus-node-exporter ]
+
+final_message: "☑ cloud-init terminé en $UPTIME secondes — $(hostname)"

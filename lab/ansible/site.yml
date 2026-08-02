@@ -1,0 +1,34 @@
+---
+# Playbook principal.
+#
+#   ansible-playbook site.yml --syntax-check
+#   ansible-playbook site.yml --check --diff     # répétition générale
+#   ansible-playbook site.yml
+#   ansible-playbook site.yml --limit proxmox_web
+#
+# ⭐ Le critère de qualité : un SECOND passage doit afficher « changed=0 ».
+
+- name: Socle commun — toutes les machines Linux
+  hosts: linux:conteneurs
+  become: true
+  gather_facts: true
+  roles:
+    - common
+
+- name: Serveurs web
+  hosts: proxmox_web
+  become: true
+  roles:
+    - web
+
+- name: Serveurs de bases de données
+  hosts: proxmox_db
+  become: true
+  roles:
+    - db
+
+- name: Serveur NFS
+  hosts: proxmox_nfs
+  become: true
+  roles:
+    - nfs

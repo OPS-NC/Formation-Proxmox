@@ -1,0 +1,23 @@
+---
+# ── Rebond SSH ───────────────────────────────────────────────────────────────
+# Les VM vivent dans les VNets 10.N.x.0/24, derrière le NAT du nœud.
+# Votre PC ne peut pas les joindre directement : le nœud Proxmox sert de bastion.
+# C'est exactement ce qu'on fait en production.
+pve_host: 192.168.50.13
+eleve: 3
+
+ansible_ssh_common_args: >-
+  -o ProxyCommand="ssh -W %h:%p -q root@{{ pve_host }}"
+  -o StrictHostKeyChecking=no
+  -o UserKnownHostsFile=/dev/null
+
+# ── Rôle common ──────────────────────────────────────────────────────────────
+common_timezone: "Pacific/Noumea"
+common_admin_user: "eleve"
+common_packages:
+  - curl
+  - vim
+  - htop
+  - git
+  - rsync
+  - ca-certificates

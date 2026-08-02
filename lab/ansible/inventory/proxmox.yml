@@ -1,0 +1,55 @@
+---
+# Inventaire dynamique construit depuis l'API Proxmox.
+# ⭐ Les groupes sont dérivés des TAGS posés par Terraform (TP 11).
+#
+#   ansible-inventory --graph
+#   ansible-inventory --host web01-e3 | jq
+#
+# Prérequis : sudo apt install -y python3-proxmoxer
+#             ansible-galaxy collection install community.general
+
+plugin: community.general.proxmox
+
+# ⚠ adapter à votre nœud, et exporter le secret :
+#   source ~/.config/pve/token.env
+url: "https://192.168.50.13:8006"
+user: ansible@pve
+token_id: inv
+token_secret: "{{ lookup('env', 'PVE_ANSIBLE_TOKEN_SECRET') }}"
+validate_certs: false
+
+want_facts: true
+qemu_extended_statuses: true
+
+keyed_groups:
+  # ⭐ un groupe par tag Proxmox : proxmox_web, proxmox_db, proxmox_nfs…
+  - key: proxmox_tags_parsed
+    separator: "_"
+    prefix: proxmox
+  # un groupe par nœud : node_pve3
+  - key: proxmox_node
+    prefix: node
+  # un groupe par pool : pool_eleve3
+  - key: proxmox_pool
+    prefix: pool
+
+groups:
+  linux: >-
+    proxmox_vmtype == 'qemu' and
+    'windows' not in (proxmox_tags | default(''))
+  conteneurs: "proxmox_vmtype == 'lxc'"
+  windows: "'windows' in (proxmox_tags | default(''))"
+
+# L'adresse de connexion vient de l'agent QEMU
+compose:
+  ansible_host: >-
+    (proxmox_agent_interfaces | default([])
+     | selectattr('name', 'ne', 'lo')
+     | map(attribute='ip-addresses') | flatten
+     | selectattr('ip-address-type', 'eq', 'ipv4')
+     | map(attribute='ip-address') | list | first) | default(proxmox_name)
+
+cache: true
+cache_plugin: jsonfile
+cache_timeout: 120
+cache_connection: /tmp/ansible-pve-cache

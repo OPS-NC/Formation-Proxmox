@@ -1,0 +1,74 @@
+# /etc/pve/firewall/cluster.fw
+# ─────────────────────────────────────────────────────────────────────────────
+# ⚠ ORDRE DE MISE EN PLACE
+#   1. écrire les règles [RULES] d'autorisation
+#   2. SEULEMENT ENSUITE passer policy_in / policy_forward en DROP
+#   Sinon vous perdez l'accès à :8006 et il faut un clavier sur le serveur.
+# ─────────────────────────────────────────────────────────────────────────────
+
+[OPTIONS]
+
+enable: 1
+policy_in: DROP
+policy_out: ACCEPT
+policy_forward: DROP
+log_ratelimit: enable=1,rate=5/second,burst=20
+
+[ALIASES]
+
+lan_salle 192.168.50.0/24        # LAN physique de la salle
+gw_salle 192.168.50.254          # routeur / accès Internet
+srv_nfs 192.168.50.40            # serveur NFS (TP 14)
+srv_pbs 192.168.50.41            # Proxmox Backup Server (TP 18)
+net_internal 10.3.10.0/24        # ⚠ adapter au numéro d'élève
+net_dmz 10.3.20.0/24
+net_services 10.3.30.0/24
+net_evpn 10.60.0.0/16            # les VNets EVPN du jour 4
+
+[IPSET management]               # tout ce qui peut administrer les nœuds
+
+192.168.50.0/24
+
+[IPSET blacklist]
+
+# 203.0.113.66                   # exemple : une IP bannie
+
+[group pve-admin]                # accès à l'administration Proxmox
+
+IN ACCEPT -source +management -p tcp -dport 8006 -log nolog # interface web
+IN ACCEPT -source +management -p tcp -dport 22 -log nolog # SSH
+IN ACCEPT -source +management -p tcp -dport 3128 -log nolog # proxy SPICE
+IN ACCEPT -source +management -p tcp -dport 5900:5999 -log nolog # consoles VNC
+
+[group srv-web]                  # un serveur web générique
+
+IN ACCEPT -p tcp -dport 80 -log nolog
+IN ACCEPT -p tcp -dport 443 -log nolog
+
+[group srv-db]                   # une base, ouverte à l'interne seulement
+
+IN ACCEPT -source +sdn/vint-all -p tcp -dport 5432 -log nolog
+IN ACCEPT -source +sdn/vint-all -p tcp -dport 3306 -log nolog
+
+[RULES]
+
+# ── Administration ───────────────────────────────────────────────────────────
+IN ACCEPT -source +management -p tcp -dport 8006 -log nolog # UI Proxmox
+IN ACCEPT -source +management -p tcp -dport 22 -log nolog # SSH
+IN ACCEPT -source +management -p tcp -dport 3128 -log nolog # SPICE
+IN ACCEPT -source +management -p tcp -dport 5900:5999 -log nolog # noVNC
+
+# ── Cluster : NE JAMAIS OUBLIER, sinon le cluster se casse ───────────────────
+IN ACCEPT -source lan_salle -p udp -dport 5405:5412 -log nolog # Corosync
+IN ACCEPT -source lan_salle -p tcp -dport 60000:60050 -log nolog # migration
+
+# ── SDN EVPN (jour 4) ────────────────────────────────────────────────────────
+IN ACCEPT -source lan_salle -p udp -dport 4789 -log nolog # VXLAN
+IN ACCEPT -source lan_salle -p tcp -dport 179 -log nolog # BGP
+
+# ── Stockage et sauvegarde ───────────────────────────────────────────────────
+IN ACCEPT -source srv_nfs -p tcp -dport 2049 -log nolog # NFS v4
+IN ACCEPT -source lan_salle -p tcp -dport 8007 -log nolog # UI PBS
+
+# ── Diagnostic ───────────────────────────────────────────────────────────────
+IN ACCEPT -source lan_salle -p icmp -log nolog

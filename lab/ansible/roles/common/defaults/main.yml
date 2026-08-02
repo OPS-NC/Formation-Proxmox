@@ -1,0 +1,7 @@
+---
+common_timezone: "Pacific/Noumea"
+common_admin_user: "eleve"
+common_packages:
+  - curl
+  - vim
+  - htop

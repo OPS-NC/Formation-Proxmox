@@ -1,0 +1,9 @@
+pve_endpoint  = "https://192.168.50.13:8006/"
+pve_host      = "192.168.50.13"
+pve_node      = "pve3"
+pve_api_token = "terraform@pve!tf=12345678-90ab-cdef-1234-567890abcdef"
+
+eleve          = 3
+ssh_public_key = "ssh-ed25519 AAAAC3Nza... eleve3@formation"
+
+lxc_template_alpine = "local:vztmpl/alpine-3.22-default_20250617_amd64.tar.xz"

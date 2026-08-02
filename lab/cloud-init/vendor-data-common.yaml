@@ -1,0 +1,38 @@
+#cloud-config
+# Vendor-data : appliqué à TOUTES les VM, en plus de leur user-data.
+#
+#   qm set <vmid> --cicustom "vendor=local:snippets/vendor-data-common.yaml"
+#
+# 🧠 user-data = spécifique à la machine ; vendor-data = socle de l'organisation.
+# Si les deux définissent la même clé, le user-data l'emporte.
+
+timezone: Pacific/Noumea
+locale: fr_FR.UTF-8
+
+package_update: true
+packages:
+  - qemu-guest-agent
+  - curl
+  - vim
+  - htop
+  - ca-certificates
+
+write_files:
+  - path: /etc/motd
+    permissions: '0644'
+    content: |
+      ╔══════════════════════════════════════════════════════════════╗
+      ║  Formation Proxmox VE 9                                      ║
+      ║  Machine provisionnée automatiquement.                        ║
+      ║  Toute modification manuelle sera écrasée au prochain apply.  ║
+      ╚══════════════════════════════════════════════════════════════╝
+
+  - path: /etc/ssh/sshd_config.d/10-lab.conf
+    permissions: '0644'
+    content: |
+      PasswordAuthentication no
+      PermitRootLogin prohibit-password
+
+runcmd:
+  - [ systemctl, enable, --now, qemu-guest-agent ]
+  - [ systemctl, restart, ssh ]

@@ -1,0 +1,34 @@
+# /etc/pve/sdn/firewall/vint.fw   —   zone INTERNE
+#
+# ⚠ Direction FORWARD uniquement : un VNet n'a ni entrant ni sortant.
+# ⚠ Les règles sont évaluées DE HAUT EN BAS, première correspondance gagnante.
+#   La règle « vers Internet » n'ayant pas de -dest, elle attraperait aussi
+#   le trafic vers la DMZ : le DROP explicite doit donc la précéder.
+# ⚠ Le conntrack gère les retours : une règle par SENS DE CONNEXION suffit.
+
+[OPTIONS]
+
+enable: 1
+policy_forward: DROP
+
+[RULES]
+
+# ── Services d'infrastructure (DNS et ICMP vers la gateway) ──────────────────
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vint-gateway -p udp -dport 53 -log nolog
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vint-gateway -p tcp -dport 53 -log nolog
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vint-gateway -p icmp -log nolog
+
+# ── Interne vers interne : libre ─────────────────────────────────────────────
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vint-all -log nolog
+
+# ── Interne vers DMZ : liste blanche ─────────────────────────────────────────
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 22 -log nolog
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 80 -log nolog
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 443 -log nolog
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p icmp -log nolog
+
+# ── Tout autre flux vers la DMZ : refusé et journalisé ───────────────────────
+FORWARD DROP -source +sdn/vint-all -dest +sdn/vdmz-all -log info
+
+# ── Interne vers Internet : libre (doit rester EN DERNIER) ───────────────────
+FORWARD ACCEPT -source +sdn/vint-all -log nolog

@@ -1,0 +1,13 @@
+# Ne JAMAIS versionner : contient des secrets en clair
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform/
+.terraform.lock.hcl
+tf.plan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+generated/

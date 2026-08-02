@@ -1,0 +1,35 @@
+# /etc/pve/sdn/firewall/vsrv.fw
+# ⚠ GÉNÉRÉ PAR TERRAFORM — ne pas modifier à la main.
+#   Source : lab/terraform/03-sdn-troisieme-lan/templates/vsrv.fw.tftpl
+
+[OPTIONS]
+
+enable: 1
+policy_forward: DROP
+
+[RULES]
+
+# ── Infrastructure ───────────────────────────────────────────────────────────
+FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vsrv-gateway -p udp -dport 53 -log nolog
+FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vsrv-gateway -p icmp -log nolog
+
+# ── Interne au réseau services ───────────────────────────────────────────────
+FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vsrv-all -log nolog
+
+# ── Supervision : SERVICES scrape les autres zones ───────────────────────────
+FORWARD ACCEPT -source +sdn/vsrv-all -dest ${net_int} -p tcp -dport 9100 -log nolog
+FORWARD ACCEPT -source +sdn/vsrv-all -dest ${net_dmz} -p tcp -dport 9100 -log nolog
+FORWARD ACCEPT -source +sdn/vsrv-all -dest ${net_int} -p tcp -dport 22 -log info
+
+# ── Administration depuis la zone interne uniquement ─────────────────────────
+FORWARD ACCEPT -source ${net_int} -dest +sdn/vsrv-all -p tcp -dport 22 -log nolog
+FORWARD ACCEPT -source ${net_int} -dest +sdn/vsrv-all -p tcp -dport 3000 -log nolog
+FORWARD ACCEPT -source ${net_int} -dest +sdn/vsrv-all -p tcp -dport 9090 -log nolog
+
+# ── La DMZ n'a rien à faire ici ──────────────────────────────────────────────
+FORWARD DROP -source ${net_dmz} -dest +sdn/vsrv-all -log warning
+
+# ── Sortie Internet limitée (doit rester EN DERNIER) ─────────────────────────
+FORWARD ACCEPT -source +sdn/vsrv-all -p tcp -dport 80 -log nolog
+FORWARD ACCEPT -source +sdn/vsrv-all -p tcp -dport 443 -log nolog
+FORWARD ACCEPT -source +sdn/vsrv-all -p udp -dport 53 -log nolog

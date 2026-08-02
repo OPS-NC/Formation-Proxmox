@@ -1,0 +1,75 @@
+---
+# 🧠 Le même rôle doit fonctionner sur Debian/Ubuntu ET sur Rocky.
+#    C'est tout l'intérêt d'avoir mis du Rocky dans le parc : ça oblige à
+#    écrire du code portable au lieu d'empiler des « apt install ».
+
+- name: Installer PostgreSQL (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name:
+      - postgresql
+      - python3-psycopg2
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Installer PostgreSQL (RedHat/Rocky)
+  when: ansible_os_family == 'RedHat'
+  block:
+    - name: Paquets
+      ansible.builtin.dnf:
+        name:
+          - postgresql-server
+          - python3-psycopg2
+        state: present
+
+    - name: Initialiser le cluster
+      ansible.builtin.command: postgresql-setup --initdb
+      args:
+        creates: /var/lib/pgsql/data/PG_VERSION
+
+- name: Démarrer et activer PostgreSQL
+  ansible.builtin.service:
+    name: postgresql
+    state: started
+    enabled: true
+
+- name: Écouter sur le réseau
+  ansible.builtin.lineinfile:
+    path: "{{ db_conf_path }}"
+    regexp: '^#?listen_addresses'
+    line: "listen_addresses = '*'"
+  notify: redemarrer postgresql
+
+- name: N'autoriser que le réseau interne
+  ansible.builtin.lineinfile:
+    path: "{{ db_hba_path }}"
+    line: "host  all  all  {{ db_allowed_network }}  scram-sha-256"
+    state: present
+    insertafter: EOF
+  notify: redemarrer postgresql
+
+- name: Appliquer les changements avant de créer les objets
+  ansible.builtin.meta: flush_handlers
+
+- name: Créer la base applicative
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_db:
+    name: "{{ db_name }}"
+    state: present
+
+- name: Créer l'utilisateur applicatif
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_user:
+    name: "{{ db_user }}"
+    password: "{{ db_password }}"
+    db: "{{ db_name }}"
+    priv: ALL
+    state: present
+  no_log: true
+
+- name: Vérifier que PostgreSQL écoute bien
+  ansible.builtin.wait_for:
+    port: 5432
+    host: 127.0.0.1
+    timeout: 30

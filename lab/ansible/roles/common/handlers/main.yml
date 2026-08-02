@@ -1,0 +1,11 @@
+---
+- name: redemarrer ssh
+  ansible.builtin.service:
+    name: "{{ 'ssh' if ansible_os_family == 'Debian' else 'sshd' }}"
+    state: restarted
+
+- name: activer node-exporter
+  ansible.builtin.service:
+    name: prometheus-node-exporter
+    state: started
+    enabled: true
