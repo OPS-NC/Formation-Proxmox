@@ -21,6 +21,9 @@ Toutes les commandes utiles de la formation, classées. À imprimer.
 | `ha-manager` | haute disponibilité |
 | `pvesr` | réplication |
 | `vtysh` | FRRouting (BGP/EVPN) |
+| `pveceph` | Ceph, côté Proxmox |
+| `ceph` / `ceph-volume` | Ceph, côté natif |
+| `lvs` / `vgs` / `lvcreate` | LVM — indispensable pour préparer un OSD |
 
 ---
 
@@ -52,19 +55,41 @@ pvesm alloc <storage> <vmid> <name> <size>
 pvesm free <storage>:<volume>
 cat /etc/pve/storage.cfg
 
-# NFS
-pvesm add nfs nfs-lab --server 192.168.50.40 --export /srv/nfs/images \
-    --content images,backup --options vers=4.2
+# NFS  (le serveur, c'est votre poste Ubuntu — TP 14)
+pvesm add nfs nfs-e3 --server 192.168.50.103 --export /srv/nfs-e3 \
+    --content images,rootdir,iso,backup,snippets --options vers=4.2 --nodes pve3
 showmount -e <serveur>
+mount -t nfs -o vers=4.2 <serveur>:/srv/nfs-e3 /mnt/test     # tester AVANT de déclarer
+
+# Côté serveur NFS (poste Ubuntu)
+sudo exportfs -v ; sudo exportfs -ra
+cat /proc/fs/nfsd/versions
+sudo journalctl -u nfs-server -n 30 --no-pager
+
+# Ceph (déclaré automatiquement par « pveceph pool create --add_storages 1 »)
+pvesm status | grep -E 'rbd|cephfs'
 
 # PBS
 pvesm add pbs pbs-lab --server <ip> --datastore <ds> --namespace <ns> \
     --username user@pbs --password '...' --fingerprint '...'
 
-# LVM / ZFS
-vgs ; lvs ; pvs
-zpool status ; zfs list ; zfs get compressratio
+# LVM — ⭐ à connaître par cœur
+pvs ; vgs ; lvs
+lvs -o lv_name,vg_name,lv_size,pool_lv,data_percent,metadata_percent --units g
+vgs -o vg_name,vg_size,vg_free --units g      # espace NON alloué → dispo pour Ceph
+lvs -a -o +devices                            # y compris les LV cachés (_tdata, _tmeta)
+lvcreate -n ceph-osd -L 60G pve               # un LV pour un OSD Ceph
+lvremove -y pve/data                          # ⚠ détruit le thin pool
+lvcreate --type thin-pool -n data -L 200G pve # le recrée plus petit
+lvextend -L +50G pve/data                     # agrandir : autorisé
+lvreduce -L -50G pve/data                     # 🪤 REFUSÉ sur un thin pool
 ```
+
+> 🚨 **`data_percent` au-delà de 95 % → les VM se corrompent.** C'est la métrique à
+> surveiller en premier sur un hyperviseur en LVM-thin.
+>
+> 🧠 **Pas de ZFS dans cette formation** : les nœuds sont en `ext4 + LVM-thin`.
+> `zpool` / `zfs` ne sont donc pas utilisés.
 
 ---
 
@@ -185,6 +210,72 @@ systemctl status dnsmasq@<zone>
 
 ---
 
+## 🐙 Ceph
+
+```bash
+# Déploiement
+pveceph install --repository no-subscription
+pveceph init --network 192.168.50.0/24 --size 3 --min_size 2
+pveceph mon create                      # sur 3 nœuds
+pveceph mgr create                      # sur 2 nœuds
+pveceph mds create                      # pour CephFS
+pveceph osd create /dev/pve/ceph-osd    # ⭐ un LV : CLI obligatoire, l'UI ne le propose pas
+pveceph osd destroy <id> --cleanup
+pveceph pool create vm-store --size 3 --min_size 2 --pg_autoscale_mode on --add_storages 1
+pveceph fs create --name cephfs --add-storage 1
+pveceph status
+pveceph purge --crash --logs            # ⚠ détruit tout
+
+# Si pveceph refuse le volume logique
+mkdir -p /var/lib/ceph/bootstrap-osd
+ceph auth get client.bootstrap-osd -o /var/lib/ceph/bootstrap-osd/ceph.keyring
+chown -R ceph:ceph /var/lib/ceph/bootstrap-osd
+ceph-volume lvm create --data pve/ceph-osd --bluestore
+ceph-volume lvm list
+ceph-volume lvm activate --all
+ceph-volume lvm zap /dev/pve/ceph-osd --destroy   # ⚠ effacer les traces
+
+# État et diagnostic
+ceph -s                        # ⭐ la commande à taper en premier
+ceph health detail
+ceph df                        # espace par pool
+ceph osd df                    # remplissage par OSD
+ceph osd tree                  # la hiérarchie CRUSH
+ceph osd perf                  # latences
+ceph -w                        # journal en direct
+ceph versions
+
+# OSD
+ceph osd out <id> ; ceph osd in <id>
+ceph osd set noout             # suspendre la reconstruction (maintenance)
+ceph osd unset noout
+
+# Brider la reconstruction — ⭐ obligatoire sur réseau partagé
+ceph config set osd osd_max_backfills 1
+ceph config set osd osd_recovery_max_active 2
+ceph config set osd osd_recovery_op_priority 1
+ceph config set osd osd_recovery_sleep 0.1
+ceph config dump | grep -E 'backfill|recovery'
+
+# Pools et images
+ceph osd pool ls detail
+ceph osd map vm-store vm-301-disk-0     # sur QUELS OSD est cet objet ?
+rbd -p vm-store ls -l
+rbd -p vm-store du
+rbd -p vm-store info vm-301-disk-0
+
+# CephFS
+ceph fs status
+df -h /mnt/pve/cephfs
+
+# Benchmark
+rados bench -p vm-store 30 write --no-cleanup
+rados bench -p vm-store 30 rand
+rados -p vm-store cleanup
+```
+
+---
+
 ## 🔀 EVPN / BGP (`vtysh`)
 
 ```bash
@@ -260,6 +351,9 @@ cat /etc/pve/.members
 ---
 
 ## 🏥 Haute disponibilité et réplication
+
+> `pvesr` (réplication de stockage) **exige ZFS** : inutilisable dans cette formation.
+> Le stockage partagé, c'est Ceph (TP 18).
 
 ```bash
 ha-manager status [--verbose]
@@ -379,7 +473,12 @@ curl -sk -H "Authorization: PVEAPIToken=$TOKEN" https://node:8006/api2/json/clus
 | `/etc/network/interfaces.d/sdn` | réseau **généré** par le SDN |
 | `/etc/frr/frr.conf` | BGP/EVPN, **généré** |
 | `/var/lib/vz/` | stockage `local` |
-| `/mnt/pve/<storage>/` | points de montage NFS/CIFS |
+| `/mnt/pve/<storage>/` | points de montage NFS / CIFS / CephFS |
+| `/etc/pve/ceph.conf` | configuration Ceph (cluster-wide) |
+| `/etc/ceph/ceph.conf` | lien symbolique vers le précédent |
+| `/etc/pve/priv/ceph.*` | clés Ceph |
+| `/var/lib/ceph/osd/ceph-<id>/` | métadonnées d'un OSD |
+| `/etc/exports.d/*.exports` | exports NFS (sur le poste Ubuntu) |
 
 ---
 
@@ -395,4 +494,8 @@ rm /var/lock/qemu-server/lock-<vmid>.conf
 systemctl restart pveproxy pvedaemon pvestatd
 systemctl restart pve-cluster              # remonter pmxcfs
 pmxcfs -l                                  # 🚨 pmxcfs en mode local (hors quorum)
+
+# Ceph bloqué / cluster saturé
+ceph osd set noout                         # geler la reconstruction
+ceph config set osd osd_recovery_sleep 0.5 # ralentir encore
 ```

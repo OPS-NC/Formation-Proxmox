@@ -2,3 +2,8 @@
 - name: recharger les exports
   ansible.builtin.command: exportfs -ra
   changed_when: true
+
+- name: redemarrer nfs-server
+  ansible.builtin.service:
+    name: nfs-server
+    state: restarted

@@ -1,6 +1,6 @@
 # Stacks Terraform de la formation
 
-Quatre stacks progressives. Chacune est autonome et se déroule avec
+Trois stacks progressives. Chacune est autonome et se déroule avec
 `init → plan → apply → destroy`.
 
 | Stack | TP | Ce qu'elle fait |
@@ -8,7 +8,9 @@ Quatre stacks progressives. Chacune est autonome et se déroule avec
 | `01-premiere-vm/` | 11 | Une VM clonée d'un template, dans le VNet `vint` |
 | `02-parc-multi-os/` | 11 | 3 VM (Debian/Ubuntu/Rocky) + 1 LXC, réparties dans `vint`/`vdmz`, avec des tags |
 | `03-sdn-troisieme-lan/` | 12 | Une zone SDN complète + ses règles de firewall + 2 guests |
-| `04-nfs/` | 14 | La VM serveur NFS et son disque de données |
+
+> Le serveur NFS du TP 14 n'est pas une VM : c'est **votre poste Ubuntu**, configuré par
+> Ansible (`lab/ansible/nfs-local.yml`). Il n'y a donc pas de stack Terraform pour lui.
 
 ## Prérequis
 
@@ -39,6 +41,7 @@ terraform destroy
 - Un `terraform.tfvars` par élève, **jamais commité**
 - Les VMID sont calculés depuis `var.eleve` : aucun conflit entre élèves
 - Les tags posés ici pilotent l'inventaire Ansible du TP 13
+- Tous les disques vont sur **`local-lvm`** (LVM-thin). Pas de ZFS dans cette formation
 - `mtu = 1` sur toutes les cartes réseau : indispensable en EVPN (jour 4)
 
 ## Erreurs fréquentes

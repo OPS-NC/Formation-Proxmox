@@ -17,15 +17,17 @@ La documentation officielle est excellente. Prenez le réflexe d'y aller **en pr
 | Administration système & **réseau** | <https://pve.proxmox.com/pve-docs/chapter-sysadmin.html> | 01, 07 |
 | **Stockage** (`pvesm`) | <https://pve.proxmox.com/pve-docs/chapter-pvesm.html> | 02, 14 |
 | **Machines virtuelles** (`qm`) | <https://pve.proxmox.com/pve-docs/chapter-qm.html> | 03, 04, 10 |
+| **Stockage** — NFS | <https://pve.proxmox.com/pve-docs/chapter-pvesm.html#storage_nfs> | 14 |
 | **Conteneurs** (`pct`) | <https://pve.proxmox.com/pve-docs/chapter-pct.html> | 05 |
 | **Cloud-init** | <https://pve.proxmox.com/pve-docs/qm.html#qm_cloud_init> | 10 |
-| **SDN** ⭐ | <https://pve.proxmox.com/pve-docs/chapter-pvesdn.html> | 08, 12, 16 |
-| **Firewall** ⭐ | <https://pve.proxmox.com/pve-docs/chapter-pve-firewall.html> | 09, 12, 16 |
-| **Cluster** (`pvecm`) | <https://pve.proxmox.com/pve-docs/chapter-pvecm.html> | 15 |
-| **Haute disponibilité** | <https://pve.proxmox.com/pve-docs/chapter-ha-manager.html> | 17 |
-| **Sauvegarde / restauration** | <https://pve.proxmox.com/pve-docs/chapter-vzdump.html> | 18 |
+| **SDN** ⭐ | <https://pve.proxmox.com/pve-docs/chapter-pvesdn.html> | 08, 12, 17 |
+| **Firewall** ⭐ | <https://pve.proxmox.com/pve-docs/chapter-pve-firewall.html> | 09, 12, 17 |
+| **Cluster** (`pvecm`) | <https://pve.proxmox.com/pve-docs/chapter-pvecm.html> | 16 |
+| **Haute disponibilité** | <https://pve.proxmox.com/pve-docs/chapter-ha-manager.html> | 19 |
+| **Sauvegarde / restauration** | <https://pve.proxmox.com/pve-docs/chapter-vzdump.html> | 15 |
+| `pveceph` — page de manuel | <https://pve.proxmox.com/pve-docs/pveceph.1.html> | 18 |
 | Gestion des utilisateurs | <https://pve.proxmox.com/pve-docs/chapter-pveum.html> | 06 |
-| Ceph | <https://pve.proxmox.com/pve-docs/chapter-pveceph.html> | bonus |
+| **Ceph** ⭐ | <https://pve.proxmox.com/pve-docs/chapter-pveceph.html> | 18 |
 | Notifications | <https://pve.proxmox.com/pve-docs/chapter-notifications.html> | 06 |
 | **Viewer d'API** | <https://pve.proxmox.com/pve-docs/api-viewer/> | tous ⭐ |
 
@@ -57,6 +59,24 @@ La documentation officielle est excellente. Prenez le réflexe d'y aller **en pr
 | Cluster Manager | <https://pve.proxmox.com/wiki/Cluster_Manager> |
 | Network Configuration | <https://pve.proxmox.com/wiki/Network_Configuration> |
 | Upgrade 8 → 9 | <https://pve.proxmox.com/wiki/Upgrade_from_8_to_9> |
+
+---
+
+## 🐙 Ceph et LVM
+
+| Sujet | Lien |
+|---|---|
+| **Deploy Hyper-Converged Ceph Cluster** (wiki) ⭐ | <https://pve.proxmox.com/wiki/Deploy_Hyper-Converged_Ceph_Cluster> |
+| Documentation Ceph amont | <https://docs.ceph.com/en/latest/> |
+| `ceph-volume` (création d'OSD) | <https://docs.ceph.com/en/latest/ceph-volume/lvm/> |
+| BlueStore | <https://docs.ceph.com/en/latest/rados/configuration/bluestore-config-ref/> |
+| CRUSH map | <https://docs.ceph.com/en/latest/rados/operations/crush-map/> |
+| Placement groups et autoscaler | <https://docs.ceph.com/en/latest/rados/operations/placement-groups/> |
+| Ceph Squid → Tentacle (Proxmox) | <https://pve.proxmox.com/wiki/Ceph_Squid_to_Tentacle> |
+| LVM — page de manuel `lvmthin` | <https://man7.org/linux/man-pages/man7/lvmthin.7.html> |
+| 🪤 « Thin pool cannot be reduced » | <https://bugzilla.redhat.com/show_bug.cgi?id=812731> |
+| NFS — `exports(5)` | <https://man7.org/linux/man-pages/man5/exports.5.html> |
+| NFS — `nfs(5)` (options de montage) | <https://man7.org/linux/man-pages/man5/nfs.5.html> |
 
 ---
 

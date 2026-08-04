@@ -1,6 +1,6 @@
 # TP 11 — Terraform : déployer dans les réseaux SDN 🤖
 
-⏱️ **1 h 45** · Jour 3
+⏱️ **1 h 30** · Jour 3
 
 Objectif : décrire une infrastructure en code, la déployer, la modifier, la détruire.
 Trois VM (Debian, Ubuntu, Rocky) et un conteneur Alpine, réparties dans les VNets

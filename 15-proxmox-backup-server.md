@@ -1,9 +1,12 @@
-# TP 18 — Proxmox Backup Server 💾
+# TP 15 — Proxmox Backup Server 💾
 
-⏱️ **1 h 30** · Jour 4
+⏱️ **1 h 15** · Jour 3
 
-Objectif : installer PBS, le brancher au cluster, sauvegarder, restaurer, et comprendre
-pourquoi la déduplication change complètement l'économie de la sauvegarde.
+Objectif : installer PBS, le brancher à chaque nœud, sauvegarder, restaurer, et
+comprendre pourquoi la déduplication change complètement l'économie de la sauvegarde.
+
+🎯 **C'est le TP le plus important de la formation** : c'est lui qui rend les deux
+suivants — mise en cluster et Ceph — réalisables sans perdre votre travail.
 
 📖 Doc : <https://pbs.proxmox.com/docs/>
 
@@ -46,35 +49,60 @@ déduplication dépasse couramment 10:1.
 
 ## 2. Installer PBS dans une VM 🏗️
 
-> 🤝 **Un seul PBS pour la salle.** Le formateur désigne l'hébergeur (par ex. l'élève 2).
-> Les autres suivent, puis effectuent l'étape 5 (branchement) sur leur propre nœud.
+> 🤝 **Un seul PBS pour la salle, hébergé sur `pve1`.** Le formateur (ou l'élève 1) le
+> monte, les autres suivent la construction, puis chacun effectue l'étape 5
+> (branchement) sur son propre nœud.
+>
+> 🧠 **Pourquoi `pve1` ?** Au TP 16, seuls les nœuds qui **rejoignent** le cluster
+> doivent être vides de tout guest. `pve1`, qui *crée* le cluster, garde les siens.
+> PBS survivra donc à la mise en cluster — et c'est précisément lui qui permettra de
+> restaurer les VM de tous les autres.
+>
+> 🎯 **Et pourquoi PBS avant le cluster et avant Ceph ?** Parce que les deux étapes
+> suivantes sont destructives : la mise en cluster (TP 16) exige de supprimer vos
+> guests, et la chirurgie LVM pour Ceph (TP 18) exige de détruire le pool `local-lvm`.
+> Sans sauvegarde fiable, vous perdez tout votre travail des jours 1 à 3.
 
 ### Créer la VM
 
+**Sur `pve1`** :
+
 ```bash
 qm create 901 \
-  --name pbs-lab --pool eleve2 \
+  --name pbs-lab --pool eleve1 \
   --ostype l26 --machine q35 --bios ovmf \
   --efidisk0 local-lvm:1,efitype=4m,pre-enrolled-keys=0 \
   --scsihw virtio-scsi-single \
-  --scsi0 local-lvm:32,discard=on,ssd=1 \
-  --scsi1 nfs-lab:200,discard=on \
+  --scsi0 local-lvm:32,discard=on,ssd=1,iothread=1 \
+  --scsi1 local-lvm:120,discard=on,ssd=1,iothread=1 \
   --ide2 local:iso/proxmox-backup-server_4.x-1.iso,media=cdrom \
   --boot order='ide2;scsi0' \
   --cores 2 --memory 4096 --cpu x86-64-v2-AES \
   --net0 virtio,bridge=vmbr0,firewall=1 \
-  --agent enabled=1
+  --agent enabled=1 \
+  --protection 1
 qm start 901
 ```
+
+🧠 **Deux disques sur `local-lvm`, et pourquoi pas sur le NFS du TP 14 ?**
+Un datastore PBS est un magasin de millions de petits *chunks* avec beaucoup de
+métadonnées et de verrous. Sur NFS, les performances s'écroulent et les verrous
+deviennent fragiles — Proxmox le déconseille explicitement. On reste donc en local.
+`local-lvm` étant *thin*, les 120 Go annoncés ne consomment que ce qui est réellement
+écrit.
+
+🧠 **`--protection 1`** : cette VM contient les sauvegardes de toute la salle. Un
+`qm destroy` distrait serait catastrophique.
 
 🔗 ISO : <https://www.proxmox.com/en/downloads> → *Proxmox Backup Server*
 
 | Élément | Valeur |
 |---|---|
-| Disque système | 32 Go |
-| **Disque datastore** | 200 Go (`scsi1`) — séparé, toujours |
+| Disque système | 32 Go (`scsi0`) |
+| **Disque datastore** | 120 Go (`scsi1`) — **séparé du système, toujours** |
 | RAM | 4 Go minimum (la déduplication est gourmande en index) |
 | IP | `192.168.50.41/24`, gw `192.168.50.254` |
+| Nœud hôte | **pve1** (celui qui créera le cluster) |
 | FQDN | `pbs.lab.local` |
 
 L'installateur est le même que celui de PVE. Après le premier démarrage :
@@ -140,7 +168,7 @@ proxmox-backup-manager namespace list --store lab-store
 ```
    lab-store/
    ├── eleve1/     vm/301  vm/302  ct/311
-   ├── eleve2/     vm/401  ...
+   ├── eleve2/     vm/201  vm/202  ct/211
    └── eleve3/     ...
 ```
 
@@ -183,9 +211,11 @@ Fingerprint (sha256): AB:CD:EF:...:12:34
 
 ---
 
-## 5. Brancher PBS sur le cluster ⚡
+## 5. Brancher PBS sur son nœud ⚡
 
-**Une seule déclaration pour les six nœuds** — merci pmxcfs.
+**Chaque élève le fait sur son nœud** — on n'est pas encore en cluster.
+Au TP 16, une fois le cluster monté, cette déclaration deviendra automatiquement
+commune aux six nœuds (merci pmxcfs) : il faudra alors la refaire **une seule fois**.
 
 🌐 `Datacenter → Storage → Add → Proxmox Backup Server`
 
@@ -494,7 +524,7 @@ données au lieu de les recevoir, et idéalement une bande ou un stockage WORM.
 - [ ] PBS est installé et accessible sur `https://192.168.50.41:8007`
 - [ ] Un datastore `lab-store` existe sur un disque dédié
 - [ ] Un namespace par élève existe
-- [ ] Le stockage `pbs-lab` est actif sur les 6 nœuds
+- [ ] Le stockage `pbs-lab` est actif sur mon nœud (`pvesm status`)
 - [ ] Une sauvegarde manuelle réussit
 - [ ] Un job planifié existe, **basé sur un pool**
 - [ ] La deuxième sauvegarde d'une même VM consomme bien moins d'espace 🎯
@@ -524,4 +554,4 @@ données au lieu de les recevoir, et idéalement une bande ou un stockage WORM.
 5. **Tape backup** : lisez la documentation de la sauvegarde sur bande. Pourquoi la
    bande revient-elle à la mode à l'ère du ransomware ?
 
-➡️ Suite : [TP 19 — Pulse, une autre UI de supervision](19-pulse-monitoring.md)
+➡️ Fin du jour 3 🎉 · Suite : [TP 16 — Mise en cluster des 6 nœuds](16-cluster-proxmox.md)

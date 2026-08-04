@@ -1,0 +1,17 @@
+---
+# Inventaire statique pour configurer VOTRE POSTE UBUNTU (TP 14).
+# ⚠ Adaptez le numéro d'élève sur les 2 lignes marquées.
+all:
+  hosts:
+    poste-ubuntu:
+      ansible_host: localhost
+      ansible_connection: local
+  vars:
+    nfs_manage_disk: false
+    nfs_root: "/srv/nfs-e3"                  # ⚠ votre numéro
+    nfs_allowed_network: "192.168.50.13"     # ⚠ l'IP de VOTRE nœud
+    nfs_exports:
+      - images
+      - iso
+      - backup
+      - snippets

@@ -31,16 +31,46 @@ Le formateur vous attribue un numéro **N** entre **1** et **6**.
 | DNS | `192.168.50.254` (ou `9.9.9.9`) | |
 | Nœud Proxmox élève N | `192.168.50.1N` | pve1 = .11 … pve6 = .16 |
 | PC Ubuntu élève N | `192.168.50.10N` | .101 … .106 |
-| VM NFS (jour 4) | `192.168.50.40` | montée par un binôme |
-| VM PBS (jour 4) | `192.168.50.41` | |
-| Pulse (jour 4) | `192.168.50.42` | LXC |
+| **Serveur NFS** | votre **PC Ubuntu** `192.168.50.10N` | jour 3, TP 14 |
+| VM PBS (jour 3) | `192.168.50.41` | hébergée sur **pve1** |
+| Pulse (jour 4) | `192.168.50.42` | LXC sur pve1 |
 
 ⚠️ **Rien d'autre ne doit prendre d'IP sur ce réseau.** Toutes vos VM de TP vivront
 dans les réseaux SDN en `10.x.x.x`.
 
 ---
 
-## 3. Plan d'adressage SDN
+## 3. Plan de stockage 💾
+
+Un seul principe : **on reste sur le stockage par défaut**, et on ajoute du partagé
+progressivement.
+
+| Stockage | Type | Créé au | Portée | Usage |
+|---|---|---|---|---|
+| `local` | `dir` | installation | nœud | ISO, templates LXC, snippets, dumps |
+| **`local-lvm`** | `lvmthin` | installation | nœud | ⭐ **le stockage par défaut de tous les disques** |
+| `nfs-eN` | `nfs` | TP 14 | nœud | export de **votre PC Ubuntu** : ISO, backups, snippets |
+| `pbs-lab` | `pbs` | TP 15 | cluster | sauvegardes dédupliquées |
+| `vm-store` | `rbd` (Ceph) | TP 18 | **cluster** | disques de VM répliqués ×3 |
+| `cephfs` | `cephfs` | TP 18 | **cluster** | ISO et templates partagés |
+
+🧠 **Pas de ZFS.** C'est un choix assumé : `ext4 + LVM-thin` est plus simple, plus léger
+en RAM, et se manipule bien mieux quand il faudra libérer de la place pour Ceph. On
+explique le pourquoi au [TP 01 §3.1](01-installation-proxmox.md).
+
+```
+   JOUR 1-2          JOUR 3                    JOUR 4
+   ────────          ──────                    ──────
+   local-lvm         + nfs-eN  (votre PC)      + vm-store  (Ceph, ×3 copies)
+   (local, rapide)   + pbs-lab (sauvegardes)   + cephfs    (fichiers partagés)
+       │                    │                        │
+   pas de partage      partagé, mais            partagé ET redondé
+                       un seul serveur          sans point de défaillance
+```
+
+---
+
+## 4. Plan d'adressage SDN
 
 ### Machines du jour 1 (sur `vmbr0`)
 
@@ -76,7 +106,7 @@ Le VRF de la zone utilise le **VNI 10000**.
 
 ---
 
-## 4. Plan de VMID 🔢
+## 5. Plan de VMID 🔢
 
 **Règle absolue** : élève N ⇒ VMID de `N00` à `N99`.
 
@@ -101,14 +131,15 @@ Sous-découpage à l'intérieur de votre plage :
    N90 – N99   templates                                    (TP 10)
 ```
 
-Et pour l'infrastructure commune de la salle : `900` = NFS, `901` = PBS, `902` = Pulse.
+Et pour l'infrastructure commune, hébergée sur **pve1** : `901` = PBS, `902` = Pulse.
+(Le serveur NFS, lui, n'est pas une VM : c'est votre PC Ubuntu.)
 
 🧠 **Pourquoi c'est critique ?** Un VMID est **unique dans tout le cluster**. Au jour 4,
 si deux élèves ont une VM 100, la mise en cluster échoue. On anticipe dès maintenant.
 
 ---
 
-## 5. Nommage
+## 6. Nommage
 
 | Objet | Convention | Exemple (élève 3) |
 |---|---|---|
@@ -125,7 +156,7 @@ partir d'eux. Un tag `web` posé ici déclenche le rôle `web` là-bas. Le déta
 
 ---
 
-## 6. Préparer le PC Ubuntu 26.04 💻
+## 7. Préparer le PC Ubuntu 26.04 💻
 
 ```bash
 sudo apt update
@@ -180,7 +211,7 @@ par cloud-init.
 
 ---
 
-## 7. Matériel du nœud Proxmox
+## 8. Matériel du nœud Proxmox
 
 Vérifiez avant l'installation :
 
@@ -189,28 +220,38 @@ Vérifiez avant l'installation :
 | CPU 64 bits | oui | `lscpu` |
 | Virtualisation matérielle | VT-x / AMD-V **activée dans le BIOS** | `grep -Ec '(vmx\|svm)' /proc/cpuinfo` ≥ 1 |
 | RAM | 16 Go minimum, 32 Go confortable | |
-| Disque | 1 disque système (≥ 60 Go) + idéalement un 2ᵉ disque | `lsblk` |
+| Disque | 1 disque système (**≥ 240 Go**, 480 Go confortable) | `lsblk` |
+| 2ᵉ disque | facultatif — 🎁 idéal pour Ceph au TP 18 | `lsblk` |
 | Réseau | 1 NIC Ethernet filaire | |
 | Boot | UEFI de préférence | |
 
 🪤 Sans VT-x/AMD-V, Proxmox s'installe mais **aucune VM KVM ne démarrera**.
 Si le compteur ci-dessus renvoie 0, direction le BIOS.
 
+### 🎯 Le réglage à ne pas rater à l'installation
+
+Le disque sera partitionné en **ext4 / LVM** (pas de ZFS dans cette formation).
+Il faudra **réduire `maxvz`** pour laisser ~80 Go non alloués dans le groupe de volumes :
+Ceph en aura besoin au TP 18, et **un pool LVM-thin ne peut pas être réduit après
+coup**. Les détails sont dans [TP 01 §3.1](01-installation-proxmox.md) — ne sautez pas
+cette page.
+
 ---
 
-## 8. Ce que vous allez construire en 4 jours
+## 9. Ce que vous allez construire en 4 jours
 
 ```
    JOUR 1              JOUR 2              JOUR 3            JOUR 4
  ────────────      ──────────────      ─────────────    ───────────────
   pveN seul          pveN seul           pveN seul       cluster 6 nœuds
       │                  │                   │                 │
-  installation      LXC Alpine          cloud-init         mise en cluster
-  stockages         LXC Rocky           Terraform          EVPN / VXLAN
-  VM Debian ISO     exploration UI      3e LAN en IaC      gw anycast
-  VM Windows        vmbr1 natté         Ansible + tags     exit nodes
-  console/RDP       SDN int + dmz       serveur NFS        migration + HA
-                    firewall            stockage partagé   PBS · Pulse
+  installation      LXC Alpine          cloud-init        mise en cluster
+  local-lvm         LXC Rocky           Terraform         EVPN / VXLAN
+  VM Debian ISO     exploration UI      3e LAN en IaC     gw anycast
+  VM Windows        vmbr1 natté         Ansible + tags    exit nodes
+  console / RDP     SDN int + dmz       NFS (votre PC)    ★ CEPH ×3 copies
+                    firewall            PBS               migration + HA
+                                                          Pulse · challenge
 ```
 
 ---
@@ -225,5 +266,7 @@ Si le compteur ci-dessus renvoie 0, direction le BIOS.
 - [ ] Le dépôt est cloné dans `~/ProxmoxFormation`
 - [ ] `lab/scripts/00-check-env.sh` ne signale aucune erreur
 - [ ] La virtualisation matérielle est activée dans le BIOS du serveur
+- [ ] J'ai noté qu'il faut réduire `maxvz` à l'installation (pour Ceph au TP 18)
+- [ ] Je sais quels stockages seront créés, et quand
 
 ➡️ Suite : [TP 01 — Installation de Proxmox VE 9](01-installation-proxmox.md)

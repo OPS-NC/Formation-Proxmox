@@ -65,21 +65,59 @@ sync
 
 Bootez sur la clé, choisissez **Install Proxmox VE (Graphical)**.
 
-### 3.1 Choix du système de fichiers
+### 3.1 Système de fichiers : **ext4 / LVM** 🎯
 
-L'écran « Target Harddisk » → bouton **Options**.
+L'écran « Target Harddisk » → **Filesystem : `ext4`**.
 
-| Choix | Quand | Avantages | Inconvénients |
-|---|---|---|---|
-| **ext4** (LVM) | 1 seul disque, machine modeste | simple, léger, snapshot LVM-thin | pas de checksums, pas de réplication |
-| **ZFS RAID0** | 1 disque, on veut jouer avec ZFS | snapshots instantanés, compression, réplication entre nœuds | RAM gourmande (≈ 1 Go / To d'ARC) |
-| **ZFS RAID1** | 2 disques identiques | tolérance de panne disque | perte de moitié de la capacité |
+C'est le choix de toute la formation, et il est délibéré :
 
-👉 **Pour ce lab** : `ext4` si vous avez 16 Go de RAM, `ZFS RAID1` si vous avez
-2 disques et ≥ 32 Go. Le jour 4 (réplication) est plus riche en ZFS, mais tout le
-reste fonctionne à l'identique.
+| | Ce que ça donne |
+|---|---|
+| Simple | un VG `pve`, trois volumes : `root`, `swap`, `data` (le pool LVM-thin) |
+| Léger en RAM | pas d'ARC à nourrir — tout est disponible pour vos VM |
+| Snapshots | ✅ via LVM-thin |
+| Manipulable | on va y faire de la chirurgie LVM au TP 18, pour Ceph |
 
-Laissez `hdsize`, `swapsize`, `maxroot`, `maxvz` par défaut sauf consigne du formateur.
+🧠 **Et ZFS ?** ZFS est excellent (checksums de bout en bout, compression, réplication
+`zfs send`), mais il réclame ~1 Go de RAM par To d'ARC, complique la manipulation du
+disque, et ne nous apporte rien ici : le stockage partagé du jour 4 sera **Ceph**, pas
+de la réplication ZFS. **On n'utilise pas ZFS dans cette formation.** Sachez qu'il
+existe, et pourquoi on ne l'a pas retenu.
+
+### 3.1 bis — ⚠️ L'option qui vous sauvera au TP 18 : `maxvz`
+
+Bouton **Options**, toujours sur l'écran « Target Harddisk » :
+
+| Champ | Valeur | Effet |
+|---|---|---|
+| `hdsize` | tout le disque | taille totale utilisée |
+| `swapsize` | par défaut (≈ 8 Go) | |
+| `maxroot` | par défaut (≈ 60 Go) | taille de `/` |
+| **`maxvz`** | **⭐ hdsize − maxroot − swap − 80** | taille du pool LVM-thin `data` |
+
+**Exemple, disque de 480 Go** : `maxroot 60`, `swap 8`, et `maxvz` = **330** au lieu de
+la valeur par défaut (~410). On laisse ainsi **~80 Go d'espace non alloué** dans le
+groupe de volumes.
+
+🎯 **Pourquoi ?** Au TP 18, Ceph aura besoin d'un volume dédié. Or **un pool LVM-thin
+ne peut pas être réduit** — c'est une limite de LVM, pas un réglage. Si le VG est plein,
+la seule voie sera de détruire le pool, le recréer plus petit, et restaurer vos VM
+depuis PBS. Cinq secondes de prévoyance ici vous économisent quarante minutes de
+chirurgie au jour 4.
+
+```
+   AVEC maxvz réduit                  AVEC maxvz par défaut
+   ─────────────────                  ─────────────────────
+   VG pve                             VG pve
+   ├── root    60 Go                  ├── root    60 Go
+   ├── swap     8 Go                  ├── swap     8 Go
+   ├── data   330 Go (thin)           └── data   410 Go (thin)
+   └── LIBRE   80 Go  ← ⭐                        ↑
+                                       0 octet libre → chirurgie au TP 18
+```
+
+> Si le formateur préfère faire vivre l'exercice de chirurgie LVM à tout le monde,
+> laissez `maxvz` par défaut. Les deux chemins sont documentés au TP 18.
 
 ### 3.2 Localisation
 

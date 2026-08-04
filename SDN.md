@@ -242,7 +242,7 @@ avec routes, voisins et interfaces — le debug devient nettement plus agréable
 🧠 **Dans notre lab** : les 6 nœuds sont sur **un seul segment L2 plat**. L'underlay
 est donc déjà trivialement fonctionnel (tout le monde se ping en direct). Une fabric
 n'apporterait rien de plus, sinon de la complexité. On la présente, on ne la déploie
-pas — sauf en bonus (TP 16) pour voir la mécanique WireGuard.
+pas — sauf en bonus (TP 17) pour voir la mécanique WireGuard.
 
 ---
 

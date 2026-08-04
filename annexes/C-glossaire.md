@@ -185,24 +185,92 @@ est réellement écrit.
 **Copy-on-Write (COW)** — Ne dupliquer un bloc qu'au moment de sa modification. La base
 des snapshots instantanés et des linked clones.
 
-**LVM-Thin** — Le pool logique de Linux avec thin provisioning et snapshots. Le défaut
-d'une installation Proxmox sur ext4.
+**LVM-Thin** — Le pool logique de Linux avec thin provisioning et snapshots. **Le
+stockage par défaut de cette formation** (`local-lvm`), créé par l'installateur sur
+ext4. Un thin pool s'agrandit (`lvextend`) mais **ne se réduit jamais** : c'est la
+contrainte qui structure le TP 18.
+
+**VG / LV / PV** — *Volume Group* (le réservoir, ici `pve`), *Logical Volume* (une
+tranche : `root`, `swap`, `data`, `ceph-osd`), *Physical Volume* (le disque sous-jacent).
+
+**`vg_free`** — L'espace du groupe de volumes **non encore alloué** à un LV. C'est là
+qu'on taille le volume destiné à Ceph. Le réglage `maxvz` de l'installateur détermine
+combien il en restera.
 
 **ZFS** — Système de fichiers et gestionnaire de volumes : checksums de bout en bout,
-snapshots, compression, réplication. Gourmand en RAM.
+snapshots, compression, réplication `zfs send`. Excellent, mais gourmand en RAM et plus
+rigide à repartitionner. **Volontairement non utilisé dans cette formation** : on reste
+en ext4 + LVM-thin, et le stockage partagé vient de Ceph.
 
-**Ceph** — Stockage distribué : les données sont répliquées sur plusieurs nœuds, sans
-point de défaillance unique. La solution de référence pour un cluster Proxmox.
+---
+
+## Ceph
+
+**Ceph** — Stockage distribué : chaque bloc est répliqué sur plusieurs nœuds, sans point
+de défaillance unique. La solution de référence pour un cluster Proxmox de 3 nœuds ou
+plus.
+
+**MON** *(monitor)* — Détient la carte du cluster : qui existe, où, dans quel état.
+Il en faut un nombre **impair** (3 ou 5) pour le quorum. C'est le « corosync » de Ceph.
+
+**MGR** *(manager)* — Métriques, tableau de bord, autoscaler de PG. Un actif, un ou
+plusieurs en veille.
+
+**OSD** *(Object Storage Daemon)* — Un démon **par disque ou par volume**. C'est lui qui
+stocke réellement les octets et qui réplique vers ses pairs.
+
+**BlueStore** — Le moteur de stockage des OSD : écrit directement sur le périphérique
+bloc, sans système de fichiers intermédiaire.
+
+**Pool** — Un espace logique, avec sa règle de réplication. `size 3 / min_size 2` = trois
+copies, écriture acceptée dès que deux sont confirmées.
+
+**PG** *(placement group)* — Les « tiroirs » qui répartissent les objets sur les OSD.
+L'*autoscaler* en ajuste le nombre automatiquement — historiquement, le calcul manuel de
+`pg_num` était la principale source d'erreurs de dimensionnement.
+
+**CRUSH** — L'algorithme qui décide, sans annuaire central, sur quels OSD va chaque
+objet. La **CRUSH map** décrit la hiérarchie physique (hosts, racks, salles) et permet
+de garantir que les copies ne se retrouvent jamais dans le même domaine de panne.
+
+**RBD** *(RADOS Block Device)* — Le mode bloc de Ceph : c'est ce qui porte les disques
+de VM (`vm-store`).
+
+**CephFS** — Le mode système de fichiers POSIX de Ceph, servi par des **MDS** (*metadata
+servers*). Pour les ISO, templates et snippets partagés.
+
+**Backfill / Recovery** — La reconstruction des copies manquantes après une panne.
+⚠️ À **brider** sur un réseau partagé, sinon elle sature le lien et déstabilise Corosync.
+
+**`nearfull` / `full`** — Seuils d'alerte d'un OSD : 85 % (avertissement) et **95 %
+(toutes les écritures du cluster s'arrêtent)**.
+
+**Erasure coding** — Alternative à la réplication : `k` fragments de données + `m` de
+parité. Plus économe en espace, mais pénalisant en écriture aléatoire — donc à éviter
+pour des disques de VM.
+
+---
+
+## Stockage réseau
 
 **NFS / CIFS** — Partage de fichiers en réseau. Simple, universel, mais dépendant d'un
-serveur.
+serveur — donc **un point de défaillance unique**.
+
+**`no_root_squash`** — Option d'export NFS qui laisse le `root` du client rester root
+côté serveur. Proxmox en a besoin pour créer les disques de VM. À compenser
+systématiquement en restreignant l'export à des adresses IP précises.
+
+**Montage `hard` vs `soft`** — En `hard` (le défaut), une I/O attend indéfiniment que le
+serveur revienne. En `soft`, elle échoue après un délai. **Jamais `soft` pour des disques
+de VM** : l'invité reçoit des erreurs d'écriture et corrompt son système de fichiers.
 
 **TRIM / discard** — Signaler au stockage que des blocs sont libérés, pour qu'un volume
 thin puisse rétrécir.
 
 **RPO / RTO** — *Recovery Point Objective* : combien de données on accepte de perdre.
 *Recovery Time Objective* : en combien de temps on doit être de retour. Les deux
-chiffres qui pilotent toute stratégie de sauvegarde.
+chiffres qui pilotent toute stratégie de sauvegarde. Avec Ceph, le RPO est **nul** : les
+copies sont synchrones.
 
 ---
 

@@ -1,9 +1,8 @@
 # Généré par Ansible — rôle « nfs ». Ne pas modifier à la main.
 #
-# 🪤 no_root_squash : Proxmox a besoin d'écrire en root pour créer les disques
-#    de VM. On l'accepte, MAIS on restreint strictement l'export au réseau de
-#    management. Sur une infrastructure réelle, ce partage aurait son propre
-#    VLAN de stockage.
+# 🪤 no_root_squash : Proxmox écrit en root pour créer les disques de VM.
+#    On l'accepte, MAIS on restreint l'export à la seule IP du nœud autorisé.
+#    Sur une infrastructure réelle, ce partage aurait son propre VLAN de stockage.
 {% for e in nfs_exports %}
 {{ nfs_root }}/{{ e }}  {{ nfs_allowed_network }}(rw,sync,no_subtree_check,no_root_squash)
 {% endfor %}

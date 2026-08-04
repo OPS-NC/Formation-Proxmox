@@ -28,7 +28,7 @@ préparer le terrain (ISO, templates, pools, snippets) pour tous les TP suivants
        ├── System           ← Network, Certificates, DNS, Hosts, Time, Syslog
        ├── Updates          ← Repositories
        ├── Firewall
-       ├── Disks            ← LVM, LVM-Thin, Directory, ZFS
+       ├── Disks            ← LVM, LVM-Thin, Directory (pas de ZFS ici)
        ├── Ceph
        ├── Replication
        └── <vmid> VM / CT
@@ -47,7 +47,7 @@ migrer une VM d'un nœud à l'autre : les deux nœuds connaissent un stockage du
 | `dir` (Directory) | non* | via qcow2 | tout | Simple ; stocke des **fichiers** |
 | `lvm` | non | non** | disques VM/CT | Rapide, brut |
 | `lvmthin` | non | **oui** | disques VM/CT | Le défaut d'une install ext4 |
-| `zfspool` | non | **oui** | disques VM/CT | Snapshots + réplication entre nœuds |
+| `zfspool` | non | **oui** | disques VM/CT | Snapshots + réplication `zfs send` — **non utilisé dans cette formation** |
 | `nfs` | **oui** | via qcow2 | tout | ⭐ jour 4 |
 | `cifs` | **oui** | via qcow2 | tout | SMB |
 | `iscsi` / `iscsidirect` | **oui** | non | disques VM | SAN bloc |
@@ -118,33 +118,34 @@ pvesm status --content snippets
 
 ## 5. Créer un stockage supplémentaire 🆕
 
-### Cas A — vous avez un second disque physique
+🧠 **Notre choix pour toute la formation** : on reste sur les deux stockages créés par
+l'installateur — `local` (type `dir`) et **`local-lvm` (type `lvmthin`)**. Pas de ZFS :
+voir [TP 01 §3.1](01-installation-proxmox.md). Le stockage partagé arrivera au jour 3
+(NFS depuis votre poste) et au jour 4 (**Ceph**).
+
+### Cas A — vous avez un second disque physique 🎁
+
+Réservez-le pour Ceph au TP 18 (`pveceph osd create /dev/sdb`) : ce sera bien plus
+propre que la chirurgie LVM. **Ne le formatez pas maintenant.**
 
 ```bash
-lsblk                     # identifiez le disque, ex. /dev/sdb
-wipefs -a /dev/sdb        # ⚠ efface toute signature de FS existante
+lsblk                       # identifiez-le et notez son nom
+lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT
 ```
 
-**Option 1 : LVM-Thin** (snapshots, thin provisioning)
+Si vous voulez tout de même un second pool LVM-thin pour expérimenter :
 
 ```bash
+wipefs -a /dev/sdb          # ⚠ efface toute signature de FS existante
 pvcreate /dev/sdb
 vgcreate vg-data /dev/sdb
-lvcreate -l 95%FREE --thinpool data vg-data
+lvcreate -l 90%FREE --thinpool data vg-data
 pvesm add lvmthin data-thin --vgname vg-data --thinpool data --content images,rootdir
 ```
 
-**Option 2 : ZFS** (snapshots + réplication + compression)
+### Cas B — un seul disque (le cas courant)
 
-```bash
-zpool create -o ashift=12 tank /dev/sdb
-zfs set compression=lz4 tank
-pvesm add zfspool tank-pve --pool tank --content images,rootdir --sparse 1
-zpool status
-zfs list
-```
-
-### Cas B — un seul disque : on crée un stockage `dir`
+On ajoute simplement un stockage `dir`, utile pour des ISO ou des dumps ponctuels.
 
 ```bash
 mkdir -p /var/lib/vz-extra
@@ -152,6 +153,22 @@ pvesm add dir extra --path /var/lib/vz-extra \
       --content iso,vztmpl,backup,snippets --shared 0
 pvesm status
 ```
+
+### Inspecter le pool LVM-thin — à connaître par cœur 🎯
+
+```bash
+lvs -o lv_name,vg_name,lv_size,data_percent,metadata_percent
+vgs -o vg_name,vg_size,vg_free
+```
+
+🚨 **`data_percent` est la métrique la plus importante de votre hyperviseur.**
+Au-delà de 95 %, les volumes passent en lecture seule et **vos VM se corrompent**.
+Surveillez-la comme vous surveillez `df -h`.
+
+🧠 Notez aussi `vg_free` : c'est l'espace non alloué du groupe de volumes. S'il est à
+zéro, le TP 18 (Ceph) demandera de détruire et recréer le pool thin — **un thin pool ne
+peut pas être réduit**. Si vous voyez de l'espace libre ici, c'est que vous avez bien
+réglé `maxvz` à l'installation. 👏
 
 ---
 

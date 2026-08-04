@@ -1,33 +1,50 @@
 ---
-- name: Installer le serveur NFS et les outils disque
+# Ce rôle fonctionne dans deux contextes :
+#   · sur le POSTE UBUNTU de l'élève (TP 14) → nfs_manage_disk: false
+#   · sur une machine avec un disque dédié   → nfs_manage_disk: true
+
+- name: Installer le serveur NFS
   ansible.builtin.apt:
     name:
       - nfs-kernel-server
-      - parted
-      - xfsprogs
+      - nfs-common
     state: present
     update_cache: true
 
-- name: Partitionner le disque de données
-  community.general.parted:
-    device: "{{ nfs_device }}"
-    number: 1
-    state: present
-    fs_type: xfs
-    part_end: "100%"
+- name: Préparer un disque dédié
+  when: nfs_manage_disk | bool
+  block:
+    - name: Outils de partitionnement
+      ansible.builtin.apt:
+        name: [parted, xfsprogs]
+        state: present
 
-- name: Formater en XFS
-  community.general.filesystem:
-    fstype: xfs
-    dev: "{{ nfs_device }}1"
+    - name: Partitionner le disque de données
+      community.general.parted:
+        device: "{{ nfs_device }}"
+        number: 1
+        state: present
+        fs_type: xfs
+        part_end: "100%"
 
-- name: Monter le volume de données
-  ansible.posix.mount:
+    - name: Formater en XFS
+      community.general.filesystem:
+        fstype: xfs
+        dev: "{{ nfs_device }}1"
+
+    - name: Monter le volume de données
+      ansible.posix.mount:
+        path: "{{ nfs_root }}"
+        src: "{{ nfs_device }}1"
+        fstype: xfs
+        opts: defaults,noatime
+        state: mounted
+
+- name: Créer la racine des exports
+  ansible.builtin.file:
     path: "{{ nfs_root }}"
-    src: "{{ nfs_device }}1"
-    fstype: xfs
-    opts: defaults,noatime
-    state: mounted
+    state: directory
+    mode: "0755"
 
 - name: Créer l'arborescence des exports
   ansible.builtin.file:
@@ -38,10 +55,22 @@
     mode: "0777"
   loop: "{{ nfs_exports }}"
 
-- name: Écrire /etc/exports
+- name: Forcer NFSv4 uniquement (un seul port : 2049/tcp)
+  ansible.builtin.copy:
+    dest: /etc/nfs.conf.d/lab.conf
+    mode: "0644"
+    content: |
+      # Généré par Ansible — rôle « nfs »
+      [nfsd]
+      vers3 = n
+      vers4 = y
+      vers4.2 = y
+  notify: redemarrer nfs-server
+
+- name: Écrire le fichier d'export
   ansible.builtin.template:
     src: exports.j2
-    dest: /etc/exports
+    dest: "{{ nfs_exports_file }}"
     mode: "0644"
   notify: recharger les exports
 
@@ -51,7 +80,16 @@
     state: started
     enabled: true
 
-- name: Appliquer les exports avant de vérifier
+- name: Ouvrir le pare-feu si ufw est actif
+  community.general.ufw:
+    rule: allow
+    port: "2049"
+    proto: tcp
+    from_ip: "{{ nfs_allowed_network }}"
+    comment: "NFS Proxmox"
+  failed_when: false
+
+- name: Appliquer avant de vérifier
   ansible.builtin.meta: flush_handlers
 
 - name: Lister les exports actifs

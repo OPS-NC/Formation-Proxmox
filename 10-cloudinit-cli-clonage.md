@@ -1,6 +1,6 @@
 # TP 10 — Cloud-image en CLI, cloud-init et clonage ☁️
 
-⏱️ **1 h 30** · Jour 3
+⏱️ **1 h 15** · Jour 3
 
 Objectif : fabriquer, entièrement en ligne de commande, des templates de VM à partir de
 cloud-images, prêts à être clonés en 15 secondes. C'est la fondation de tout le jour 3.

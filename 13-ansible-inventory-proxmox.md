@@ -1,6 +1,6 @@
 # TP 13 — Ansible : inventaire dynamique Proxmox et rôles par tags 🎼
 
-⏱️ **1 h 45** · Jour 3
+⏱️ **1 h 15** · Jour 3
 
 Objectif : Terraform crée les machines, **Ansible les configure**. Et il ne le fait pas
 au hasard : il interroge l'API Proxmox, lit les **tags** posés au TP 11, et applique le
@@ -703,5 +703,8 @@ resource "terraform_data" "ansible" {
 5. **Inventaire multi-nœuds** : au **jour 4**, une fois le cluster monté, un seul
    fichier `proxmox.yml` couvrira les six nœuds. Anticipez : que faudra-t-il changer ?
    (Réponse : rien, sinon l'URL. C'est tout l'intérêt d'une API clusterisée.)
+6. **Le rôle `nfs` sur votre poste** : c'est exactement ce qu'on fait au TP 14 — le même
+   rôle, joué sur `localhost`. Regardez `roles/nfs/tasks/main.yml` et repérez ce que la
+   variable `nfs_manage_disk` permet de sauter.
 
-➡️ Suite : [TP 14 — Serveur NFS en Terraform + Ansible](14-nfs-terraform-ansible.md)
+➡️ Suite : [TP 14 — Un serveur NFS sur votre poste Ubuntu](14-nfs-poste-ubuntu.md)

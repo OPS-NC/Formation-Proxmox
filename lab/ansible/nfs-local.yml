@@ -1,0 +1,30 @@
+---
+# Configure le serveur NFS sur le poste de travail de l'élève (TP 14).
+#
+#   ansible-playbook -i inventory/local.yml nfs-local.yml --ask-become-pass
+#
+# 🧠 C'est le MÊME rôle que celui qu'on jouerait sur un serveur distant.
+#    Seule la cible change. Un rôle bien écrit ne suppose rien sur « où » il tourne.
+
+- name: Serveur NFS sur le poste de travail
+  hosts: poste-ubuntu
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Rappeler la cible
+      ansible.builtin.debug:
+        msg: >-
+          Export {{ nfs_root }} → autorisé pour {{ nfs_allowed_network }}
+          ({{ nfs_exports | join(', ') }})
+
+  roles:
+    - nfs
+
+  post_tasks:
+    - name: Comment déclarer le stockage dans Proxmox
+      ansible.builtin.debug:
+        msg: >-
+          pvesm add nfs nfs-e3 --server {{ ansible_default_ipv4.address }}
+          --export {{ nfs_root }} --content images,rootdir,iso,backup,snippets
+          --options vers=4.2 --nodes pve3

@@ -1,5 +1,5 @@
 ---
-# Playbook principal.
+# Playbook principal — les machines du parc Proxmox.
 #
 #   ansible-playbook site.yml --syntax-check
 #   ansible-playbook site.yml --check --diff     # répétition générale
@@ -7,6 +7,9 @@
 #   ansible-playbook site.yml --limit proxmox_web
 #
 # ⭐ Le critère de qualité : un SECOND passage doit afficher « changed=0 ».
+#
+# 🧠 Le serveur NFS n'est pas ici : il tourne sur votre poste de travail.
+#    Voir nfs-local.yml et inventory/local.yml (TP 14).
 
 - name: Socle commun — toutes les machines Linux
   hosts: linux:conteneurs
@@ -26,9 +29,3 @@
   become: true
   roles:
     - db
-
-- name: Serveur NFS
-  hosts: proxmox_nfs
-  become: true
-  roles:
-    - nfs

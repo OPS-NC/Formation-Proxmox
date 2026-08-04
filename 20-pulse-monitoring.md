@@ -1,4 +1,4 @@
-# TP 19 — Pulse : une autre UI de supervision 📊
+# TP 20 — Pulse : une autre UI de supervision 📊
 
 ⏱️ **30 min** · Jour 4
 
@@ -144,7 +144,7 @@ nœud comme point d'entrée de secours, sinon la supervision tombe avec `pve1`.
    │                                                            │
    │   ⚠️  pve1 · CPU > 75 % depuis 12 min                       │
    │   ⚠️  db01-e2 · dernière sauvegarde il y a 9 jours          │
-   │   🔴 nfs-lab · espace libre < 10 %                          │
+   │   🔴 vm-store (Ceph) · un OSD à 88 % — nearfull              │
    └────────────────────────────────────────────────────────────┘
 ```
 
@@ -155,8 +155,14 @@ nœud comme point d'entrée de secours, sinon la supervision tombe avec `pve1`.
 | **Dashboard** | La santé globale, en un coup d'œil |
 | **Guests** | Toutes les VM et CT du cluster, triables par consommation |
 | **Storage** | Le remplissage de chaque stockage — **la panne n°1 en production** |
+| **Ceph** | Santé du cluster, OSD, PG, pools |
 | **Backups** | Quelles VM ne sont **pas** sauvegardées 🎯 |
 | **Alerts** | Les seuils et l'historique des déclenchements |
+
+🎯 **Regardez en priorité `local-lvm` et `vm-store` (Ceph)** dans la vue *Storage*.
+Un pool LVM-thin au-delà de 95 % corrompt les VM ; un Ceph au-delà de 95 % arrête
+toutes les écritures du cluster. Ce sont les deux chiffres qui doivent déclencher une
+alerte bien avant.
 
 🎯 **Allez tout de suite dans « Backups ».** Vous allez probablement découvrir des
 machines qui ne sont dans aucun job de sauvegarde. C'est **exactement** la valeur
@@ -172,7 +178,7 @@ qu'apporte un outil externe : il pose la question que l'interface native ne pose
 |---|---|---|
 | CPU nœud | > 85 % pendant 10 min | un pic passager n'est pas un incident |
 | RAM nœud | > 90 % | au-delà, le swap dégrade tout |
-| Stockage | > 85 % | **le seuil le plus important** |
+| Stockage (`local-lvm`, Ceph) | > 85 % | ⭐ **le seuil le plus important** |
 | Sauvegarde manquante | > 48 h | détecte les jobs cassés |
 | VM arrêtée inopinément | immédiat | |
 | Nœud injoignable | > 2 min | |
@@ -239,7 +245,8 @@ PME, ou comme second regard rapide à côté d'une stack plus lourde.
 ## 🎁 Bonus
 
 1. **Provoquer une alerte** : remplissez un stockage à plus de 85 %
-   (`fallocate -l 50G /mnt/pve/nfs-lab/gros`) et vérifiez qu'elle part. Puis nettoyez.
+   (`fallocate -l 30G /srv/nfs-e3/gros` sur votre poste) et vérifiez qu'elle part.
+   Puis nettoyez.
 2. **Webhook maison** : pointez les alertes vers un petit serveur HTTP
    (`python3 -m http.server`) et observez le JSON envoyé.
 3. **Stack complète** : déployez Prometheus + Grafana avec le rôle Ansible du TP 13
@@ -248,4 +255,4 @@ PME, ou comme second regard rapide à côté d'une stack plus lourde.
 4. **La bonne question** : votre supervision est dans un LXC sur `pve3`. `pve3` prend
    feu. Que se passe-t-il ? Proposez une architecture qui règle le problème.
 
-➡️ Suite : [TP 20 — Challenge final](20-challenge-final.md) 🏁
+➡️ Suite : [TP 21 — Challenge final](21-challenge-final.md) 🏁

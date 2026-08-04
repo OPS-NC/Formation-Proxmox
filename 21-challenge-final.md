@@ -1,4 +1,4 @@
-# TP 20 — Challenge final 🏁
+# TP 21 — Challenge final 🏁
 
 ⏱️ **45 min** · Jour 4
 
@@ -67,12 +67,14 @@ Matrice de flux attendue :
 | `app-eN` | Debian 13 | `vprod` | une appli qui écoute en 8080 | déployé par Terraform |
 | `data-eN` | Rocky Linux 10 | `vdb` | PostgreSQL | déployé par Terraform |
 | `cache-eN` | Alpine (LXC) | `vprod` | Redis ou nginx cache | déployé par Terraform |
+| — | — | — | Stockage | `front` et `app` sur **Ceph**, `data` sur `local-lvm` |
 | `adm-eN` | Windows Server 2025 | `vprod` | poste d'administration | RDP depuis `vprod` **seulement** |
 
 ### Exigences transverses
 
 - [ ] Toutes les machines Linux sont configurées par **Ansible**, groupées par **tags**
 - [ ] Un `ansible-playbook site.yml` répété affiche **`changed=0`**
+- [ ] Les disques de `front` et `app` sont sur **`vm-store` (Ceph)**
 - [ ] `front` et `app` sont en **HA**, avec une règle d'**anti-affinité**
 - [ ] Un job de **sauvegarde par pool** tourne, avec une rétention définie
 - [ ] Le **firewall** applique exactement la matrice ci-dessus, en *default deny*
@@ -124,10 +126,19 @@ ping -M do -s 1422 -c2 9.9.9.9      # → ✅
 sudo apt update && sudo apt install -y cowsay   # → ✅ (le vrai test)
 ```
 
-### Épreuve 5 — Haute disponibilité 🏥
+### Épreuve 5 — Haute disponibilité et Ceph 🏥
 
 Le formateur coupe l'alimentation d'un nœud hébergeant `front` ou `app`.
+
 → La VM redémarre ailleurs en moins de **3 minutes**, et `front` répond de nouveau.
+→ `ceph -s` passe en `HEALTH_WARN` puis se reconstruit seul jusqu'à `HEALTH_OK`.
+→ Aucune donnée perdue.
+
+```bash
+ceph -s
+ceph osd tree
+ha-manager status
+```
 
 ### Épreuve 6 — Restauration 💾
 
@@ -180,14 +191,24 @@ rendu-eleveN/
 ├── firewall/
 │   ├── cluster.fw
 │   ├── vpub.fw / vprod.fw / vdb.fw
-└── sdn/
-    ├── controllers.cfg / zones.cfg / vnets.cfg / subnets.cfg
+├── sdn/
+│   ├── controllers.cfg / zones.cfg / vnets.cfg / subnets.cfg
+└── ceph/
+    ├── ceph.conf
+    ├── ceph-s.txt          sortie de « ceph -s »
+    └── ceph-osd-tree.txt   sortie de « ceph osd tree »
 ```
 
 ```bash
 # Extraire la configuration réelle pour le rendu
 ssh root@192.168.50.1N 'tar cz /etc/pve/sdn /etc/pve/firewall' \
   | tar xz -C rendu-eleveN/ --strip-components=2
+
+mkdir -p rendu-eleveN/ceph
+ssh root@192.168.50.1N 'cat /etc/pve/ceph.conf'  > rendu-eleveN/ceph/ceph.conf
+ssh root@192.168.50.1N 'ceph -s'                 > rendu-eleveN/ceph/ceph-s.txt
+ssh root@192.168.50.1N 'ceph osd tree'           > rendu-eleveN/ceph/ceph-osd-tree.txt
+ssh root@192.168.50.1N 'lvs; vgs'                > rendu-eleveN/docs/lvm.txt
 ```
 
 🪤 **Vérifiez qu'aucun secret ne part dans le dépôt** :
@@ -208,9 +229,10 @@ grep -rniE 'password|secret|token|BEGIN .*PRIVATE KEY' rendu-eleveN/ \
 | Migration à chaud sans perte | 10 |
 | HA fonctionnelle avec anti-affinité | 15 |
 | Restauration prouvée depuis PBS | **15** |
+| Ceph en `HEALTH_OK`, 6 OSD, disques applicatifs dessus | 10 |
 | Infrastructure reproductible (Terraform + Ansible) | 10 |
 | Documentation lisible et honnête | 5 |
-| **Total** | **100** |
+| **Total** | **110** |
 
 **Bonus** (jusqu'à +15) :
 - 🎁 +5 — Un troisième rôle Ansible pertinent (supervision, journalisation, sauvegarde)
@@ -228,6 +250,8 @@ grep -rniE 'password|secret|token|BEGIN .*PRIVATE KEY' rendu-eleveN/ \
 
 1. **Commencez par le schéma et la matrice de flux.** Écrire les règles avant d'avoir
    décidé de la politique, c'est se condamner à bricoler.
+0. **Avant tout : `ceph -s` doit être vert.** Si Ceph est dégradé, la HA ne servira à
+   rien et vous perdrez des points sur deux épreuves.
 2. **Faites tourner l'ensemble avant d'optimiser.** Un truc moche qui marche vaut mieux
    qu'un truc élégant à moitié fini.
 3. **`git commit` souvent.** Vous allez casser quelque chose. C'est certain.
@@ -249,7 +273,7 @@ En quatre jours, vous êtes passés d'une machine nue à :
    │  Cluster Proxmox VE 9 · 6 nœuds · quorum · HA                 │
    │  SDN EVPN/VXLAN · gateway anycast · exit nodes · SNAT         │
    │  Firewall nftables segmenté · default deny · journalisé       │
-   │  Stockage partagé NFS · migration à chaud                     │
+   │  Stockage : local-lvm · NFS · CEPH ×3 copies sans SPOF        │
    │  Sauvegarde PBS dédupliquée, chiffrée, vérifiée, restaurée    │
    │  Infrastructure as Code : Terraform + Ansible + Git           │
    │  Supervision externe                                          │
@@ -265,6 +289,10 @@ Mais surtout, vous avez acquis quelques réflexes qui valent plus que les comman
 - 🧠 **Savoir énoncer les limites de son architecture** vaut mieux que de prétendre
   qu'elle est parfaite.
 - 🧠 **Si vous l'avez fait deux fois à la main, scriptez-le.**
+- 🧠 **Anticipez le partitionnement.** Cinq secondes sur `maxvz` à l'installation ont
+  économisé quarante minutes de chirurgie LVM au jour 4.
+- 🧠 **Réplication ≠ sauvegarde.** Ceph copie fidèlement vos suppressions, en trois
+  exemplaires.
 
 ---
 
@@ -272,7 +300,7 @@ Mais surtout, vous avez acquis quelques réflexes qui valent plus que les comman
 
 | Sujet | Où aller |
 |---|---|
-| **Ceph** | Le stockage distribué sans SPOF — la suite logique du TP 14 |
+| **Ceph en production** | Dimensionnement réseau, erasure coding, CRUSH avancée, RGW/S3 |
 | **Proxmox Datacenter Manager** | Piloter plusieurs clusters depuis un point unique |
 | **SDN Fabrics** | OpenFabric / OSPF / BGP, pour du multi-segment et du multi-site |
 | **Certification** | *Proxmox VE Advanced* — <https://www.proxmox.com/en/training> |

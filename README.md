@@ -2,7 +2,7 @@
 
 Formation pratique et intensive sur **Proxmox VE 9.x** (base Debian 13 « Trixie »).
 Objectif : partir d'une machine nue et arriver à un **cluster de 6 nœuds**, avec du
-**SDN EVPN/VXLAN**, un **firewall segmenté**, du **stockage partagé**, de la
+**SDN EVPN/VXLAN**, un **firewall segmenté**, un **cluster Ceph**, de la
 **sauvegarde PBS**, et tout ça piloté en **Terraform + Ansible**.
 
 > Format : 90 % de manipulations, 10 % de théorie. Chaque TP est autonome, testable,
@@ -22,10 +22,12 @@ Objectif : partir d'une machine nue et arriver à un **cluster de 6 nœuds**, av
 | 6 | Fabriquer des templates cloud-init en CLI et les cloner |
 | 7 | Déployer un parc multi-OS avec Terraform, réseau et firewall compris |
 | 8 | Piloter ce parc avec Ansible et un **inventaire dynamique par tags Proxmox** |
-| 9 | Monter un cluster de 6 nœuds et comprendre le quorum |
-| 10 | Étendre le SDN sur tout le cluster en **EVPN/VXLAN** avec sortie Internet |
-| 11 | Brancher du stockage partagé NFS, migrer à chaud, faire de la HA |
-| 12 | Installer Proxmox Backup Server, sauvegarder, restaurer, superviser |
+| 9 | Exposer un partage NFS depuis votre poste et l'ajouter à Proxmox |
+| 10 | Installer Proxmox Backup Server, sauvegarder, restaurer, vérifier |
+| 11 | Monter un cluster de 6 nœuds et comprendre le quorum |
+| 12 | Étendre le SDN sur tout le cluster en **EVPN/VXLAN** avec sortie Internet |
+| 13 | Déployer un **cluster Ceph** — dont la chirurgie LVM en CLI que l'UI ne sait pas faire |
+| 14 | Migrer à chaud, mettre en place la HA, superviser |
 
 ---
 
@@ -60,6 +62,11 @@ très courant en hébergement mutualisé, chez un provider, ou en agence — qui
 imposer le choix **EVPN + exit nodes + SNAT** au jour 4.
 👉 Le raisonnement complet est dans [`SDN.md`](SDN.md).
 
+**Côté stockage**, le parti pris est aussi net : **pas de ZFS**. Les nœuds sont installés
+en `ext4 + LVM-thin`, on utilise le stockage par défaut `local-lvm` pendant trois jours,
+puis on monte du partagé — un **NFS depuis votre poste Ubuntu** (jour 3), et enfin un
+vrai **cluster Ceph** (jour 4).
+
 ---
 
 ## 📅 Programme
@@ -82,24 +89,31 @@ imposer le choix **EVPN + exit nodes + SNAT** au jour 4.
 | 08 | [SDN : les 2 LAN `internal` et `dmz`](08-sdn-simple-internal-dmz.md) | 2 h |
 | 09 | [Firewall inter-zones en *default deny*](09-firewall-inter-zones.md) | 1 h 45 |
 
-### Jour 3 — Industrialisation : cloud-init, Terraform, Ansible 🤖
+### Jour 3 — Industrialisation : cloud-init, Terraform, Ansible, sauvegarde 🤖
 | TP | Fichier | Durée |
 |---|---|---|
-| 10 | [Cloud-image en CLI, cloud-init et clonage](10-cloudinit-cli-clonage.md) | 1 h 30 |
-| 11 | [Terraform : déployer dans les réseaux SDN](11-terraform-vms-sdn.md) | 1 h 45 |
+| 10 | [Cloud-image en CLI, cloud-init et clonage](10-cloudinit-cli-clonage.md) | 1 h 15 |
+| 11 | [Terraform : déployer dans les réseaux SDN](11-terraform-vms-sdn.md) | 1 h 30 |
 | 12 | [Terraform : un 3ᵉ LAN + ses règles de firewall](12-terraform-sdn-troisieme-lan.md) | 1 h 15 |
-| 13 | [Ansible : inventaire dynamique Proxmox et rôles par tags](13-ansible-inventory-proxmox.md) | 1 h 45 |
-| 14 | [Serveur NFS déployé en Terraform + Ansible](14-nfs-terraform-ansible.md) | 1 h |
+| 13 | [Ansible : inventaire dynamique Proxmox et rôles par tags](13-ansible-inventory-proxmox.md) | 1 h 15 |
+| 14 | [Un serveur NFS sur votre poste Ubuntu](14-nfs-poste-ubuntu.md) | 45 min |
+| 15 | [Proxmox Backup Server](15-proxmox-backup-server.md) | 1 h 15 |
 
-### Jour 4 — Cluster, SDN distribué, sauvegarde et exploitation 🚀
+### Jour 4 — Cluster, SDN distribué, Ceph et exploitation 🚀
 | TP | Fichier | Durée |
 |---|---|---|
-| 15 | [Mise en cluster des 6 nœuds](15-cluster-proxmox.md) | 1 h 15 |
-| 16 | [SDN en cluster : EVPN/VXLAN et limites du LAN plat](16-sdn-evpn-cluster.md) | 2 h 15 |
-| 17 | [Stockage partagé, migration à chaud et HA](17-migration-ha.md) | 1 h |
-| 18 | [Proxmox Backup Server](18-proxmox-backup-server.md) | 1 h 30 |
-| 19 | [Pulse : une autre UI de supervision](19-pulse-monitoring.md) | 30 min |
-| 20 | [Challenge final 🏁](20-challenge-final.md) | 45 min |
+| 16 | [Mise en cluster des 6 nœuds](16-cluster-proxmox.md) | 1 h 15 |
+| 17 | [SDN en cluster : EVPN/VXLAN et limites du LAN plat](17-sdn-evpn-cluster.md) | 2 h |
+| 18 | [**Cluster Ceph intégré à Proxmox** 🐙](18-ceph-cluster.md) | 1 h 45 |
+| 19 | [Migration à chaud et Haute Disponibilité](19-migration-ha.md) | 1 h |
+| 20 | [Pulse : une autre UI de supervision](20-pulse-monitoring.md) | 30 min |
+| 21 | [Challenge final 🏁](21-challenge-final.md) | 45 min |
+
+> 🧠 **Pourquoi PBS avant le cluster ?** Les deux TP suivants sont destructifs : la mise
+> en cluster exige de supprimer vos guests, et la chirurgie LVM pour Ceph exige de
+> détruire le pool `local-lvm`. Sans sauvegarde vérifiée, vous perdez trois jours de
+> travail. C'est aussi la seule façon honnête d'apprendre la restauration : en s'en
+> servant pour de vrai.
 
 ---
 
@@ -122,7 +136,7 @@ imposer le choix **EVPN + exit nodes + SNAT** au jour 4.
 ProxmoxFormation/
 ├── README.md                 ← vous êtes ici
 ├── SDN.md                    ← la bible SDN
-├── 00..20-*.md               ← les TP, dans l'ordre
+├── 00..21-*.md               ← les TP, dans l'ordre
 ├── annexes/                  ← cheatsheets, glossaire, dépannage
 └── lab/
     ├── scripts/              ← scripts prêts à l'emploi (bash)
@@ -131,8 +145,8 @@ ProxmoxFormation/
     │   ├── standalone/       ← jour 2 (nœud seul)
     │   └── cluster-evpn/     ← jour 4 (cluster)
     ├── firewall/             ← fichiers .fw d'exemple
-    ├── terraform/            ← 4 stacks Terraform progressives
-    └── ansible/              ← inventaire dynamique + rôles
+    ├── terraform/            ← 3 stacks Terraform progressives
+    └── ansible/              ← inventaire dynamique + 4 rôles
 ```
 
 ---
@@ -149,6 +163,10 @@ bash lab/scripts/00-check-env.sh
 
 Le script vérifie que `ssh`, `git`, `terraform`/`tofu`, `ansible`, `jq`, `curl` et
 `dig` sont présents, et vous indique quoi installer sinon.
+
+⚠️ **Avant l'installation des nœuds, lisez [TP 01 §3.1](01-installation-proxmox.md)** :
+il y a un réglage (`maxvz`) à ne pas rater, faute de quoi le TP 18 (Ceph) demandera une
+heure de chirurgie LVM au lieu de trois commandes.
 
 Puis ouvrez [`00-prerequis-topologie.md`](00-prerequis-topologie.md).
 
@@ -176,6 +194,8 @@ Si vous êtes l'élève 3 : `pve3`, `192.168.50.13`, VMID `300-399`, subnets `10
 | Composant | Version visée | Vérification |
 |---|---|---|
 | Proxmox VE | 9.x (Debian 13) | `pveversion -v` |
+| Système de fichiers des nœuds | **ext4 / LVM-thin** — pas de ZFS | `lvs` |
+| Ceph | Squid (19.2) ou Tentacle (20.x) | `ceph --version` |
 | Proxmox Backup Server | 4.x | `proxmox-backup-manager version` |
 | Debian (VM) | 13 « Trixie » | ISO netinstall + cloud image |
 | Windows Server | 2025 (évaluation 180 j) | ISO Microsoft Evaluation Center |
@@ -183,6 +203,7 @@ Si vous êtes l'élève 3 : `pve3`, `192.168.50.13`, VMID `300-399`, subnets `10
 | Rocky Linux | 10 | GenericCloud (VM) + template LXC |
 | Alpine (LXC) | 3.2x | template `pveam` |
 | Terraform / OpenTofu | ≥ 1.9 | `terraform version` |
+| Serveur NFS | `nfs-kernel-server` sur le poste Ubuntu | `exportfs -v` |
 | Provider Proxmox | `bpg/proxmox` ≥ 0.80 | `terraform providers` |
 | Ansible | ≥ 2.17 (`community.general`) | `ansible --version` |
 

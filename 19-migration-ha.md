@@ -1,9 +1,10 @@
-# TP 17 — Stockage partagé, migration à chaud et Haute Disponibilité ⚡
+# TP 19 — Migration à chaud et Haute Disponibilité ⚡
 
 ⏱️ **1 h** · Jour 4
 
-Objectif : exploiter le cluster. Migrer des machines sans interruption, mettre en place
-la réplication et la HA, et provoquer une panne pour voir le système réagir tout seul.
+Objectif : exploiter le cluster maintenant que Ceph est en place. Migrer des machines
+sans interruption, mettre en place la HA, et provoquer une panne pour voir le système
+réagir tout seul.
 
 📖 Doc : <https://pve.proxmox.com/pve-docs/chapter-ha-manager.html>
 
@@ -12,17 +13,17 @@ la réplication et la HA, et provoquer une panne pour voir le système réagir t
 ## 1. Les trois niveaux de résilience 🧠
 
 ```
-   ① MIGRATION            ② RÉPLICATION           ③ HAUTE DISPONIBILITÉ
-   ─────────────          ──────────────          ──────────────────────
-   Je décide de           Le disque est copié     Le cluster décide seul
-   déplacer une VM        régulièrement sur       de redémarrer une VM
-                          un autre nœud            ailleurs après une panne
+   ① MIGRATION            ② STOCKAGE PARTAGÉ      ③ HAUTE DISPONIBILITÉ
+   ─────────────          ─────────────────       ──────────────────────
+   Je décide de           Le disque n'appartient  Le cluster décide seul
+   déplacer une VM        plus à un seul nœud     de redémarrer une VM
+                          (Ceph, TP 18)            ailleurs après une panne
 
-   Panne planifiée        Perte de données        Panne non planifiée
-   (maintenance)          limitée au RPO          (nœud mort)
+   Panne planifiée        Rend ② et ③ possibles   Panne non planifiée
+   (maintenance)          et rapides               (nœud mort)
 
-   Interruption : 0       Interruption : le       Interruption : le temps
-                          temps de démarrer        du fencing + du boot
+   Interruption : 0       —                        Interruption : le temps
+                                                   du fencing + du boot
                                                    (~2-3 min)
 ```
 
@@ -52,8 +53,8 @@ données critique), c'est à l'application de le gérer, en cluster applicatif.
 | Prérequis | Vérification |
 |---|---|
 | Même type de CPU exposé | `qm config <id> \| grep cpu` → `x86-64-v2-AES`, pas `host` |
-| Stockage partagé, **ou** `--with-local-disks` | `pvesm status` |
-| Le bridge/VNet existe sur la cible | EVPN : ✅ partout (TP 16) |
+| Stockage partagé (`vm-store`/Ceph), **ou** `--with-local-disks` | `pvesm status` |
+| Le bridge/VNet existe sur la cible | EVPN : ✅ partout (TP 17) |
 | Pas de matériel passthrough | pas de PCI, pas d'USB attaché |
 | Le cluster est *quorate* | `pvecm status` |
 
@@ -78,18 +79,25 @@ time qm migrate N60 pve5 --online --with-local-disks
 Observez la tâche : Proxmox copie le disque **puis** la RAM. Sur 20 Go, comptez
 plusieurs minutes.
 
-### Avec stockage partagé
+### Avec Ceph
 
 ```bash
-# Déplacer d'abord le disque sur le NFS
-qm move-disk N60 scsi0 nfs-lab --delete 1
+# Déplacer d'abord le disque sur le pool Ceph
+qm move-disk N60 scsi0 vm-store --delete 1
+qm config N60 | grep scsi0
 
 time qm migrate N60 pve2 --online
 ```
 
-🎯 **Comparez les deux chronos.** Avec le stockage partagé, seule la RAM transite :
-quelques secondes au lieu de plusieurs minutes. C'est exactement pour ça qu'on a monté
-le NFS au TP 14.
+🎯 **Comparez les deux chronos.** Avec un stockage partagé, seule la RAM transite :
+quelques secondes au lieu de plusieurs minutes. Le disque, lui, ne bouge pas d'un
+octet — il n'a jamais appartenu à un nœud en particulier.
+
+```bash
+# La preuve : l'image RBD est inchangée, seule la VM a changé de nœud
+rbd -p vm-store info vm-N60-disk-0
+ceph osd map vm-store vm-N60-disk-0
+```
 
 ### Le test qui prouve
 
@@ -143,33 +151,34 @@ facilement le débit. Sur un réseau partagé, gardez `secure`.
 
 ---
 
-## 5. Réplication ZFS (si vous êtes en ZFS) 🔁
+## 5. Et si on n'avait pas Ceph ? 🔁
 
-Sans stockage partagé, la réplication est la meilleure approximation : le disque est
-copié périodiquement sur un autre nœud, en envoyant seulement les blocs modifiés.
+Question légitime : que fait-on sur un cluster **sans** stockage partagé ?
+
+| Approche | Ce que ça donne | Limite |
+|---|---|---|
+| `--with-local-disks` à chaque migration | ça marche, mais on copie tout le disque | plusieurs minutes, et pas de HA |
+| **Réplication de stockage** | copie périodique du disque sur un autre nœud | ⚠️ exige **ZFS** — hors périmètre de cette formation |
+| Stockage partagé (NFS, iSCSI) | rapide, HA possible | un point de défaillance unique |
+| **Ceph** | rapide, HA, sans SPOF | 3 nœuds minimum, réseau exigeant |
+
+🧠 **La réplication de stockage de Proxmox (`pvesr`) ne fonctionne qu'avec ZFS**, car
+elle repose sur `zfs send/receive` — l'envoi des seuls blocs modifiés depuis le dernier
+snapshot. Nous avons délibérément installé nos nœuds en **ext4 + LVM-thin** : plus
+simple, moins gourmand en RAM, et suffisant puisque Ceph nous donne du vrai stockage
+partagé. Sachez que `pvesr` existe, et pourquoi vous ne pouvez pas l'utiliser ici.
 
 ```bash
-pvesh create /nodes/pve3/replication --id N60-0 --target pve5 --schedule '*/15' --rate 50
-pvesh get /nodes/pve3/replication
-pvesr status
-pvesr run --id N60-0 --verbose
+pvesr status          # vide : aucun job possible sans ZFS
 ```
 
-🌐 `VM → Replication → Add`
+🧠 **RPO (Recovery Point Objective)** : avec de la réplication toutes les 15 minutes, on
+perd au maximum 15 minutes de données à la panne. Avec Ceph, le RPO est **nul** : les
+trois copies sont synchrones. C'est la différence entre « je perds un quart d'heure »
+et « je ne perds rien ».
 
-```
-   pve3                          pve5
-   [VM 360] ──── zfs send ───► [copie]
-     disque       toutes           RPO = 15 min
-                  les 15 min
-```
-
-🧠 **RPO (Recovery Point Objective)** : en cas de perte de `pve3`, vous perdez au
-maximum 15 minutes de données. La migration devient aussi quasi instantanée, puisque
-l'essentiel du disque est déjà de l'autre côté.
-
-⚠️ Réplication ≠ sauvegarde. Une donnée supprimée est répliquée… supprimée. La
-sauvegarde, c'est le TP 18.
+⚠️ **Ni la réplication ni Ceph ne sont des sauvegardes.** Une donnée supprimée est
+répliquée… supprimée. La sauvegarde, c'était le TP 15.
 
 ---
 
@@ -207,12 +216,21 @@ plus caresser son watchdog, qui le redémarre de force.
 
 ### Prérequis
 
-| Prérequis | Pourquoi |
-|---|---|
-| Cluster *quorate* | sinon aucune décision n'est prise |
-| **Stockage partagé** (ou réplication) | la VM doit trouver son disque ailleurs |
-| Watchdog actif | `cat /proc/devices \| grep watchdog` |
-| VNet disponible partout | EVPN : ✅ |
+| Prérequis | Pourquoi | État dans notre lab |
+|---|---|---|
+| Cluster *quorate* | sinon aucune décision n'est prise | ✅ TP 16 |
+| **Stockage partagé** | la VM doit trouver son disque ailleurs | ✅ Ceph, TP 18 |
+| Watchdog actif | `cat /proc/devices \| grep watchdog` | ✅ `softdog` par défaut |
+| VNet disponible partout | sinon la VM redémarre sans réseau | ✅ EVPN, TP 17 |
+
+🚨 **Le disque de la VM déclarée en HA doit être sur `vm-store` (Ceph)**, pas sur
+`local-lvm`. Sinon la HA échouera à la première panne : le disque n'existe nulle part
+ailleurs.
+
+```bash
+qm config N60 | grep -E 'scsi0|virtio0'    # doit pointer sur vm-store
+qm move-disk N60 scsi0 vm-store --delete 1  # si ce n'est pas le cas
+```
 
 ### Configurer
 
@@ -260,7 +278,7 @@ systemctl status pve-ha-crm pve-ha-lrm --no-pager | head -12
 ## 7. Provoquer la panne 🔥
 
 **Expérience collective, avec l'accord du formateur.** Choisissez un nœud qui n'est ni
-`pve1` (exit node primaire) ni celui qui héberge le NFS.
+`pve1` (exit node EVPN primaire et hôte de PBS) ni un monitor Ceph, pour rester simple.
 
 ```bash
 # Terminal 1 — sur un nœud survivant
@@ -323,23 +341,27 @@ d'anti-affinité l'empêche.
 | Besoin | Réponse |
 |---|---|
 | Maintenance planifiée | Migration à chaud, 0 interruption |
-| Nœud qui meurt, VM peu critique | HA, ~2 min d'interruption |
+| Nœud qui meurt, VM peu critique | HA sur Ceph, ~2 min d'interruption |
 | Nœud qui meurt, VM critique | HA **+** clustering applicatif |
-| Protection contre l'erreur humaine | Snapshots + **sauvegardes** (TP 18) |
-| Protection contre le sinistre | Sauvegardes **hors site** (TP 18) |
-| Zéro perte de données | Stockage synchrone (Ceph) ou réplication applicative |
+| Protection contre l'erreur humaine | Snapshots + **sauvegardes** (TP 15) |
+| Protection contre le sinistre | Sauvegardes **hors site** (TP 15) |
+| Zéro perte de données | Stockage synchrone : **Ceph** (TP 18) |
+| Perte de données limitée, sans Ceph | Réplication ZFS — nécessite du ZFS |
 
 🪤 **La HA ne protège de rien d'autre qu'une panne de nœud.** Elle ne vous sauve ni d'un
 `rm -rf`, ni d'un ransomware, ni d'une mise à jour ratée, ni d'un incendie. Ces
-scénarios-là relèvent de la sauvegarde. C'est le TP suivant, et c'est le plus important
-des deux.
+scénarios-là relèvent de la sauvegarde — le TP 15, et c'est le plus important des deux.
+
+Ceph non plus, d'ailleurs : il réplique fidèlement vos suppressions, en trois
+exemplaires et à la vitesse du réseau.
 
 ---
 
 ## ✅ Checklist de validation
 
 - [ ] Une migration à chaud avec disque local fonctionne (et je connais sa durée)
-- [ ] Une migration à chaud sur stockage partagé fonctionne (et c'est bien plus rapide)
+- [ ] Une migration à chaud sur Ceph fonctionne (et c'est bien plus rapide)
+- [ ] Je sais expliquer pourquoi `pvesr` (réplication) est inutilisable sans ZFS
 - [ ] Le ping ne perd aucun paquet pendant la migration
 - [ ] Le réseau de migration est configuré dans `datacenter.cfg`
 - [ ] Un groupe HA existe avec des priorités
@@ -363,4 +385,4 @@ des deux.
    quorum. Que se passe-t-il ? Est-ce le bon comportement ? (Réponse : oui — mieux vaut
    tout figer que corrompre.)
 
-➡️ Suite : [TP 18 — Proxmox Backup Server](18-proxmox-backup-server.md)
+➡️ Suite : [TP 20 — Pulse, une autre UI de supervision](20-pulse-monitoring.md)

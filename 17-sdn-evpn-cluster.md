@@ -1,6 +1,6 @@
-# TP 16 — SDN en cluster : EVPN/VXLAN et limites du LAN plat 🌐
+# TP 17 — SDN en cluster : EVPN/VXLAN et limites du LAN plat 🌐
 
-⏱️ **2 h 15** · Jour 4 · **le TP le plus dense de la formation**
+⏱️ **2 h** · Jour 4 · **le TP le plus dense de la formation**
 
 Objectif : étendre le réseau sur les six nœuds, avec une gateway présente partout, du
 routage entre réseaux, et un accès Internet — le tout sans toucher au switch ni au
@@ -673,4 +673,4 @@ journalctl -u frr -n 50
 5. **Mesurer le coût de l'encapsulation** : `iperf3` entre deux VM du même VNet sur deux
    nœuds, puis entre les deux hôtes en direct sur `vmbr0`. Quel est le surcoût VXLAN ?
 
-➡️ Suite : [TP 17 — Stockage partagé, migration et HA](17-migration-ha.md)
+➡️ Suite : [TP 18 — Cluster Ceph intégré à Proxmox](18-ceph-cluster.md) 🐙

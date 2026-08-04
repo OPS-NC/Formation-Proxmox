@@ -12,8 +12,10 @@ déclenche un **rôle**. Aucun inventaire à maintenir à la main.
   ─────────            ───────              ───────              ────────
   tags = ["web"]  ──►  tag « web »  ──►  groupe proxmox_web  ──►  rôle web
   tags = ["db"]   ──►  tag « db »   ──►  groupe proxmox_db   ──►  rôle db
-  tags = ["nfs"]  ──►  tag « nfs »  ──►  groupe proxmox_nfs  ──►  rôle nfs
 ```
+
+Et le rôle `nfs` s'applique à votre **poste de travail** (TP 14), via un inventaire
+statique — même rôle, autre cible.
 
 ## Installation
 
@@ -84,19 +86,31 @@ dérives de configuration.
 ansible/
 ├── ansible.cfg
 ├── inventory/proxmox.yml       ← ★ l'inventaire dynamique
+├── inventory/local.yml         ← inventaire statique : votre poste (TP 14)
 ├── group_vars/
 │   ├── all.yml                 rebond SSH, variables globales
 │   ├── proxmox_web.yml         variables du groupe « web »
-│   ├── proxmox_db.yml          variables du groupe « db »
-│   └── proxmox_nfs.yml         variables du groupe « nfs »
+│   └── proxmox_db.yml          variables du groupe « db »
 ├── roles/
 │   ├── common/    socle : paquets, motd, SSH durci, node_exporter
 │   ├── web/       nginx + vhost + page générée
 │   ├── db/        PostgreSQL, multi-OS (Debian ET Rocky)
-│   └── nfs/       serveur NFS, disque XFS, exports
-├── site.yml       le playbook principal
+│   └── nfs/       serveur NFS + exports  (disque optionnel)
+├── site.yml       le parc Proxmox
+├── nfs-local.yml  ← le serveur NFS sur votre poste (TP 14)
 └── ping.yml       test de connectivité
 ```
+
+## Le cas particulier du rôle `nfs`
+
+```bash
+# Sur votre poste, pas sur une VM
+ansible-playbook -i inventory/local.yml nfs-local.yml --ask-become-pass
+```
+
+`nfs_manage_disk: false` saute les tâches de partitionnement : on expose simplement un
+répertoire existant. Avec `true` et un `nfs_device`, le même rôle prépare un disque
+dédié. **Un rôle, deux contextes** — c'est le signe qu'il est bien écrit.
 
 ## Secrets
 

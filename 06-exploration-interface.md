@@ -89,17 +89,17 @@ pvesh get /cluster/tasks
 | Onglet | À quoi ça sert | Quand on y touche |
 |---|---|---|
 | **Summary** | Vue globale : nœuds, ressources, quorum | quotidien |
-| **Cluster** | Créer / rejoindre un cluster | TP 15 |
-| **Ceph** | Stockage distribué | hors formation |
+| **Cluster** | Créer / rejoindre un cluster | TP 16 |
+| **Ceph** | Stockage distribué | ⭐ TP 18 |
 | **Options** | Réglages par défaut du datacenter ⬇ | maintenant |
 | **Storage** | Déclaration des stockages | TP 02, 14 |
-| **Backup** | Jobs de sauvegarde planifiés | TP 18 |
-| **Replication** | Réplication ZFS entre nœuds | TP 17 |
+| **Backup** | Jobs de sauvegarde planifiés | TP 15 |
+| **Replication** | Réplication de stockage — **ZFS uniquement, non utilisé ici** | — |
 | **Permissions** | Users, Groups, Pools, Roles, API Tokens, Realms | maintenant |
-| **HA** | Haute disponibilité | TP 17 |
-| **SDN** | Zones, VNets, Subnets, IPAM, DNS, Fabrics | TP 08, 16 |
+| **HA** | Haute disponibilité | TP 19 |
+| **SDN** | Zones, VNets, Subnets, IPAM, DNS, Fabrics | TP 08, 17 |
 | **Firewall** | Règles, groupes, alias, IPSets | TP 09 |
-| **Metric Server** | Export vers InfluxDB / Graphite | TP 19 (bonus) |
+| **Metric Server** | Export vers InfluxDB / Graphite | TP 20 (bonus) |
 | **Notifications** | Cibles et matchers de notification | ⬇ |
 | **Support** | État de l'abonnement | jamais |
 
@@ -113,9 +113,9 @@ pvesh get /cluster/tasks
 | Console Viewer | noVNC / SPICE / xterm.js par défaut | `Default (noVNC)` |
 | Email from address | Expéditeur des notifications | `pve@lab.local` |
 | MAC address prefix | Préfixe MAC des VM | laisser |
-| Migration Settings | Réseau et type de migration | TP 17 |
+| Migration Settings | Réseau et type de migration | TP 19 |
 | **Next Free VMID Range** | Borne l'attribution automatique | ⭐ `N00`–`N99` |
-| Cluster Resource Scheduling | Algorithme de placement HA | TP 17 |
+| Cluster Resource Scheduling | Algorithme de placement HA | TP 19 |
 | Tag Style Override | Couleur des tags ⬇ | ⭐ |
 | U2F / WebAuthn | Second facteur | bonus |
 
@@ -298,7 +298,7 @@ pveum user add monitoring@pve --comment "Compte lecture seule pour Pulse/Zabbix"
 pveum aclmod / --users monitoring@pve --roles SuperviseurLab
 ```
 
-On s'en resservira au **TP 19** pour Pulse.
+On s'en resservira au **TP 20** pour Pulse.
 
 ---
 
@@ -404,9 +404,9 @@ pveum user token remove terraform@pve tf     # ne le faites PAS maintenant
 | **System → Syslog** | `journalctl` en direct |
 | **Updates → Repositories** | Gestion graphique des dépôts (TP 01) |
 | **Firewall** | Règles et options **du nœud** |
-| **Disks** | Disques physiques, SMART, LVM, ZFS, Directory |
+| **Disks** | Disques physiques, SMART, LVM, LVM-Thin, Directory |
 | **Disks → SMART** | ⭐ l'état de santé de vos disques, à surveiller |
-| **Replication** | Jobs de réplication ZFS |
+| **Replication** | Jobs de réplication (ZFS uniquement) |
 | **Subscription** | État de l'abonnement |
 
 🎯 **Exercice** : dans `Notes`, écrivez la fiche de votre nœud en markdown.

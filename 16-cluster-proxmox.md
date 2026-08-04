@@ -1,4 +1,4 @@
-# TP 15 — Mise en cluster des 6 nœuds 🔗
+# TP 16 — Mise en cluster des 6 nœuds 🔗
 
 ⏱️ **1 h 15** · Jour 4
 
@@ -65,30 +65,40 @@ et vos utilisateurs.
 
 ### 2.1 Sauvegarder tout ce qui compte
 
+**Les guests, vers PBS** (TP 15) — c'est la sauvegarde qui compte :
+
 ```bash
 N=3
-mkdir -p /root/pre-cluster
-
-# Configuration SDN + firewall + réseau
-tar czf /root/pre-cluster/conf-$(hostname)-$(date +%F).tgz \
-    /etc/pve/sdn /etc/pve/firewall /etc/pve/nodes/$(hostname)/host.fw \
-    /etc/network/interfaces /etc/hosts 2>/dev/null
-
-# Sauvegarde des guests (au cas où)
-for id in $(qm list | awk 'NR>1{print $1}') ; do
-  vzdump $id --storage local --mode snapshot --compress zstd
-done
-for id in $(pct list | awk 'NR>1{print $1}') ; do
-  vzdump $id --storage local --mode snapshot --compress zstd
-done
-ls -lh /var/lib/vz/dump/
+vzdump --pool eleve$N --storage pbs-lab --mode snapshot --compress zstd
+pvesm list pbs-lab
 ```
 
-Récupérez tout sur votre PC :
+🌐 Sur PBS : `Datastore → lab-store → <namespace> → Verify`.
+🚨 **Ne continuez pas si la vérification n'est pas verte.** Vous allez détruire les
+originaux.
+
+**Les configurations**, qui ne sont pas dans les sauvegardes de guests :
+
+```bash
+mkdir -p /root/pre-cluster
+tar czf /root/pre-cluster/conf-$(hostname)-$(date +%F).tgz \
+    /etc/pve/sdn /etc/pve/firewall /etc/pve/nodes/$(hostname)/host.fw \
+    /etc/pve/storage.cfg /etc/pve/user.cfg \
+    /etc/network/interfaces /etc/hosts 2>/dev/null
+
+cp /etc/pve/qemu-server/*.conf /etc/pve/lxc/*.conf /root/pre-cluster/ 2>/dev/null
+ls -lh /root/pre-cluster/
+```
+
+Récupérez tout sur votre PC — il est dehors, lui :
 
 ```bash
 scp -r root@192.168.50.1N:/root/pre-cluster ~/ProxmoxFormation/backup-conf/
 ```
+
+🧠 **Ce que PBS ne sauvegarde pas** : la configuration du nœud (`/etc/pve`), les
+templates, et les ISO. D'où ce `tar`. Dans une vraie exploitation, `/etc/pve` part dans
+une sauvegarde de configuration séparée, versionnée dans Git si possible.
 
 ### 2.2 Supprimer les guests
 
@@ -98,8 +108,12 @@ for id in $(pct list | awk 'NR>1{print $1}') ; do pct stop $id 2>/dev/null; slee
 qm list ; pct list
 ```
 
-> 💡 Les **templates** aussi doivent partir. On les reconstruira au besoin — le script
-> `build-template.sh` le fait en 5 minutes. C'est justement pourquoi on a industrialisé.
+> 💡 Les **templates** aussi doivent partir. On les reconstruira en 5 minutes avec
+> `build-template.sh` (§7.4). C'est justement pourquoi on a industrialisé au TP 10.
+>
+> ⚠️ **`pve1` fait exception** : il *crée* le cluster, donc il conserve ses guests —
+> dont la VM `pbs-lab`. Ne la détruisez surtout pas, c'est elle qui contient les
+> sauvegardes de toute la salle.
 
 ### 2.3 Nettoyer le SDN local
 
@@ -260,7 +274,7 @@ cat /etc/pve/salut.txt
 
 🧠 **C'est ça, pmxcfs.** Un fichier écrit sur un nœud existe sur les six en quelques
 millisecondes. C'est pourquoi le SDN, le firewall et les configs de VM sont
-automatiquement cohérents partout — et pourquoi le TP 16 va pouvoir déployer un réseau
+automatiquement cohérents partout — et pourquoi le TP 17 va pouvoir déployer un réseau
 sur six nœuds en une seule opération.
 
 ```bash
@@ -352,10 +366,66 @@ log_level_forward: info
 EOF
 ```
 
-### 7.2 Reconstruire les templates
+### 7.2 Re-déclarer les stockages 💾
 
-Un template n'existe que sur son nœud (stockage local). Chacun refait les siens —
-en cinq minutes, parce qu'on les a industrialisés au TP 10 :
+`/etc/pve/storage.cfg` est maintenant **commun aux six nœuds**. Vos déclarations des
+TP 14 et 15 ont disparu avec le reste de `/etc/pve`. On les refait — et cette fois
+une seule déclaration suffit pour tout le cluster.
+
+**PBS** — une seule personne le fait, c'est cluster-wide :
+
+```bash
+pvesm add pbs pbs-lab \
+  --server 192.168.50.41 --datastore lab-store \
+  --username eleve1@pbs --password 'Formation2026!' \
+  --fingerprint '<empreinte relevée au TP 15>' \
+  --content backup
+pvesm status
+```
+
+Vérifiez depuis un autre nœud : `pbs-lab` y apparaît tout seul. 🎩
+
+**Le NFS de chaque poste** — chacun sur son nœud :
+
+```bash
+N=3
+pvesm add nfs nfs-e$N \
+  --server 192.168.50.10$N --export /srv/nfs-e$N \
+  --content images,rootdir,iso,backup,snippets \
+  --options vers=4.2 --nodes pve$N
+```
+
+🪤 **N'oubliez pas `--nodes pveN`.** Sans lui, les six nœuds tenteraient de monter votre
+partage — qui n'autorise que votre IP — et le signaleraient en erreur toutes les
+30 secondes dans l'interface de **tout le monde**.
+
+> 💡 Chaque élève peut aussi ajouter un stockage `pbs-eN` pointant sur **son** namespace
+> (`--namespace eleveN --nodes pveN`), pour ne voir que ses propres sauvegardes.
+
+🧠 Le stockage réellement partagé et redondé arrivera au **TP 18** avec Ceph :
+`vm-store` et `cephfs`, visibles et utilisables depuis les six nœuds.
+
+### 7.3 Restaurer vos guests depuis PBS 🔄
+
+C'est maintenant que le TP 15 paie. Vos machines sont dans PBS, le cluster est monté :
+restaurez-les.
+
+```bash
+N=3
+pvesm list pbs-lab | grep "vm/$((N))"
+qm restore N01 pbs-lab:backup/vm/N01/<timestamp> --storage local-lvm
+qm restore N02 pbs-lab:backup/vm/N02/<timestamp> --storage local-lvm
+pct restore N11 pbs-lab:backup/ct/N11/<timestamp> --storage local-lvm
+qm list ; pct list
+```
+
+⚠️ **Respectez votre plage de VMID** : dans un cluster à six, un VMID en doublon est
+purement refusé. C'est le plan du TP 00 qui vous sauve ici.
+
+### 7.4 Reconstruire les templates
+
+Un template n'existe que sur son nœud (stockage local, non sauvegardé). Chacun refait
+les siens — en cinq minutes, parce qu'on les a industrialisés au TP 10 :
 
 ```bash
 cd /root/formation
@@ -364,27 +434,14 @@ cd /root/formation
 ./lab/scripts/build-template.sh --eleve N --os rocky10    --vmid N92
 ```
 
-🧠 **C'est le retour sur investissement du jour 3.** Sans les scripts et Terraform,
-reconstruire l'environnement après la mise en cluster prendrait la matinée. Là, il
-suffit de rejouer `terraform apply` puis `ansible-playbook site.yml`.
+🧠 **C'est le retour sur investissement du jour 3.** Sans les scripts, Terraform et
+Ansible, reconstruire l'environnement après la mise en cluster prendrait la matinée.
+Là, il suffit de rejouer `terraform apply` puis `ansible-playbook site.yml`.
 
 🌐 Dans `Datacenter → Search`, vous voyez maintenant les templates de tout le monde.
-D'où l'importance du plan de VMID du TP 00.
+D'où l'importance du plan de VMID.
 
-### 7.3 Re-déclarer le stockage NFS
-
-Le stockage `nfs-lab` du TP 14 est maintenant **cluster-wide** : une seule déclaration
-le rend disponible sur les six nœuds.
-
-```bash
-pvesm add nfs nfs-lab --server 192.168.50.40 --export /srv/nfs/images \
-  --content images,rootdir,iso,backup,snippets --options vers=4.2
-pvesm status
-```
-
-Vérifiez depuis un autre nœud : il apparaît tout seul. 🎩
-
-### 7.4 Recréer les pools
+### 7.5 Recréer les pools
 
 ```bash
 for i in 1 2 3 4 5 6; do pvesh create /pools --poolid eleve$i 2>/dev/null; done
@@ -465,8 +522,11 @@ rm -rf /etc/pve/nodes/pve6      # si le répertoire persiste
 - [ ] Un fichier créé dans `/etc/pve` sur un nœud apparaît sur les autres
 - [ ] J'ai vu `/etc/pve` passer en lecture seule pendant la perte de quorum
 - [ ] Le firewall du datacenter autorise Corosync (5405-5412)
+- [ ] Mes guests sont restaurés depuis PBS
 - [ ] Mes templates sont reconstruits
+- [ ] Les stockages `pbs-lab` et `nfs-eN` sont déclarés et actifs
 - [ ] Mon pool `eleveN` existe
+- [ ] La VM `pbs-lab` sur pve1 n'a **pas** été détruite
 - [ ] Je sais dire combien de pannes tolère un cluster de 6, et pourquoi
 
 ---
@@ -486,4 +546,4 @@ rm -rf /etc/pve/nodes/pve6      # si le répertoire persiste
 4. **Panne simulée** : débranchez physiquement le câble réseau d'un nœud pendant
    30 secondes. Observez `pvecm status` et `journalctl -u corosync -f` sur les autres.
 
-➡️ Suite : [TP 16 — SDN en cluster : EVPN/VXLAN](16-sdn-evpn-cluster.md) 🎉
+➡️ Suite : [TP 17 — SDN en cluster : EVPN/VXLAN](17-sdn-evpn-cluster.md) 🎉

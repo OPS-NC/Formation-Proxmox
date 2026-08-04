@@ -1,6 +1,10 @@
 ---
-nfs_device: /dev/sdb
+# Par défaut : on expose un répertoire existant, sans toucher au disque.
+nfs_manage_disk: false
+nfs_device: /dev/sdb            # utilisé seulement si nfs_manage_disk: true
+
 nfs_root: /srv/nfs
+nfs_exports_file: /etc/exports.d/proxmox-lab.exports
 nfs_allowed_network: "192.168.50.0/24"
 nfs_exports:
   - images

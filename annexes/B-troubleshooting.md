@@ -68,7 +68,7 @@ grep -Ec '(vmx|svm)' /proc/cpuinfo      # doit être > 0
 
 ```bash
 pvesm status
-lvs ; zfs list
+lvs
 cat /etc/pve/qemu-server/<vmid>.conf
 ```
 
@@ -93,12 +93,64 @@ lvs -o +data_percent,metadata_percent
 🚨 Au-delà de 95 %, les VM se corrompent. Étendez le pool ou supprimez des snapshots
 **immédiatement**. Surveillez ce chiffre : c'est la panne n°1 en production.
 
+### `lvreduce` refuse de réduire le thin pool 🪤
+
+```
+Thin pool volumes pve/data_tdata cannot be reduced in size yet.
+```
+
+**Ce n'est pas contournable proprement.** LVM ne sait pas réduire un thin pool : les
+blocs ne sont pas alloués linéairement, et dm-thin n'offre aucun mécanisme de
+défragmentation. La seule voie :
+
+```bash
+# 1. sauvegarder vers PBS et VÉRIFIER   2. détruire les guests
+# 3. lvremove -y pve/data               4. lvcreate --type thin-pool -n data -L <plus petit> pve
+# 5. lvcreate -n ceph-osd -L <reste> pve  6. restaurer
+bash lab/scripts/ceph-prep-lvm.sh --check     # le script vous guide
+```
+
+👉 Détails complets : [TP 18 §5](../18-ceph-cluster.md).
+
+### Le VG est plein et je n'ai plus de place pour Ceph
+
+```bash
+vgs -o vg_name,vg_size,vg_free --units g
+lsblk        # y a-t-il un second disque libre ? → pveceph osd create /dev/sdb
+```
+
+Anticipez à l'installation : réduire `maxvz` laisse de l'espace non alloué
+([TP 01 §3.1](../01-installation-proxmox.md)).
+
 ### Le disque ne rétrécit pas après suppression
 
 ```bash
 qm set <vmid> --scsi0 <storage>:vm-X-disk-0,discard=on,ssd=1
 # dans la VM :
 fstrim -av
+```
+
+### NFS : `mount` échoue depuis le nœud
+
+| Erreur | Piste |
+|---|---|
+| `Connection refused` | `systemctl status nfs-server` sur le poste Ubuntu |
+| `access denied by server` | l'IP du nœud n'est pas dans `/etc/exports.d/*` |
+| `No route to host` | `ufw` sur le poste, ou `cluster.fw` sur le nœud |
+| `Permission denied` en écriture | `no_root_squash` absent, ou droits sur `/srv/nfs-eN` |
+| `Protocol not supported` | v3 désactivée : forcez `-o vers=4.2` |
+
+```bash
+# côté poste Ubuntu
+sudo exportfs -v ; ss -tlnp | grep 2049 ; sudo journalctl -u nfs-server -n 30
+```
+
+### Le stockage NFS est signalé en erreur sur les autres nœuds
+
+L'export n'autorise qu'une IP. Restreignez la déclaration :
+
+```bash
+pvesm set nfs-e3 --nodes pve3
 ```
 
 ---
@@ -340,6 +392,98 @@ journalctl -u corosync | grep -i -E 'token|retransmit'
 
 ---
 
+## 🐙 Ceph
+
+### L'interface ne propose aucun disque pour créer un OSD
+
+C'est normal : elle ne liste que les **disques entiers non utilisés**. Un volume LVM
+n'en est pas un. Passez en CLI :
+
+```bash
+pveceph osd create /dev/pve/ceph-osd
+# ou, si pveceph refuse :
+ceph auth get client.bootstrap-osd -o /var/lib/ceph/bootstrap-osd/ceph.keyring
+ceph-volume lvm create --data pve/ceph-osd --bluestore
+```
+
+### `ceph-volume` : `unable to find keyring`
+
+```bash
+mkdir -p /var/lib/ceph/bootstrap-osd
+ceph auth get client.bootstrap-osd -o /var/lib/ceph/bootstrap-osd/ceph.keyring
+chown -R ceph:ceph /var/lib/ceph/bootstrap-osd
+```
+
+### `Device is in use` / restes d'un usage précédent
+
+```bash
+ceph-volume lvm zap /dev/pve/ceph-osd --destroy
+wipefs -a /dev/pve/ceph-osd
+```
+
+### L'OSD est créé mais reste `down`
+
+```bash
+ceph-volume lvm list
+ceph-volume lvm activate --all
+systemctl status ceph-osd@<id>
+journalctl -u ceph-osd@<id> -n 50 --no-pager
+chown -R ceph:ceph /var/lib/ceph/osd/ceph-<id>
+```
+
+### `MON_CLOCK_SKEW`
+
+Ceph est **très** sensible à la dérive d'horloge.
+
+```bash
+for i in 11 12 13 14 15 16; do ssh root@192.168.50.$i 'date -Is; timedatectl | grep synchro'; done
+```
+
+### `HEALTH_WARN` qui ne se résorbe pas
+
+```bash
+ceph health detail
+ceph -w                        # suivre la reconstruction
+ceph osd tree                  # un OSD down ?
+ceph df                        # un OSD nearfull ?
+```
+
+### 🚨 `OSD_NEARFULL` / `OSD_FULL`
+
+À **85 %** Ceph avertit, à **95 %** il **arrête toutes les écritures du cluster**.
+
+```bash
+ceph osd df                    # identifier l'OSD le plus rempli
+ceph df
+# Gagner du temps en urgence (à ne pas laisser en place) :
+ceph osd set-nearfull-ratio 0.87
+# La vraie solution : supprimer des données, ou ajouter un OSD
+```
+
+### Le cluster Proxmox devient instable quand Ceph reconstruit
+
+C'est **LA** limite d'un réseau partagé. Bridez, tout de suite :
+
+```bash
+ceph config set osd osd_max_backfills 1
+ceph config set osd osd_recovery_max_active 2
+ceph config set osd osd_recovery_op_priority 1
+ceph config set osd osd_recovery_sleep 0.1
+ceph osd set noout             # pendant une intervention
+```
+
+En production : **un réseau dédié pour Ceph**, un autre pour Corosync. Ce n'est pas
+négociable.
+
+### Repartir de zéro
+
+```bash
+pveceph purge --crash --logs
+ceph-volume lvm zap /dev/pve/ceph-osd --destroy
+```
+
+---
+
 ## 🚚 Migration et HA
 
 | Erreur | Cause | Solution |
@@ -348,7 +492,8 @@ journalctl -u corosync | grep -i -E 'token|retransmit'
 | « storage not available on node » | stockage local | `--with-local-disks` ou stockage partagé |
 | « bridge does not exist » | VNet absent sur la cible | vérifier la liste `nodes` de la zone |
 | « can't migrate VM with local device » | passthrough PCI/USB | détacher le matériel |
-| HA ne redémarre pas la VM | pas de stockage partagé | NFS/Ceph, ou réplication |
+| HA ne redémarre pas la VM | disque sur `local-lvm` | `qm move-disk <id> scsi0 vm-store --delete 1` |
+| `pvesr` ne veut créer aucun job | la réplication exige **ZFS** | utilisez Ceph (TP 18) |
 | VM bloquée en « locked » | tâche interrompue | `qm unlock <vmid>` |
 
 ---
@@ -388,7 +533,8 @@ export TF_LOG=DEBUG ; terraform apply 2>&1 | tee /tmp/tf.log ; unset TF_LOG
 
 | Erreur | Solution |
 |---|---|
-| `Invalid data from server` (inventaire) | `pip install proxmoxer` / `apt install python3-proxmoxer` |
+| `Invalid data from server` (inventaire) | `apt install python3-proxmoxer` |
+| Le rôle `nfs` tente de partitionner un disque | mettez `nfs_manage_disk: false` (TP 14) |
 | Aucun hôte dans l'inventaire | Vérifiez le token, `validate_certs: false`, et videz le cache |
 | `ansible_host` absent | L'agent QEMU ne tourne pas dans la VM |
 | `UNREACHABLE` | Le rebond SSH (`ProxyCommand`) n'est pas configuré |

@@ -62,6 +62,19 @@ else
 fi
 check_cmd remote-viewer virt-viewer optionnel
 
+titre "Serveur NFS (TP 14)"
+if dpkg -l nfs-kernel-server 2>/dev/null | grep -q '^ii'; then
+  ok "nfs-kernel-server installé"
+  if systemctl is-active --quiet nfs-server; then ok "nfs-server actif"; else warn "nfs-server inactif"; fi
+  if [ -n "$(ls /etc/exports.d/*.exports 2>/dev/null)" ] || grep -q '^/' /etc/exports 2>/dev/null; then
+    ok "au moins un export déclaré :"; sudo -n exportfs -v 2>/dev/null | sed 's/^/         /' | head -6
+  else
+    warn "aucun export déclaré (normal avant le TP 14)"
+  fi
+else
+  warn "nfs-kernel-server absent — sudo apt install -y nfs-kernel-server  (TP 14)"
+fi
+
 titre "Clé SSH"
 if [ -f "$HOME/.ssh/id_ed25519.pub" ]; then
   ok "clé ed25519 : $(cut -d' ' -f3 < "$HOME/.ssh/id_ed25519.pub")"
