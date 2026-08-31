@@ -28,7 +28,10 @@ resource "proxmox_virtual_environment_vm" "parc" {
 
   clone {
     vm_id = local.templates[each.value.template]
-    full  = false
+    # 🪤 linked clone = non migrable entre nœuds sur stockage local.
+    #    Ces VM restent sur leur nœud jusqu'au TP 19, où on les déplacera
+    #    d'abord sur Ceph (qm move-disk) avant toute migration.
+    full = false
   }
 
   agent {

@@ -8,6 +8,7 @@ routeur de la salle.
 
 📖 Doc : <https://pve.proxmox.com/pve-docs/chapter-pvesdn.html>
 📖 Référence maison : [`SDN.md`](SDN.md) — **relisez les §2.4, §2.5, §7 et §11 avant de commencer**
+   (le récapitulatif « ce qu'une VM peut faire, et depuis quel nœud » est en fin de §7)
 
 ---
 
@@ -373,7 +374,54 @@ iptables -t nat -S | grep -i 10.60          # ou : nft list ruleset | grep -A5 m
 Vous devez trouver les règles SNAT pour `10.60.10.0/24` et `10.60.20.0/24` —
 mais **pas** pour `10.60.30.0/24`.
 
-### 7.6 Le script de diagnostic
+### 7.6 Sur un nœud qui n'est **pas** exit node ⭐
+
+C'est le contrôle le plus instructif du TP, et celui que personne ne pense à faire.
+
+```bash
+# Sur pve3, pve4, pve5 ou pve6 — surtout PAS sur pve1/pve2
+vtysh -c "show evpn vni detail" | head -30           # le VNI L2 + le L3VNI du VRF
+vtysh -c "show bgp l2vpn evpn route type macip" | head -20   # type-2 : MAC des VM distantes
+vtysh -c "show bgp l2vpn evpn route type prefix" | head -20  # type-5 : les /24 + la default
+ip -4 route show vrf vrf_zevpn
+bridge fdb show | grep vxlan | head
+```
+
+Ce que vous devez voir dans `ip -4 route show vrf vrf_zevpn` :
+
+```
+default nhid 21 via 10.60.10.1 dev vrfbr_zevpn proto bgp metric 20
+10.60.10.0/24 dev vprod proto kernel scope link src 10.60.10.1
+10.60.20.0/24 dev vpub  proto kernel scope link src 10.60.20.1
+```
+
+🎯 **Cette ligne `default … proto bgp` est la preuve** que votre nœud, qui n'est pas
+exit node, sait quand même router vers Internet : il a appris la route par défaut de
+`pve1` en BGP EVPN. **Vos VM sortiront**, sans être hébergées sur un exit node. C'est
+toute la raison d'être de l'option `exitnodes`.
+
+Et maintenant le contrôle qui déroute :
+
+```bash
+iptables -t nat -S POSTROUTING | grep 10.60      # → AUCUNE SORTIE
+```
+
+🪤 **C'est normal, et ce n'est pas une panne.** Le code de Proxmox
+(`PVE/Network/SDN/Zones/EvpnPlugin.pm`) ne pose la règle SNAT **que si le nœud courant
+figure dans les exit nodes**. Sur pve4, il n'y a rien à voir : le NAT se fait sur
+`pve1`, après décapsulation du VXLAN. Beaucoup de gens perdent une heure ici.
+
+```
+   VM sur pve4 ──VXLAN──► pve1 ──décapsule──► sort du VRF ──SNAT──► vmbr0 ──► ☁
+       │                    │
+   pas de SNAT ici    le SNAT est ICI, et seulement ici
+```
+
+📌 **Le pendant côté hôte** : depuis le shell de pve4, `ping 10.60.10.<vm>` échoue si
+`exitnodes-local-routing` n'est pas activé — l'hôte n'a pas de route vers le VRF. Ne
+concluez pas trop vite : **testez depuis une VM, pas depuis l'hyperviseur.**
+
+### 7.7 Le script de diagnostic
 
 ```bash
 bash /root/formation/lab/scripts/evpn-diag.sh
@@ -389,16 +437,25 @@ Chaque élève déploie **sur son nœud**, dans les VNets partagés.
 
 ```bash
 N=3
-qm clone N90 N60 --name evpn-prod-e$N --pool eleve$N
-qm set N60 --net0 virtio,bridge=vprod,firewall=1,mtu=1 --ipconfig0 ip=dhcp
-qm set N60 --tags "evpn,prod,eleve$N"
-qm start N60
+qm clone ${N}90 ${N}60 --name evpn-prod-e$N --pool eleve$N --full 1
+qm set ${N}60 --net0 virtio,bridge=vprod,firewall=1,mtu=1 --ipconfig0 ip=dhcp
+qm set ${N}60 --tags "evpn,prod,eleve$N"
+qm start ${N}60
 
-qm clone N91 N61 --name evpn-pub-e$N --pool eleve$N
-qm set N61 --net0 virtio,bridge=vpub,firewall=1,mtu=1 --ipconfig0 ip=dhcp
-qm set N61 --tags "evpn,pub,eleve$N"
-qm start N61
+qm clone ${N}91 ${N}61 --name evpn-pub-e$N --pool eleve$N --full 1
+qm set ${N}61 --net0 virtio,bridge=vpub,firewall=1,mtu=1 --ipconfig0 ip=dhcp
+qm set ${N}61 --tags "evpn,pub,eleve$N"
+qm start ${N}61
 ```
+
+🪤 **`--full 1` n'est pas une coquetterie ici.** Sur un template, `qm clone` fait un
+**clone lié** par défaut. Or un clone lié sur stockage local **ne peut pas migrer** :
+Proxmox refuse avec `can't migrate 'local-lvm:base-390-disk-0/vm-360-disk-0' as it's
+a clone of 'base-390-disk-0'` — l'image de base n'existe pas sur le nœud cible.
+Comme on va justement démontrer la migration au §9, on paie les 30 secondes de copie.
+
+Le tableau du [TP 10 §5](10-cloudinit-cli-clonage.md) le disait déjà : *« ❌ pas de
+migration vers un autre stockage »*. C'est le moment où ça se paie.
 
 ⚠️ **`mtu=1` n'est pas optionnel ici.** C'est ce qui fait hériter le MTU 1450 du VNet.
 Oubliez-le et vous passerez vingt minutes à chercher pourquoi `apt` gèle.
@@ -424,8 +481,8 @@ Depuis votre VM `evpn-prod-eN` :
 | 2 | **VM d'un autre élève, autre nœud** | `ping -c2 10.60.10.<autre>` | ✅ 🎯 |
 | 3 | **Routage inter-VNet** | `ping -c2 10.60.20.<vpub>` | ✅ 🎯 |
 | 4 | Internet | `ping -c2 9.9.9.9` | ✅ |
-| 5 | **MTU** | `ping -M do -s 1422 -c2 9.9.9.9` | ✅ |
-| 6 | MTU trop grand | `ping -M do -s 1473 -c2 9.9.9.9` | ❌ *frag needed* |
+| 5 | **MTU — juste en dessous** | `ping -M do -s 1422 -c2 9.9.9.9` | ✅ |
+| 6 | **MTU — juste au-dessus** | `ping -M do -s 1423 -c2 9.9.9.9` | ❌ *frag needed* 🎯 |
 | 7 | **Gros transfert** | `curl -o /dev/null https://cdimage.debian.org/.../SHA256SUMS` | ✅ |
 | 8 | `apt update` complet | `sudo apt update && sudo apt install -y htop` | ✅ |
 
@@ -436,6 +493,20 @@ Depuis une VM de `vdb` :
 | 9 | `ping 10.60.30.1` | ✅ |
 | 10 | `ping 10.60.10.<prod>` | ✅ routage inter-VNet |
 | 11 | **`ping 9.9.9.9`** | ❌ **pas de SNAT, c'est voulu** 🎯 |
+
+
+🧠 **Pourquoi ces deux tailles ?** `ping -s N` fixe la charge utile ; il faut ajouter
+**28 octets** (20 IP + 8 ICMP) pour obtenir la taille du paquet :
+
+| `-s` | Paquet | Verdict avec MTU 1450 | Ce que ça prouve |
+|---|---|---|---|
+| `1422` | 1450 | ✅ passe | le chemin accepte bien 1450 |
+| `1423` | 1451 | ❌ *frag needed* | 🎯 **la limite est exactement à 1450** |
+| `1472` | 1500 | ❌ | la limite est sous 1500 (peu informatif) |
+| `1473` | 1501 | ❌ | échouerait même sans VXLAN — **ne prouve rien** |
+
+⚠️ Le couple `1422 / 1423` est le seul qui **encadre** le MTU de la zone. `1473` est
+un test paresseux : il échoue sur n'importe quel réseau Ethernet standard.
 
 🧠 **Les tests 5 à 8 sont les plus importants.** Le ping seul ne prouve rien : il tient
 dans 64 octets. C'est le transfert massif qui révèle un problème de MTU.
@@ -474,14 +545,14 @@ ping 10.60.10.<votre-vm>
 Pendant ce temps, sur le nœud :
 
 ```bash
-qm migrate N60 pve5 --online --with-local-disks
+qm migrate ${N}60 pve5 --online --with-local-disks
 ```
 
 Observez le ping. ✅ **Zéro ou un paquet perdu.** La VM a changé de machine physique,
 et son réseau n'a pas bougé d'un millimètre.
 
 ```bash
-qm config N60 | grep -E 'net0'
+qm config ${N}60 | grep -E 'net0'
 ssh -J root@192.168.50.11 eleve@10.60.10.<ip> 'ip -br a; ip route; arp -n'
 ```
 
@@ -516,9 +587,26 @@ FORWARD ACCEPT -source +sdn/vdb-all -dest +sdn/vdb-all -log nolog
 FORWARD ACCEPT -source +sdn/vprod-all -dest +sdn/vdb-all -p tcp -dport 5432 -log nolog
 FORWARD ACCEPT -source +sdn/vprod-all -dest +sdn/vdb-all -p tcp -dport 3306 -log nolog
 
+# Les bases initient vers la prod : supervision, sauvegarde, diagnostic
+# ⚠ SANS CES LIGNES, le test #10 du §8.2 échoue : policy_forward est en DROP et
+#   aucune règle n'a « vdb » pour SOURCE. Le conntrack ne couvre que le paquet
+#   RETOUR d'une connexion déjà acceptée, jamais le sens initial.
+FORWARD ACCEPT -source +sdn/vdb-all -dest +sdn/vprod-all -p icmp -log nolog
+FORWARD ACCEPT -source +sdn/vdb-all -dest +sdn/vprod-all -p tcp -dport 22 -log info
+
 # 🚨 La DMZ publique n'approche pas des bases
 FORWARD DROP -source +sdn/vpub-all -dest +sdn/vdb-all -log warning
 ```
+
+🧠 **Relisez le test #10 du §8.2** (« depuis `vdb` : `ping 10.60.10.<prod>` ✅ »).
+Sans les deux lignes `-source +sdn/vdb-all`, il devient ❌ dès que vous posez ce
+fichier. C'est le piège déjà rencontré aux TP 09 et 12 : **une règle FORWARD est
+unidirectionnelle**, et le firewall du VNet **source** compte autant que celui du
+VNet destination.
+
+🪤 **Un VNet sans fichier `.fw` n'est pas filtré du tout.** `vprod` n'a pas de règles
+ici : tout y passe, donc rien à ajouter de son côté. Posez-vous la question à chaque
+fois — *« ce VNet est-il permissif par choix, ou par oubli ? »*
 
 `/etc/pve/sdn/firewall/vpub.fw` :
 
@@ -613,7 +701,7 @@ est parfaite.** C'est ce qui distingue un ingénieur d'un exécutant.
 |---|---|---|
 | Sessions BGP en `Active` | `frr-pythontools` absent, port 179 filtré | `vtysh -c "show bgp summary"` ; `dpkg -l frr-pythontools` |
 | BGP OK mais VM isolées | UDP 4789 bloqué | `tcpdump -ni vmbr0 udp port 4789` sur deux nœuds |
-| Ping OK, SSH gèle, `apt` bloqué | **MTU** | `ping -M do -s 1422` ✅ / `-s 1473` ❌ ; `mtu=1` sur la VM |
+| Ping OK, SSH gèle, `apt` bloqué | **MTU** | `ping -M do -s 1422` ✅ / `-s 1423` ❌ ; `mtu=1` sur la VM |
 | Pas d'Internet du tout | SNAT ou exit node | Sur l'exit node : `iptables -t nat -S \| grep 10.60` |
 | Internet intermittent | `exitnodes-primary` non défini | `cat /etc/pve/sdn/zones.cfg` |
 | L'hôte ne ping pas ses VM | `exitnodes-local-routing` | l'activer sur la zone |
@@ -645,10 +733,12 @@ journalctl -u frr -n 50
 - [ ] Deux VM sur deux **nœuds différents**, même VNet, se pingent 🎯
 - [ ] Le routage inter-VNet fonctionne (`vprod` ↔ `vpub`)
 - [ ] Les VM de `vprod`/`vpub` accèdent à Internet
-- [ ] Les VM de `vdb` **n'ont pas** Internet, mais joignent les autres VNets
-- [ ] `ping -M do -s 1422` passe, `-s 1473` échoue proprement
+- [ ] Les VM de `vdb` **n'ont pas** Internet, mais joignent `vprod` (règles dans les DEUX sens)
+- [ ] `ping -M do -s 1422` passe, `-s 1423` échoue proprement (la limite est bien à 1450)
 - [ ] Un `apt install` complet réussit dans une VM (le vrai test du MTU)
 - [ ] Le trafic sortant transite bien par `pve1` (`tcpdump` à l'appui)
+- [ ] Sur un nœud **non-exit**, `ip -4 route show vrf vrf_zevpn` montre une `default … proto bgp`
+- [ ] Sur ce même nœud, `iptables -t nat -S POSTROUTING | grep 10.60` est **vide**, et je sais pourquoi
 - [ ] Une migration à chaud ne coûte **aucun** paquet perdu
 - [ ] Les règles de firewall VNet s'appliquent sur les 6 nœuds
 - [ ] Je sais expliquer pourquoi `exitnodes-primary` est obligatoire avec SNAT

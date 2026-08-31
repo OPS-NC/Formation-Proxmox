@@ -137,6 +137,28 @@ Et pour l'infrastructure commune, hébergée sur **pve1** : `901` = PBS, `902` =
 🧠 **Pourquoi c'est critique ?** Un VMID est **unique dans tout le cluster**. Au jour 4,
 si deux élèves ont une VM 100, la mise en cluster échoue. On anticipe dès maintenant.
 
+### 📌 La convention de notation dans les TP
+
+Dans les **tableaux et le texte**, on écrit `N01`, `N90`, `pveN`, `10.N.10.0/24` :
+le `N` est un **trou à remplir** par votre numéro.
+
+Dans les **blocs de commandes**, c'est une vraie variable shell. Chaque bloc
+commence donc par la définir, et les VMID s'écrivent `${N}01` :
+
+```bash
+N=3                       # ⚠ VOTRE numéro d'élève
+qm set ${N}01 --tags "debian,interne"
+pvesh create /cluster/sdn/vnets/vint/subnets --subnet 10.$N.10.0/24 ...
+```
+
+🪤 **`qm set N01` échoue** : `N01` n'est pas un nombre. Si vous copiez-collez un bloc
+et que Proxmox répond `unable to parse VMID` ou `400 Parameter verification failed`,
+c'est presque toujours un `${N}` oublié — ou un `N=` non défini dans le shell courant.
+
+```bash
+echo $N        # le réflexe avant de coller quoi que ce soit
+```
+
 ---
 
 ## 6. Nommage
@@ -164,8 +186,15 @@ sudo apt install -y git curl jq dnsutils sshpass net-tools \
                     ca-certificates gnupg software-properties-common \
                     ansible python3-proxmoxer python3-requests \
                     freerdp3-x11 virt-viewer
-ansible-galaxy collection install community.general ansible.posix
+ansible-galaxy collection install community.general ansible.posix \
+                                 community.proxmox community.postgresql
 ```
+
+> ⚠️ **`community.proxmox` n'est pas optionnelle.** Le plugin d'inventaire
+> `community.general.proxmox` est déprécié : il n'est plus qu'une redirection
+> vers `community.proxmox.proxmox` (suppression annoncée en `community.general`
+> 15.0.0), et la redirection exige que la collection cible soit installée.
+> Sans elle, l'inventaire du TP 13 sort vide.
 
 > `freerdp3-x11` et `virt-viewer` servent au TP 04 (Windows en RDP et SPICE).
 > Selon la version d'Ubuntu, le paquet peut s'appeler `freerdp2-x11`.
@@ -261,7 +290,7 @@ cette page.
 - [ ] Je connais mon numéro d'élève **N**
 - [ ] Je sais quelles IP, quels VMID et quels subnets sont les miens
 - [ ] `terraform version` (ou `tofu version`) répond sur mon PC
-- [ ] `ansible --version` répond, et `community.general` est installée
+- [ ] `ansible --version` répond, et `community.proxmox` est installée
 - [ ] `cat ~/.ssh/id_ed25519.pub` affiche ma clé
 - [ ] Le dépôt est cloné dans `~/ProxmoxFormation`
 - [ ] `lab/scripts/00-check-env.sh` ne signale aucune erreur

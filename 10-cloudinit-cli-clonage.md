@@ -42,8 +42,8 @@ cloud-init, régénéré à chaque modification.
 ## 2. Fabriquer le template Debian 13 🐧
 
 ```bash
-N=<votre numéro>
-VMID=N90                       # ex. 390
+N=3                               # ⚠ VOTRE numéro d'élève
+VMID=${N}90                       # ex. 390
 IMG=/var/lib/vz/template/cloudimg/debian-13-genericcloud-amd64.qcow2
 ```
 
@@ -64,10 +64,29 @@ virt-customize -a /tmp/debian13-work.qcow2 \
   --truncate /etc/machine-id
 ```
 
-🧠 **`--truncate /etc/machine-id`** est essentiel : sans ça, tous les clones partagent le
-même `machine-id`, donc **la même adresse MAC DHCP**, donc la même IP. Symptôme
-déroutant : deux VM différentes obtiennent la même adresse. Vous venez d'éviter deux
-heures de debug.
+🧠 **`--truncate /etc/machine-id`** est essentiel, mais pas pour la raison qu'on croit.
+
+Le `machine-id` **ne détermine pas l'adresse MAC** — celle-ci est tirée au sort par
+Proxmox, une par carte, à la création de la VM. Ce qu'il détermine, c'est le
+**DUID/IAID** que `systemd-networkd` envoie comme *identifiant client* dans ses
+requêtes DHCP (RFC 3315).
+
+Or un serveur DHCP moderne indexe ses baux sur cet identifiant **avant** de regarder
+la MAC. Deux clones aux MAC différentes mais au `machine-id` identique demandent donc
+le **même bail** :
+
+```
+   clone A   MAC aa:bb:...:01   DUID dérivé de machine-id XYZ  ─┐
+                                                                ├─► même bail → 10.3.10.100
+   clone B   MAC aa:bb:...:02   DUID dérivé de machine-id XYZ  ─┘
+```
+
+Symptôme déroutant : deux VM aux MAC bien distinctes obtiennent la même adresse, et
+`ip -br a` sur l'hôte n'explique rien. Un `/etc/machine-id` vide force systemd à en
+régénérer un au premier boot, donc un DUID unique par clone.
+
+🎁 Le même mécanisme explique les IP dupliquées après un `dd` de VM, ou après un clone
+de conteneur : cherchez toujours `machine-id` avant de soupçonner le DHCP.
 
 ### 2.2 Créer la VM support
 
@@ -126,9 +145,22 @@ qm set $VMID \
   --ipconfig0 ip=dhcp
 ```
 
-🪤 `--cipassword` attend un **hash**, pas un mot de passe en clair. Sans `openssl
-passwd -6`, cloud-init écrit le hash littéral dans `/etc/shadow` et personne ne peut
-se connecter.
+🧠 **Pourquoi `openssl passwd -6` ?** Proxmox recopie la valeur de `--cipassword`
+telle quelle dans le champ `password:` du user-data, et cloud-init accepte **aussi
+bien un mot de passe en clair qu'un hash** — les deux fonctionnent. Passer un hash
+n'est donc pas obligatoire, c'est un **choix d'hygiène** :
+
+```bash
+qm config <vmid> | grep cipassword     # en clair : visible par tout PVEAuditor
+qm cloudinit dump <vmid> user          # et recopié tel quel dans le user-data
+```
+
+Le mot de passe en clair traîne dans `/etc/pve/qemu-server/<vmid>.conf`, donc dans
+les sauvegardes de configuration, et dans le state Terraform si vous le pilotez
+depuis là. Le hash, lui, ne se rejoue pas ailleurs.
+
+🪤 En revanche, **`-6` (SHA-512) n'est pas négociable** : un hash `-1` (MD5) ou
+`-5` (SHA-256) sera accepté par certaines distributions et refusé par d'autres.
 
 ### 2.6 Agrandir le disque et sceller
 
@@ -150,6 +182,7 @@ qm config $VMID
 Tout ceci est industrialisé dans `lab/scripts/build-template.sh`.
 
 ```bash
+N=3     # ⚠ VOTRE numéro d'élève
 # Sur le nœud Proxmox
 cd /root
 git clone <url-du-depot> formation
@@ -158,9 +191,9 @@ cd formation
 ./lab/scripts/build-template.sh --help
 
 # Les trois templates de la formation, d'un coup
-./lab/scripts/build-template.sh --eleve N --os debian13 --vmid N90
-./lab/scripts/build-template.sh --eleve N --os ubuntu2604 --vmid N91
-./lab/scripts/build-template.sh --eleve N --os rocky10 --vmid N92
+./lab/scripts/build-template.sh --eleve $N --os debian13 --vmid ${N}90
+./lab/scripts/build-template.sh --eleve $N --os ubuntu2604 --vmid ${N}91
+./lab/scripts/build-template.sh --eleve $N --os rocky10 --vmid ${N}92
 
 qm list | grep -i tpl
 ```
@@ -207,29 +240,32 @@ Commandes d'installation de l'agent :
 ## 5. Cloner et tester ⚡
 
 ```bash
+N=3     # ⚠ VOTRE numéro d'élève
 # Clone lié (linked clone) : instantané, ne duplique pas le disque
-qm clone N90 N20 --name app01-e$N --pool eleve$N
+qm clone ${N}90 ${N}20 --name app01-e$N --pool eleve$N
 
 # On le branche dans la zone interne créée au TP 08, en IP statique cette fois
-qm set N20 --net0 virtio,bridge=vint,firewall=1,mtu=1
-qm set N20 --ipconfig0 ip=10.$N.10.50/24,gw=10.$N.10.1
-qm set N20 --nameserver 10.$N.10.1 --searchdomain lab.local
-qm set N20 --ciuser eleve --sshkeys /root/.ssh/authorized_keys
-qm set N20 --tags "debian,interne,app"
+qm set ${N}20 --net0 virtio,bridge=vint,firewall=1,mtu=1
+qm set ${N}20 --ipconfig0 ip=10.$N.10.50/24,gw=10.$N.10.1
+qm set ${N}20 --nameserver 10.$N.10.1 --searchdomain lab.local
+qm set ${N}20 --ciuser eleve --sshkeys /root/.ssh/authorized_keys
+qm set ${N}20 --tags "debian,interne,app"
 
-time qm start N20
+time qm start ${N}20
 ```
 
 Suivez le boot en direct sur la console série :
 
 ```bash
-qm terminal N20        # Ctrl+O pour sortir
+N=3     # ⚠ VOTRE numéro d'élève
+qm terminal ${N}20        # Ctrl+O pour sortir
 ```
 
 Puis :
 
 ```bash
-qm agent N20 network-get-interfaces | jq -r '.[]|select(.name=="eth0")|."ip-addresses"[]."ip-address"'
+N=3     # ⚠ VOTRE numéro d'élève
+qm agent ${N}20 network-get-interfaces | jq -r '.[]|select(.name=="eth0")|."ip-addresses"[]."ip-address"'
 # depuis srv01 (déjà dans la zone interne) ou depuis le nœud
 ssh eleve@10.$N.10.50 'hostname; cloud-init status --long; df -h /'
 ```
@@ -255,6 +291,16 @@ ssh eleve@10.$N.10.50 'hostname; cloud-init status --long; df -h /'
 🪤 Un **linked clone** ne fonctionne que sur les stockages qui supportent le COW
 (LVM-thin, ZFS, qcow2 sur `dir`). Sur du LVM épais ou de l'iSCSI : full clone obligatoire.
 
+🚨 **Et surtout : un clone lié sur stockage local ne migre pas.** Proxmox refuse net :
+
+```
+can't migrate 'local-lvm:base-390-disk-0/vm-320-disk-0' as it's a clone of 'base-390-disk-0'
+```
+
+L'image de base n'existe pas sur le nœud cible, et Proxmox ne va pas la copier au
+passage. **Retenez-le pour le jour 4** : les VM des TP 17 et 19 sont clonées en
+`--full 1`, ou bien leur disque part sur Ceph (`qm move-disk`) avant toute migration.
+
 ---
 
 ## 6. Déboguer cloud-init 🔧
@@ -262,9 +308,10 @@ ssh eleve@10.$N.10.50 'hostname; cloud-init status --long; df -h /'
 Le CD-ROM cloud-init généré est visible :
 
 ```bash
-qm cloudinit dump N20 user
-qm cloudinit dump N20 network
-qm cloudinit dump N20 meta
+N=3     # ⚠ VOTRE numéro d'élève
+qm cloudinit dump ${N}20 user
+qm cloudinit dump ${N}20 network
+qm cloudinit dump ${N}20 meta
 ```
 
 Dans la VM :
@@ -303,7 +350,8 @@ démarrée**, pas juste redémarrée depuis l'intérieur).
 | `N92` | `tpl-rocky10-eN` | Rocky Linux 10 | pour varier, et souffrir un peu 🪨 |
 
 ```bash
-qm list | grep -E "N9[0-2]"
+N=3     # ⚠ VOTRE numéro d'élève
+qm list | grep -E "${N}9[0-2]"
 ```
 
 ---

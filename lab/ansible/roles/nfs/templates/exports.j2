@@ -1,8 +1,11 @@
 # Généré par Ansible — rôle « nfs ». Ne pas modifier à la main.
 #
+# ⚠ On exporte la RACINE, pas les sous-répertoires.
+#   Proxmox monte le stockage à la racine (« pvesm add nfs --export {{ nfs_root }} »)
+#   puis navigue dans images/, dump/, template/iso/… Exporter chaque sous-dossier
+#   séparément casserait le montage : Proxmox ne trouverait pas le point d'export.
+#
 # 🪤 no_root_squash : Proxmox écrit en root pour créer les disques de VM.
 #    On l'accepte, MAIS on restreint l'export à la seule IP du nœud autorisé.
 #    Sur une infrastructure réelle, ce partage aurait son propre VLAN de stockage.
-{% for e in nfs_exports %}
-{{ nfs_root }}/{{ e }}  {{ nfs_allowed_network }}(rw,sync,no_subtree_check,no_root_squash)
-{% endfor %}
+{{ nfs_root }}  {{ nfs_allowed_network }}(rw,sync,no_subtree_check,no_root_squash)

@@ -40,6 +40,7 @@ pve-firewall compile | head -30
 nft list ruleset | grep -c .
 tail -f /var/log/pve-firewall.log
 bash ../scripts/test-firewall.sh --eleve 3 --int 10.3.10.101 --dmz 10.3.20.101
+#   … et en zone EVPN (TP 17), ajoutez --mtu 1450
 ```
 
 ## Les trois pièges

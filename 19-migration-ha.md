@@ -73,20 +73,37 @@ qm set <vmid> --cpu x86-64-v2-AES    # nécessite un arrêt/démarrage
 
 ```bash
 N=3
-time qm migrate N60 pve5 --online --with-local-disks
+time qm migrate ${N}60 pve5 --online --with-local-disks
 ```
 
 Observez la tâche : Proxmox copie le disque **puis** la RAM. Sur 20 Go, comptez
 plusieurs minutes.
 
+🪤 **Si la commande refuse** avec `can't migrate ... as it's a clone of ...`, votre VM
+est un **clone lié** : son disque n'est qu'une couche copy-on-write au-dessus de
+l'image du template, laquelle n'existe pas sur le nœud cible. Deux sorties :
+
+```bash
+# A. la convertir en clone complet, sur place
+qm move-disk ${N}60 scsi0 local-lvm --delete 1
+
+# B. mieux : l'envoyer directement sur Ceph — c'est l'objet du paragraphe suivant
+qm move-disk ${N}60 scsi0 vm-store --delete 1
+```
+
+🧠 **`qm move-disk` casse le lien vers l'image de base** : il écrit un disque complet
+et indépendant. C'est la manœuvre à connaître pour « détacher » un clone lié — et
+c'est aussi ce qui explique pourquoi le TP 17 clone en `--full 1`.
+
 ### Avec Ceph
 
 ```bash
+N=3     # ⚠ VOTRE numéro d'élève
 # Déplacer d'abord le disque sur le pool Ceph
-qm move-disk N60 scsi0 vm-store --delete 1
-qm config N60 | grep scsi0
+qm move-disk ${N}60 scsi0 vm-store --delete 1
+qm config ${N}60 | grep scsi0
 
-time qm migrate N60 pve2 --online
+time qm migrate ${N}60 pve2 --online
 ```
 
 🎯 **Comparez les deux chronos.** Avec un stockage partagé, seule la RAM transite :
@@ -94,9 +111,10 @@ quelques secondes au lieu de plusieurs minutes. Le disque, lui, ne bouge pas d'u
 octet — il n'a jamais appartenu à un nœud en particulier.
 
 ```bash
+N=3     # ⚠ VOTRE numéro d'élève
 # La preuve : l'image RBD est inchangée, seule la VM a changé de nœud
-rbd -p vm-store info vm-N60-disk-0
-ceph osd map vm-store vm-N60-disk-0
+rbd -p vm-store info vm-${N}60-disk-0
+ceph osd map vm-store vm-${N}60-disk-0
 ```
 
 ### Le test qui prouve
@@ -107,7 +125,8 @@ ping 10.60.10.<ip-de-la-vm>
 ```
 
 ```bash
-qm migrate N60 pve4 --online
+N=3     # ⚠ VOTRE numéro d'élève
+qm migrate ${N}60 pve4 --online
 ```
 
 ✅ Zéro ou un paquet perdu, grâce à la gateway anycast EVPN.
@@ -228,8 +247,9 @@ plus caresser son watchdog, qui le redémarre de force.
 ailleurs.
 
 ```bash
-qm config N60 | grep -E 'scsi0|virtio0'    # doit pointer sur vm-store
-qm move-disk N60 scsi0 vm-store --delete 1  # si ce n'est pas le cas
+N=3     # ⚠ VOTRE numéro d'élève
+qm config ${N}60 | grep -E 'scsi0|virtio0'    # doit pointer sur vm-store
+qm move-disk ${N}60 scsi0 vm-store --delete 1  # si ce n'est pas le cas
 ```
 
 ### Configurer
@@ -255,7 +275,8 @@ Les chiffres sont des **priorités** : la valeur la plus élevée gagne.
 **② Déclarer la ressource**
 
 ```bash
-pvesh create /cluster/ha/resources --sid vm:N60 --group grp-prod \
+N=3     # ⚠ VOTRE numéro d'élève
+pvesh create /cluster/ha/resources --sid vm:${N}60 --group grp-prod \
   --state started --max_restart 2 --max_relocate 2
 pvesh get /cluster/ha/resources
 ha-manager status

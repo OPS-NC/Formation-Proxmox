@@ -86,39 +86,59 @@ Structure :
 
 ```hcl
 locals {
-  net_srv  = "10.${var.eleve}.30.0/24"
-  gw_srv   = "10.${var.eleve}.30.1"
-  net_int  = "10.${var.eleve}.10.0/24"
-  net_dmz  = "10.${var.eleve}.20.0/24"
+  net_srv = "10.${var.eleve}.30.0/24"
+  gw_srv  = "10.${var.eleve}.30.1"
+  net_int = "10.${var.eleve}.10.0/24"
+  net_dmz = "10.${var.eleve}.20.0/24"
 }
 
 resource "proxmox_virtual_environment_sdn_zone_simple" "srv" {
-  id     = "zsrv"
-  nodes  = [var.pve_node]
-  ipam   = "pve"
-  dhcp   = "dnsmasq"
-  mtu    = 1500
+  id    = "zsrv"
+  nodes = [var.pve_node]
+  ipam  = "pve"
+  dhcp  = "dnsmasq"
+  mtu   = 1500
+
+  depends_on = [proxmox_virtual_environment_sdn_applier.finalizer]
 }
 
 resource "proxmox_virtual_environment_sdn_vnet" "srv" {
   id    = "vsrv"
   zone  = proxmox_virtual_environment_sdn_zone_simple.srv.id
   alias = "Services infra e${var.eleve}"
+
+  depends_on = [proxmox_virtual_environment_sdn_applier.finalizer]
 }
 
 resource "proxmox_virtual_environment_sdn_subnet" "srv" {
-  subnet  = local.net_srv
+  cidr    = local.net_srv
   vnet    = proxmox_virtual_environment_sdn_vnet.srv.id
-  type    = "subnet"
   gateway = local.gw_srv
   snat    = true
 
-  dhcp_range {
+  dhcp_range = {
     start_address = "10.${var.eleve}.30.100"
     end_address   = "10.${var.eleve}.30.200"
   }
+
+  depends_on = [proxmox_virtual_environment_sdn_applier.finalizer]
 }
 ```
+
+🪤 **Deux pièges de syntaxe qui coûtent dix minutes chacun :**
+
+| Ce qu'on écrit spontanément | Ce qu'attend le provider |
+|---|---|
+| `subnet = "10.3.30.0/24"` | **`cidr`** — le provider ne calque pas l'API |
+| `type = "subnet"` | *(rien)* — cet argument n'existe pas côté Terraform |
+| `dhcp_range { ... }` (bloc) | `dhcp_range = { ... }` (**attribut**) |
+
+🧠 **Pourquoi cet écart ?** Côté `pvesh`, on écrit bien `--subnet 10.3.30.0/24 --type
+subnet` (c'est ce qu'on a tapé au TP 08 §6). Le provider, lui, est écrit avec le
+*plugin framework* de Terraform et suit les conventions HashiCorp : un réseau
+s'appelle `cidr`, et un bloc à occurrence unique devient un attribut objet. **Un
+provider n'est pas un miroir de l'API** — c'est une traduction. Lisez toujours la
+doc du provider, jamais celle de l'API, pour écrire du HCL.
 
 🧠 **Les dépendances sont implicites.** Terraform lit
 `proxmox_virtual_environment_sdn_zone_simple.srv.id` dans le VNet, en déduit l'ordre
@@ -127,28 +147,50 @@ de création, et l'ordre inverse pour la destruction. Vous n'écrivez jamais
 
 ### Le point délicat : l'apply SDN
 
-Le SDN est transactionnel (cf. TP 08 §7). Selon la version du provider, les
-ressources SDN déclenchent ou non l'apply automatiquement. Pour être certain,
-on l'ajoute explicitement :
+Le SDN est transactionnel (cf. TP 08 §7). Le provider expose une ressource dédiée,
+`proxmox_virtual_environment_sdn_applier`, qui appelle exactement le
+`PUT /cluster/sdn` que vous tapiez à la main :
 
 ```hcl
-resource "terraform_data" "sdn_apply" {
-  triggers_replace = [
-    proxmox_virtual_environment_sdn_zone_simple.srv.id,
-    proxmox_virtual_environment_sdn_vnet.srv.id,
-    proxmox_virtual_environment_sdn_subnet.srv.id,
-    local_file.fw_vsrv.content_md5,
+# Ne fait rien à la création. Tous les objets SDN en dépendent, donc Terraform
+# le détruit EN DERNIER — et son apply-on-destroy nettoie le nœud une fois les
+# objets retirés de la configuration.
+resource "proxmox_virtual_environment_sdn_applier" "finalizer" {}
+
+# Celui-ci dépend des objets : il s'exécute APRÈS leur création, et
+# replace_triggered_by le rejoue à chaque modification.
+resource "proxmox_virtual_environment_sdn_applier" "apply" {
+  depends_on = [
+    proxmox_virtual_environment_sdn_zone_simple.srv,
+    proxmox_virtual_environment_sdn_vnet.srv,
+    proxmox_virtual_environment_sdn_subnet.srv,
   ]
 
-  provisioner "local-exec" {
-    command = "ssh -o StrictHostKeyChecking=no root@${var.pve_host} 'pvesh set /cluster/sdn'"
+  lifecycle {
+    replace_triggered_by = [
+      proxmox_virtual_environment_sdn_zone_simple.srv,
+      proxmox_virtual_environment_sdn_vnet.srv,
+      proxmox_virtual_environment_sdn_subnet.srv,
+    ]
   }
 }
 ```
 
-> Si votre version du provider expose un attribut `auto_apply` sur les ressources SDN,
-> utilisez-le : c'est plus propre qu'un `local-exec`.
-> Vérifiez avec `terraform providers schema -json | jq '.. | .auto_apply? // empty'`.
+🧠 **Deux appliers, parce que la création et la destruction n'ont pas le même
+ordre.** C'est un motif Terraform classique dès qu'une API a une notion de
+« commit » : on encadre les objets par deux sentinelles, l'une en amont du graphe,
+l'autre en aval. Prenez trente secondes pour dessiner le graphe de dépendances :
+c'est le meilleur exercice de compréhension de Terraform de toute la formation.
+
+⚠️ **Épinglez le provider en `~> 0.111`.** Les ressources `sdn_vnet`, `sdn_subnet`
+et `sdn_applier` n'existent **qu'à partir de la v0.84.0** de `bpg/proxmox` : un
+`>= 0.80` peut se résoudre sur une version qui les ignore, et vous obtenez
+`Invalid resource type`.
+
+> 📌 La famille `proxmox_virtual_environment_sdn_*` est **dépréciée** au profit de
+> `proxmox_sdn_*` (suppression annoncée en v1.0 du provider). Même schéma, nom plus
+> court : la migration sera un simple renommage. C'est le genre de détail à noter
+> dans le README d'un dépôt d'infra — votre futur vous-même vous remerciera.
 
 ---
 
@@ -208,27 +250,73 @@ resource "local_file" "fw_vsrv" {
 }
 
 resource "terraform_data" "push_fw" {
+  depends_on = [proxmox_virtual_environment_sdn_applier.apply]
+
   triggers_replace = [local_file.fw_vsrv.content_md5]
 
   provisioner "local-exec" {
     command = <<-EOT
+      set -e
+      ssh -o StrictHostKeyChecking=no root@${var.pve_host} 'mkdir -p /etc/pve/sdn/firewall'
       scp -o StrictHostKeyChecking=no ${local_file.fw_vsrv.filename} \
           root@${var.pve_host}:/etc/pve/sdn/firewall/vsrv.fw
       ssh -o StrictHostKeyChecking=no root@${var.pve_host} \
-          'pvesh set /cluster/sdn && systemctl reload proxmox-firewall || systemctl restart proxmox-firewall'
+          'systemctl reload proxmox-firewall 2>/dev/null || systemctl restart proxmox-firewall'
     EOT
   }
 }
 ```
 
-🧠 **Ce n'est pas de la triche.** Terraform ne couvre pas encore tous les objets de
-l'API Proxmox ; combiner ressources natives et `local-exec` ciblés est une pratique
-courante et acceptable — **tant que c'est idempotent et déclenché par un trigger
-explicite**, comme ici (`content_md5`).
+🧠 **Pourquoi un `local-exec` ici et pas au §4 ?** Parce qu'au §4 une ressource
+native existait. Le `local-exec` est le **dernier recours**, pas le réflexe : dès
+qu'une ressource couvre le besoin, elle gagne (état suivi, plan lisible,
+destruction gérée). Ici le provider ne couvre pas `/etc/pve/sdn/firewall/*.fw`, et
+on l'assume — avec un trigger explicite pour rester idempotent.
+
+**Tant que c'est idempotent et déclenché par un trigger explicite** (`content_md5`),
+c'est une pratique courante et acceptable.
 
 Alternative plus élégante si vous voulez du 100 % API : le provider
 [`Mastercard/restapi`](https://registry.terraform.io/providers/Mastercard/restapi/latest/docs)
 permet d'appeler n'importe quel endpoint Proxmox en ressource Terraform.
+
+### ⚠️ Ce que `vsrv.fw` ne peut pas faire tout seul
+
+Ce fichier autorise `vsrv → vint:9100`. **Ça ne suffit pas.** Le paquet traverse
+**deux** VNets, et `vint.fw` (écrit au TP 09, `policy_forward: DROP`) n'a aucune
+règle dont la **source** est `vsrv` : il jettera le paquet à l'arrivée.
+
+Ajoutez donc dans `/etc/pve/sdn/firewall/vint.fw` :
+
+```ini
+# ── Supervision : la zone SERVICES scrape l'interne (ajouté au TP 12) ────────
+FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vint-all -p tcp -dport 9100 -log nolog
+FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vint-all -p tcp -dport 22 -log info
+```
+
+et dans `/etc/pve/sdn/firewall/vdmz.fw` :
+
+```ini
+FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vdmz-all -p tcp -dport 9100 -log nolog
+```
+
+```bash
+systemctl reload proxmox-firewall
+```
+
+🧠 **C'est le piège annoncé au [TP 09 §5.2](09-firewall-inter-zones.md).** Une règle
+FORWARD est **unidirectionnelle**, et le firewall du VNet **destination** compte
+autant que celui du VNet source. Le conntrack gère le paquet *retour* d'une
+connexion acceptée — il ne gère pas le *sens initial*.
+
+Le réflexe à acquérir : **pour chaque flux de votre matrice, deux fichiers à
+modifier.** Une matrice de flux se lit toujours deux fois : une fois en colonnes
+(qui sort ?), une fois en lignes (qui entre ?).
+
+> 🎁 Ces deux règles sont déjà dans `lab/firewall/vint.fw.example` et
+> `vdmz.fw.example`. **Exercice** : faites-les générer par Terraform, comme
+> `vsrv.fw`. Vous découvrirez que trois VNets ⇒ six blocs de règles à garder
+> cohérents — et pourquoi on modularise.
 
 ---
 
@@ -242,11 +330,21 @@ resource "proxmox_virtual_environment_vm" "mon" {
   pool_id   = "eleve${var.eleve}"
   tags      = ["terraform", "services", "monitoring"]
 
-  clone { vm_id = var.template_debian, full = false }
+  clone {
+    vm_id = var.template_debian
+    full  = false # 🪤 linked clone = non migrable entre nœuds (cf. TP 10 §5)
+  }
+
   agent { enabled = true }
 
-  cpu    { cores = 2, type = "x86-64-v2-AES" }
-  memory { dedicated = 2048 }
+  cpu {
+    cores = 2
+    type  = "x86-64-v2-AES"
+  }
+
+  memory {
+    dedicated = 2048
+  }
 
   network_device {
     bridge   = proxmox_virtual_environment_sdn_vnet.srv.id   # "vsrv"
@@ -263,7 +361,7 @@ resource "proxmox_virtual_environment_vm" "mon" {
     }
   }
 
-  depends_on = [terraform_data.sdn_apply]
+  depends_on = [proxmox_virtual_environment_sdn_applier.apply]
 }
 
 resource "proxmox_virtual_environment_container" "log" {
@@ -290,12 +388,21 @@ resource "proxmox_virtual_environment_container" "log" {
   }
 
   cpu { cores = 1 }
-  memory { dedicated = 512, swap = 256 }
-  disk { datastore_id = "local-lvm", size = 4 }
 
-  unprivileged = true
+  memory {
+    dedicated = 512
+    swap      = 256
+  }
+
+  disk {
+    datastore_id = "local-lvm"
+    size         = 4
+  }
+
+  unprivileged  = true
   start_on_boot = true
-  depends_on   = [terraform_data.sdn_apply]
+
+  depends_on = [proxmox_virtual_environment_sdn_applier.apply]
 }
 ```
 
@@ -303,6 +410,11 @@ resource "proxmox_virtual_environment_container" "log" {
 le bridge `vsrv` n'existe réellement sur le nœud (la ressource SDN est « créée » dès
 que le fichier de config est écrit, pas quand l'apply est passé). Erreur typique :
 `bridge 'vsrv' does not exist`.
+
+⚠️ **Attention à la virgule.** En HCL, les attributs d'un bloc se séparent par des
+**retours à la ligne**, jamais par des virgules — `cpu { cores = 2, type = "..." }`
+ne compile pas. `terraform fmt` vous le dira tout de suite ; prenez l'habitude de le
+lancer avant `validate`.
 
 ---
 
@@ -341,7 +453,7 @@ ping -c2 10.N.30.1            # ✅ gateway
 ping -c2 9.9.9.9              # ❌ ICMP non autorisé vers Internet
 curl -sI https://debian.org   # ✅ 443 autorisé
 nc -zvw2 10.N.10.<db01> 5432  # ❌ refusé
-nc -zvw2 10.N.10.<db01> 9100  # ✅ autorisé (si node_exporter écoute)
+nc -zvw2 10.N.10.<db01> 9100  # ✅ autorisé — SI la règle inverse est dans vint.fw (§5)
 
 # depuis web01 (DMZ)
 nc -zvw2 10.N.30.<mon01> 22   # ❌ refusé, et journalisé en warning
@@ -407,6 +519,7 @@ l'UI bloque le `destroy`.
 - [ ] `ip -br a` montre `vsrv` avec `10.N.30.1/24`
 - [ ] Les 2 guests obtiennent une IP par DHCP dans le nouveau réseau
 - [ ] SERVICES → INTERNAL:9100 ✅ · SERVICES → INTERNAL:5432 ❌
+- [ ] J'ai ajouté la règle **inverse** dans `vint.fw` et `vdmz.fw`, et je sais pourquoi
 - [ ] DMZ → SERVICES ❌ et journalisé
 - [ ] L'ajout d'une règle se fait en modifiant le template + `apply`
 - [ ] `terraform destroy` supprime tout, dans le bon ordre

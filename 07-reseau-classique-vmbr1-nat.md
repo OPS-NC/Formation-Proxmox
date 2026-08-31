@@ -107,6 +107,40 @@ l'interface de sortie (utile en DHCP/PPP, un peu plus coûteux). `SNAT --to-sour
 192.168.50.13` est statique et plus rapide. Sur un serveur à IP fixe, `SNAT` est le
 choix correct.
 
+### 🧠 « Debian 13, ce n'est pas nftables ? » — si, et vous venez d'en écrire
+
+Question légitime, et la réponse est contre-intuitive : **les deux sont vrais en même
+temps.** Depuis Debian 10, la commande `iptables` est une *alternative* qui pointe sur
+**`iptables-nft`**. Elle parle donc au moteur **nftables** du noyau, via la couche de
+compatibilité `nft_compat`. La règle que vous venez de taper **est** une règle
+nftables.
+
+```bash
+iptables -V                     # → iptables v1.8.11 (nf_tables)   et non (legacy)
+update-alternatives --display iptables
+nft list table ip nat           # votre MASQUERADE, vue depuis nftables
+```
+
+```
+   iptables -t nat -A POSTROUTING ...        nft add rule ip nat postrouting ...
+              │                                          │
+              └────────► nft_compat ────────► table « ip nat » du noyau ◄──┘
+                        (traduction)              (le SEUL moteur)
+```
+
+Trois nuances qui comptent pour la suite :
+
+| | |
+|---|---|
+| **`iptables-legacy` existe encore** | Mais rien ne l'utilise. Le vrai piège n'est pas nft *vs* iptables, c'est de **mélanger** les deux back-ends sur le même hook : deux jeux de règles invisibles l'un pour l'autre. |
+| **Les tables ne se voient pas entre elles** | Vos règles vivent dans la table `ip nat`. Le `proxmox-firewall` du TP 09 crée les siennes dans `inet proxmox-firewall`. `iptables -t nat -S` n'affichera **jamais** les règles du firewall, et inversement. |
+| **`nftables: 1` (TP 09) ne touche pas à ce NAT** | Cette option bascule le *firewall* Proxmox, pas votre masquerade. Les deux cohabitent : hooks `nat` et `filter` sont indépendants. |
+
+👉 **Alors pourquoi enseigner `iptables` ?** Parce que c'est ce que les stagiaires
+trouveront dans 90 % des tutoriels et des scripts existants, et parce que la bascule
+vers le SDN au TP 08 n'en est que plus parlante. Mais vous savez maintenant ce qui
+tourne réellement dessous.
+
 ### 3.3 Rendre persistant
 
 Les règles iptables disparaissent au reboot. Deux approches :
@@ -127,6 +161,22 @@ EOF
 apt install -y iptables-persistent
 netfilter-persistent save
 ```
+
+```bash
+# Option C — nftables natif, sans couche de compatibilité
+nft add table ip lab-nat
+nft add chain ip lab-nat postrouting '{ type nat hook postrouting priority srcnat; policy accept; }'
+nft add rule  ip lab-nat postrouting ip saddr 10.$N.99.0/24 oifname vmbr0 masquerade
+
+nft list ruleset > /etc/nftables.conf     # persistance
+systemctl enable --now nftables
+```
+
+🧠 **Comparez les trois options.** A et B produisent exactement le même résultat dans
+le noyau que C — seul le vocabulaire change. C est plus verbeux mais explicite : on
+voit la table, la chaîne, le hook et sa priorité. C'est cette structure que vous
+retrouverez dans `nft list ruleset` au TP 09, quand `proxmox-firewall` générera la
+sienne.
 
 🪤 **Voilà exactement le genre de bricolage que le SDN supprime.** Retenez cette
 sensation : au TP 08, cette même fonctionnalité tiendra en une case à cocher, sera
@@ -169,20 +219,21 @@ Le plus rapide : un conteneur Alpine jetable, créé en dix secondes.
 N=3
 TPL=$(pveam list local | awk '/alpine/ {print $1}' | head -1)
 
-pct create N19 $TPL --hostname ct-nat-e$N --pool eleve$N \
+pct create ${N}19 $TPL --hostname ct-nat-e$N --pool eleve$N \
   --unprivileged 1 --password 'Formation2026!' \
   --rootfs local-lvm:2 --cores 1 --memory 256 \
   --net0 name=eth0,bridge=vmbr1,ip=dhcp \
   --start 1
 
 sleep 5
-pct exec N19 -- ip -4 -br a show eth0
+pct exec ${N}19 -- ip -4 -br a show eth0
 ```
 
 Dans le conteneur :
 
 ```bash
-pct exec N19 -- sh -c '
+N=3     # ⚠ VOTRE numéro d'élève
+pct exec ${N}19 -- sh -c '
   ip -br a
   ip route
   ping -c2 10.3.99.1        # la gateway = l'"'"'hôte
@@ -195,8 +246,9 @@ pct exec N19 -- sh -c '
 🎁 Refaites le même test avec votre VM Debian du TP 03 :
 
 ```bash
-qm set N01 --net0 virtio,bridge=vmbr1,firewall=1
-qm reboot N01
+N=3     # ⚠ VOTRE numéro d'élève
+qm set ${N}01 --net0 virtio,bridge=vmbr1,firewall=1
+qm reboot ${N}01
 # dans la VM : configurez 10.3.99.50/24, gw 10.3.99.1
 # … puis remettez-la sur vmbr0 à la fin du TP
 ```
@@ -246,8 +298,8 @@ interférence.
 ```bash
 N=3
 # 1. Supprimer le conteneur de test, et remettre srv01 sur vmbr0 si vous l'avez déplacé
-pct stop N19 ; sleep 2 ; pct destroy N19 --purge
-qm set N01 --net0 virtio,bridge=vmbr0,firewall=1
+pct stop ${N}19 ; sleep 2 ; pct destroy ${N}19 --purge
+qm set ${N}01 --net0 virtio,bridge=vmbr0,firewall=1
 
 # 2. Rendre dnsmasq au SDN
 systemctl disable --now dnsmasq
@@ -255,7 +307,8 @@ rm -f /etc/dnsmasq.d/vmbr1-tp07.conf
 
 # 3. Retirer la règle NAT
 iptables -t nat -D POSTROUTING -s 10.$N.99.0/24 -o vmbr0 -j MASQUERADE
-iptables -t nat -L POSTROUTING -n
+iptables -t nat -S POSTROUTING
+nft delete table ip lab-nat 2>/dev/null || true   # si vous aviez pris l'option C
 
 # 4. Supprimer vmbr1 (interface web : System → Network → vmbr1 → Remove → Apply)
 #    ou retirer la strophe de /etc/network/interfaces puis :
@@ -274,6 +327,7 @@ On garde `net.ipv4.ip_forward = 1` : le SDN en a besoin de toute façon.
 - [ ] Ce guest ping `9.9.9.9` et met à jour ses paquets
 - [ ] Je vois les compteurs de la règle MASQUERADE augmenter
 - [ ] Je sais citer **trois** limites de cette approche manuelle
+- [ ] Je sais expliquer pourquoi `iptables` sur Debian 13 écrit en réalité du nftables
 - [ ] Le nettoyage est fait : plus de `vmbr1`, plus de règle NAT, dnsmasq désactivé
 
 ---

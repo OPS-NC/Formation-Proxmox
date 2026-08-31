@@ -15,7 +15,12 @@ resource "proxmox_virtual_environment_vm" "web" {
 
   clone {
     vm_id = local.template_id
-    full  = false # linked clone : instantané et économe
+    # linked clone : instantané et économe en disque.
+    # 🪤 MAIS un linked clone sur stockage local N'EST PAS MIGRABLE entre nœuds
+    #    (« can't migrate ... as it's a clone of ... »). C'est sans conséquence
+    #    ici — cette VM ne quitte pas son nœud — mais les VM des TP 17 et 19
+    #    doivent être des clones COMPLETS, ou vivre sur Ceph.
+    full = false
   }
 
   agent {

@@ -78,8 +78,9 @@ nft list tables
 sont recréées au démarrage du guest.
 
 ```bash
-for id in N01 N02; do qm reboot $id; done
-pct reboot N11 ; pct reboot N12
+N=3     # ⚠ VOTRE numéro d'élève
+for id in ${N}01 ${N}02; do qm reboot $id; done
+pct reboot ${N}11 ; pct reboot ${N}12
 ```
 
 ---
@@ -217,7 +218,8 @@ que « plus rien ne marche » pendant les cinq prochaines minutes, c'est normal.
 Vérifiez la casse :
 
 ```bash
-qm terminal N01        # depuis srv01
+N=3     # ⚠ VOTRE numéro d'élève
+qm terminal ${N}01        # depuis srv01
 ping -c2 9.9.9.9       # → doit ÉCHOUER maintenant
 ```
 
@@ -303,6 +305,34 @@ FORWARD ACCEPT -source +sdn/vint-all -log nolog
 C'est la base du filtrage, et la source d'erreur n°1. Relisez toujours vos règles
 de haut en bas en vous demandant « à quelle ligne ce paquet s'arrête-t-il ? ».
 
+### 🪤 La subtilité qui piège tout le monde : un paquet traverse DEUX VNets
+
+Un flux `vint → vdmz` est évalué par `vint.fw` **et** par `vdmz.fw`. Il doit être
+accepté **par les deux**. C'est pour ça que la liste blanche 22/80/443 apparaît
+dans les deux fichiers, une fois en sortie et une fois en entrée.
+
+La doc Proxmox est explicite :
+
+> *« Since traffic passing the FORWARD chain is bi-directional, you need to create
+> rules for both directions if you want traffic to pass both ways. »*
+
+⚠️ Ne confondez pas avec le **conntrack**, qui gère le paquet **retour** d'une
+connexion déjà acceptée. Ici on parle du **sens initial** : `A → B` et `B → A`
+sont deux flux distincts, chacun a besoin de sa règle, dans les deux fichiers.
+
+```
+   vint.fw                          vdmz.fw
+   ┌──────────────────┐             ┌──────────────────┐
+   │ ACCEPT vint→vdmz │  ──── 22 ──►│ ACCEPT vint→vdmz │  ✅ passe
+   │      :22         │             │      :22         │
+   ├──────────────────┤             ├──────────────────┤
+   │ (rien)           │  ◄─── 22 ───│ ACCEPT vint→vdmz │  ❌ jeté par vint.fw
+   └──────────────────┘             └──────────────────┘
+        ▲ le DROP est ici, pas là où on l'attend
+```
+
+C'est exactement le piège qui vous attend au **TP 12** avec la zone `services`.
+
 ### 5.3 Règles de `vdmz` (DMZ, régime strict)
 
 `/etc/pve/sdn/firewall/vdmz.fw` :
@@ -334,7 +364,7 @@ FORWARD DROP -source +sdn/vdmz-all -dest +sdn/vint-all -log warning
 FORWARD ACCEPT -source +sdn/vdmz-all -p tcp -dport 80 -log nolog
 FORWARD ACCEPT -source +sdn/vdmz-all -p tcp -dport 443 -log nolog
 FORWARD ACCEPT -source +sdn/vdmz-all -p udp -dport 53 -log nolog
-FORWARD ACCEPT -source +sdn/vdmz-all -p tcp -dport 123 -log nolog
+FORWARD ACCEPT -source +sdn/vdmz-all -p udp -dport 123 -log nolog # NTP = UDP
 ```
 
 🧠 **Pourquoi le DROP DMZ→INTERNE est-il placé avant les règles Internet ?**
@@ -364,7 +394,8 @@ Défense en profondeur : même si le VNet laisse passer, la VM peut refuser.
 `ct-alpine-eN` → `Firewall → Add Security Group` : `srv-web`.
 
 ```bash
-cat > /etc/pve/firewall/N11.fw <<'EOF'
+N=3     # ⚠ VOTRE numéro d'élève
+cat > /etc/pve/firewall/${N}11.fw <<'EOF'
 [OPTIONS]
 enable: 1
 policy_in: DROP
@@ -380,7 +411,8 @@ EOF
 Sur `srv01-eN`, on n'ouvre PostgreSQL qu'à l'interne, et RDP de `win01` qu'à l'interne :
 
 ```bash
-cat > /etc/pve/firewall/N01.fw <<'EOF'
+N=3     # ⚠ VOTRE numéro d'élève
+cat > /etc/pve/firewall/${N}01.fw <<'EOF'
 [OPTIONS]
 enable: 1
 policy_in: DROP
@@ -396,7 +428,8 @@ EOF
 Et sur `win01-eN`, RDP réservé à la zone interne :
 
 ```bash
-cat > /etc/pve/firewall/N02.fw <<'EOF'
+N=3     # ⚠ VOTRE numéro d'élève
+cat > /etc/pve/firewall/${N}02.fw <<'EOF'
 [OPTIONS]
 enable: 1
 policy_in: DROP
@@ -422,7 +455,8 @@ Utilisez le script `lab/scripts/test-firewall.sh`, ou faites-le à la main.
 ### Depuis `srv01` (INTERNAL)
 
 ```bash
-qm terminal N01
+N=3     # ⚠ VOTRE numéro d'élève
+qm terminal ${N}01
 ```
 
 | Test | Commande | Attendu |
@@ -442,11 +476,15 @@ qm terminal N01
 |---|---|---|
 | Gateway | `ping -c2 10.3.20.1` | ✅ |
 | Internet HTTPS | `curl -sI https://ubuntu.com` | ✅ |
-| Mise à jour | `sudo apt update` | ✅ |
+| Mise à jour | `apk update` | ✅ |
 | Internet ICMP | `ping -c2 9.9.9.9` | ❌ (non autorisé) |
 | **DMZ → base** | `nc -zvw2 10.3.10.<srv01> 5432` | ❌ **timeout** 🎯 |
 | **DMZ → SSH interne** | `nc -zvw2 10.3.10.<srv01> 22` | ❌ **timeout** 🎯 |
 | **DMZ → RDP Windows** | `nc -zvw2 10.3.10.<win01> 3389` | ❌ **timeout** 🎯 |
+
+🧠 Notez que **DMZ → INTERNAL:22 échoue** alors que `vdmz.fw` autorise bien `vint →
+vdmz:22`. C'est la démonstration du paragraphe précédent : la règle est
+**unidirectionnelle**. Le SSH part de l'interne, jamais l'inverse.
 
 ### Lire les journaux
 

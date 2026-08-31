@@ -6,9 +6,15 @@
 #   ansible-inventory --host web01-e3 | jq
 #
 # Prérequis : sudo apt install -y python3-proxmoxer
-#             ansible-galaxy collection install community.general
+#             ansible-galaxy collection install community.proxmox
+#
+# ⚠ « community.general.proxmox » est DÉPRÉCIÉ : il n'est plus qu'une redirection
+#   vers community.proxmox.proxmox, et sera supprimé en community.general 15.0.0.
+#   La redirection exige de toute façon que community.proxmox soit installée —
+#   autant nommer la collection directement. Les variables (proxmox_tags_parsed,
+#   proxmox_vmtype, proxmox_node…) et les options sont identiques.
 
-plugin: community.general.proxmox
+plugin: community.proxmox.proxmox
 
 # ⚠ adapter à votre nœud, et exporter le secret :
 #   source ~/.config/pve/token.env

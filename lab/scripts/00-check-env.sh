@@ -41,11 +41,18 @@ else
 fi
 check_cmd ansible ansible
 if command -v ansible-galaxy >/dev/null 2>&1; then
-  if ansible-galaxy collection list 2>/dev/null | grep -q community.general; then
-    ok "collection community.general présente"
-  else
-    ko "collection manquante — ansible-galaxy collection install community.general ansible.posix"
-  fi
+  COLS=$(ansible-galaxy collection list 2>/dev/null || true)
+  for c in community.proxmox community.general ansible.posix community.postgresql; do
+    if echo "$COLS" | grep -q "^$c "; then
+      ok "collection $c présente"
+    elif [ "$c" = "community.proxmox" ]; then
+      # Sans elle, l'inventaire dynamique du TP 13 sort vide :
+      # community.general.proxmox n'est plus qu'une redirection vers cette collection.
+      ko "collection $c ABSENTE — ansible-galaxy collection install $c"
+    else
+      warn "collection $c absente — ansible-galaxy collection install $c"
+    fi
+  done
 fi
 if python3 -c 'import proxmoxer' 2>/dev/null; then
   ok "module python proxmoxer présent"

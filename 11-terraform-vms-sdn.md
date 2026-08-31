@@ -75,11 +75,17 @@ terraform {
   required_providers {
     proxmox = {
       source  = "bpg/proxmox"
-      version = ">= 0.80"
+      version = "~> 0.111"
     }
   }
 }
 ```
+
+🪤 **Épinglez, ne minorez pas.** `>= 0.80` autoriserait Terraform à installer
+n'importe quelle version ≥ 0.80 — y compris une antérieure aux ressources SDN
+(`sdn_vnet`, `sdn_subnet`, `sdn_applier` n'existent qu'à partir de la **v0.84.0**),
+et vous obtiendriez `Invalid resource type` au TP 12. `~> 0.111` verrouille la
+version majeure.minor et n'autorise que les correctifs.
 
 ### `provider.tf` — se connecter
 
@@ -108,19 +114,26 @@ mot de passe.
 resource "proxmox_virtual_environment_vm" "web" {
   name      = "web01-e${var.eleve}"
   node_name = var.pve_node
-  vm_id     = var.eleve * 100 + 20
-  pool_id   = "eleve${var.eleve}"
-  tags      = ["terraform", "web", "eleve${var.eleve}"]
+  # ⚠ +21 et non +20 : le VMID N20 est déjà pris par app01, cloné à la main au TP 10.
+  vm_id   = var.eleve * 100 + 21
+  pool_id = "eleve${var.eleve}"
+  tags    = ["terraform", "web", "eleve${var.eleve}"]
 
   clone {
-    vm_id = var.template_debian     # N90
-    full  = false                   # linked clone
+    vm_id = var.template_debian # N90
+    full  = false               # linked clone : rapide, mais NON migrable (TP 10 §5)
   }
 
   agent { enabled = true }
 
-  cpu    { cores = 2, type = "x86-64-v2-AES" }
-  memory { dedicated = 2048 }
+  cpu {
+    cores = 2
+    type  = "x86-64-v2-AES"
+  }
+
+  memory {
+    dedicated = 2048
+  }
 
   network_device {
     bridge   = "vint"          # le VNet SDN du TP 08
@@ -238,15 +251,28 @@ resource "proxmox_virtual_environment_vm" "parc" {
 
   name      = "${each.key}-e${var.eleve}"
   node_name = var.pve_node
-  vm_id     = var.eleve * 100 + 20 + index(keys(var.machines), each.key)
-  pool_id   = "eleve${var.eleve}"
-  tags      = concat(["terraform", "eleve${var.eleve}"], each.value.tags)
+  # Un VMID déterministe et stable : la map est triée, donc l'ordre ne bouge pas
+  # quand on ajoute une machine. Base à +22 pour ne heurter ni app01 (N20) ni
+  # web01 (N21) de la stack précédente.
+  vm_id   = var.eleve * 100 + 22 + index(sort(keys(var.machines)), each.key)
+  pool_id = "eleve${var.eleve}"
+  tags    = concat(["terraform", "eleve${var.eleve}"], each.value.tags)
 
-  clone { vm_id = var.templates[each.value.template], full = false }
+  clone {
+    vm_id = var.templates[each.value.template]
+    full  = false
+  }
+
   agent { enabled = true }
 
-  cpu    { cores = each.value.cores, type = "x86-64-v2-AES" }
-  memory { dedicated = each.value.memory }
+  cpu {
+    cores = each.value.cores
+    type  = "x86-64-v2-AES"
+  }
+
+  memory {
+    dedicated = each.value.memory
+  }
 
   network_device {
     bridge   = each.value.vnet       # ← vint ou vdmz, selon la map
@@ -257,9 +283,22 @@ resource "proxmox_virtual_environment_vm" "parc" {
 
   initialization {
     ip_config { ipv4 { address = "dhcp" } }
-    user_account { username = "eleve", keys = [var.ssh_public_key] }
+
+    user_account {
+      username = "eleve"
+      keys     = [var.ssh_public_key]
+    }
   }
 }
+```
+
+🪤 **En HCL, pas de virgule entre les attributs d'un bloc.** `cpu { cores = 2, type =
+"..." }` ne compile pas : le séparateur est le **retour à la ligne**. C'est l'erreur
+n°1 quand on vient du JSON ou du Python. Le réflexe qui l'attrape en une seconde :
+
+```bash
+terraform fmt          # reformate, et refuse de reformater ce qui ne parse pas
+terraform validate     # puis vérifie les types et les arguments inconnus
 ```
 
 🧠 **Les `tags` ne sont pas décoratifs.** Ils viennent de la map, ils partent dans
@@ -284,6 +323,9 @@ resource "proxmox_virtual_environment_container" "alpine" {
   initialization {
     hostname = "ct-tf-e${var.eleve}"
     ip_config { ipv4 { address = "dhcp" } }
+
+    # ⚠ La clé va sur ROOT du conteneur, pas sur « eleve ».
+    #   C'est pour ça que les LXC Alpine ont leur playbook dédié au TP 13.
     user_account { keys = [var.ssh_public_key] }
   }
 
@@ -298,11 +340,19 @@ resource "proxmox_virtual_environment_container" "alpine" {
     type             = "alpine"
   }
 
-  cpu    { cores = 1 }
-  memory { dedicated = 256, swap = 128 }
-  disk   { datastore_id = "local-lvm", size = 2 }
+  cpu { cores = 1 }
 
-  unprivileged = true
+  memory {
+    dedicated = 256
+    swap      = 128
+  }
+
+  disk {
+    datastore_id = "local-lvm"
+    size         = 2
+  }
+
+  unprivileged  = true
   start_on_boot = true
 }
 ```
@@ -389,6 +439,7 @@ curl http://10.$N.20.<ip-web01>/     # depuis srv01, autorisé par le TP 09
 | `terraform fmt` avant chaque commit | Diffs lisibles |
 | Épingler la version du provider | Une montée de version peut changer un comportement |
 | `.gitignore` : `*.tfstate*`, `.terraform/`, `*.tfvars` | Secrets et binaires hors du dépôt |
+| **Committer `.terraform.lock.hcl`** | Même provider, mêmes sommes, pour tout le monde |
 | Un `tfvars` par environnement | `dev.tfvars`, `prod.tfvars` |
 | `terraform plan -out=tf.plan` puis `apply tf.plan` | Ce qu'on applique est exactement ce qu'on a relu |
 | `lifecycle { prevent_destroy = true }` sur le critique | Filet de sécurité |
@@ -397,14 +448,23 @@ curl http://10.$N.20.<ip-web01>/     # depuis srv01, autorisé par le TP 09
 Le `.gitignore` fourni :
 
 ```
-.terraform/
-.terraform.lock.hcl
-*.tfstate
+.terraform/          # les binaires téléchargés
+*.tfstate            # 🔴 contient des secrets
 *.tfstate.*
-*.tfvars
+*.tfvars             # 🔴 contient votre token
 !*.tfvars.example
 tf.plan
 crash.log
+```
+
+🪤 **`.terraform.lock.hcl`, lui, se COMMIT.** C'est une erreur classique de le mettre
+dans le `.gitignore` : ce fichier fige la version exacte du provider **et ses sommes
+de contrôle**. Sans lui, `terraform init` peut installer une version différente chez
+chaque élève — exactement le problème que l'épinglage `~> 0.111` cherche à éviter.
+
+```
+   versions.tf          « je veux du ~> 0.111 »        ← l'intention
+   .terraform.lock.hcl  « c'est 0.111.1, sha256:… »    ← le fait, reproductible
 ```
 
 ---
@@ -433,6 +493,9 @@ terraform import proxmox_virtual_environment_vm.web pve3/320
 | `VM <id> already exists` | Conflit de VMID | Respecter le plan de VMID (TP 00) |
 | `timeout while waiting for agent` | Agent absent dans le template | Réinstaller le template avec `qemu-guest-agent` |
 | Le clone reste bloqué | Template sur un stockage sans COW | `full = true` |
+| `Invalid resource type: ..._sdn_vnet` | Provider < 0.84.0 | Épingler `~> 0.111`, `terraform init -upgrade` |
+| `Missing newline after argument` | Virgule entre attributs d'un bloc HCL | `terraform fmt` |
+| `can't migrate ... as it's a clone of ...` | Linked clone sur stockage local | `full = true`, ou `qm move-disk` vers Ceph |
 
 ---
 
@@ -445,6 +508,7 @@ terraform import proxmox_virtual_environment_vm.web pve3/320
 - [ ] Une modification de RAM produit un `~ update in-place` et s'applique à chaud
 - [ ] `terraform destroy` nettoie tout, `qm list` ne montre plus que les templates
 - [ ] Je sais lire un plan et repérer un `-/+` (recréation)
+- [ ] `terraform fmt && terraform validate` passent sans rien signaler
 
 ---
 

@@ -18,8 +18,8 @@ log_ratelimit: enable=1,rate=5/second,burst=20
 
 lan_salle 192.168.50.0/24        # LAN physique de la salle
 gw_salle 192.168.50.254          # routeur / accès Internet
-srv_nfs 192.168.50.40            # serveur NFS (TP 14)
-srv_pbs 192.168.50.41            # Proxmox Backup Server (TP 18)
+pc_eleve 192.168.50.103          # ⚠ VOTRE poste = votre serveur NFS (TP 14) — .10N
+srv_pbs 192.168.50.41            # Proxmox Backup Server (TP 15), VM sur pve1
 net_internal 10.3.10.0/24        # ⚠ adapter au numéro d'élève
 net_dmz 10.3.20.0/24
 net_services 10.3.30.0/24
@@ -67,7 +67,10 @@ IN ACCEPT -source lan_salle -p udp -dport 4789 -log nolog # VXLAN
 IN ACCEPT -source lan_salle -p tcp -dport 179 -log nolog # BGP
 
 # ── Stockage et sauvegarde ───────────────────────────────────────────────────
-IN ACCEPT -source srv_nfs -p tcp -dport 2049 -log nolog # NFS v4
+# 🧠 Rien à ouvrir en entrée pour le NFS : c'est le NŒUD qui initie la connexion
+#    vers le port 2049 de votre poste. Le conntrack gère le retour. La règle
+#    « IN ACCEPT -source <nfs> -dport 2049 » qu'on voit partout est inutile —
+#    et révèle une confusion entre client et serveur.
 IN ACCEPT -source lan_salle -p tcp -dport 8007 -log nolog # UI PBS
 
 # ── Diagnostic ───────────────────────────────────────────────────────────────

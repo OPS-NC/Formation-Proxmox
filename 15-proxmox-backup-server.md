@@ -255,7 +255,7 @@ parasites**, avec les deux-points.
 
 ```bash
 N=3
-vzdump N60 --storage pbs-lab --mode snapshot --notes-template '{{guestname}} — {{node}}'
+vzdump ${N}60 --storage pbs-lab --mode snapshot --notes-template '{{guestname}} — {{node}}'
 ```
 
 Les trois modes :
@@ -309,14 +309,15 @@ moment de la restaurer.
 ### Voir la déduplication à l'œuvre 🎯
 
 ```bash
+N=3     # ⚠ VOTRE numéro d'élève
 # Sauvegarde 1
-vzdump N60 --storage pbs-lab --mode snapshot
+vzdump ${N}60 --storage pbs-lab --mode snapshot
 
 # On modifie un peu la VM
 ssh -J root@192.168.50.11 eleve@10.60.10.<ip> 'sudo apt install -y cowsay'
 
 # Sauvegarde 2
-vzdump N60 --storage pbs-lab --mode snapshot
+vzdump ${N}60 --storage pbs-lab --mode snapshot
 ```
 
 🌐 Sur PBS : `Datastore → lab-store → Content`. Comparez la taille annoncée de chaque
@@ -389,19 +390,20 @@ récupération, mais le service est **rendu**.
 ### 7.4 Exercice obligatoire 🎯
 
 ```bash
+N=3     # ⚠ VOTRE numéro d'élève
 # 1. Sauvegarder
-vzdump N60 --storage pbs-lab --mode snapshot
+vzdump ${N}60 --storage pbs-lab --mode snapshot
 
 # 2. Détruire pour de vrai
-qm stop N60 && qm destroy N60 --purge
-qm list | grep N60      # plus rien
+qm stop ${N}60 && qm destroy ${N}60 --purge
+qm list | grep ${N}60      # plus rien
 
 # 3. Restaurer
-qm restore N60 pbs-lab:backup/vm/N60/<timestamp> --storage local-lvm
-qm start N60
+qm restore ${N}60 pbs-lab:backup/vm/${N}60/<timestamp> --storage local-lvm
+qm start ${N}60
 
 # 4. Vérifier que la VM est fonctionnelle
-qm agent N60 ping
+qm agent ${N}60 ping
 ssh -J root@192.168.50.11 eleve@10.60.10.<ip> 'hostname; uptime'
 ```
 

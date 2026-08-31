@@ -1,6 +1,6 @@
 output "zone" { value = proxmox_virtual_environment_sdn_zone_simple.srv.id }
 output "vnet" { value = proxmox_virtual_environment_sdn_vnet.srv.id }
-output "subnet" { value = proxmox_virtual_environment_sdn_subnet.srv.subnet }
+output "subnet" { value = proxmox_virtual_environment_sdn_subnet.srv.cidr }
 output "gateway" { value = local.gw_srv }
 
 output "guests" {
@@ -19,7 +19,7 @@ output "verification" {
       ssh root@${var.pve_host} 'systemctl status dnsmasq@zsrv --no-pager | head -3'
 
     Tests attendus depuis mon01 :
-      nc -zvw2 <ip-db> 9100   → ✅
+      nc -zvw2 <ip-db> 9100   → ✅  (exige la règle vsrv→vint dans vint.fw)
       nc -zvw2 <ip-db> 5432   → ❌
       ping 9.9.9.9            → ❌ (ICMP non autorisé vers Internet)
       curl -sI https://debian.org → ✅

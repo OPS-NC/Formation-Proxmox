@@ -11,8 +11,14 @@
 # 🧠 Le serveur NFS n'est pas ici : il tourne sur votre poste de travail.
 #    Voir nfs-local.yml et inventory/local.yml (TP 14).
 
-- name: Socle commun — toutes les machines Linux
-  hosts: linux:conteneurs
+# 🪤 Pourquoi « linux » et PAS « linux:conteneurs » ?
+#    Les LXC du parc sont des Alpine : pas de Python (Ansible ne peut rien
+#    exécuter), pas de bash (le rôle common crée le compte avec shell=/bin/bash),
+#    pas de sudo, et la clé SSH y est posée sur root, pas sur « eleve ».
+#    Un conteneur Alpine se prépare avec un pre_task « raw », voir alpine.yml.
+
+- name: Socle commun — toutes les VM Linux
+  hosts: linux
   become: true
   gather_facts: true
   roles:

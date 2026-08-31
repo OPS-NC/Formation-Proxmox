@@ -270,8 +270,8 @@ La panne la plus fréquente et la plus déroutante.
 
 ```bash
 # depuis la VM
-ping -M do -s 1422 -c2 9.9.9.9      # ✅ doit passer
-ping -M do -s 1473 -c2 9.9.9.9      # ❌ doit échouer proprement
+ping -M do -s 1422 -c2 9.9.9.9      # ✅ doit passer      (1422 + 28 = 1450)
+ping -M do -s 1423 -c2 9.9.9.9      # ❌ doit échouer     (1423 + 28 = 1451)
 ```
 
 Correctifs :

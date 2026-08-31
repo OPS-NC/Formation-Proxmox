@@ -7,6 +7,20 @@ locals {
   template_id = coalesce(var.template_debian, var.eleve * 100 + 90)
 }
 
+# ── L'apply SDN, en deux temps ───────────────────────────────────────────────
+# Le SDN est transactionnel : tant qu'on n'a pas appliqué, rien n'existe
+# réellement sur le nœud. Le provider expose une ressource dédiée pour ça —
+# inutile de bricoler un local-exec « pvesh set /cluster/sdn » en SSH.
+#
+# 🧠 Pourquoi DEUX appliers ?
+#   · « finalizer » ne fait rien à la création, mais tous les objets SDN en
+#     dépendent. Terraform détruit dans l'ordre INVERSE des dépendances : le
+#     finalizer est donc détruit EN DERNIER, et son apply-on-destroy nettoie
+#     le nœud une fois les objets retirés de la configuration.
+#   · « apply » dépend des objets : il s'exécute APRÈS leur création, et son
+#     replace_triggered_by le rejoue à chaque modification.
+resource "proxmox_virtual_environment_sdn_applier" "finalizer" {}
+
 # ── La zone ──────────────────────────────────────────────────────────────────
 resource "proxmox_virtual_environment_sdn_zone_simple" "srv" {
   id    = "zsrv"
@@ -14,6 +28,8 @@ resource "proxmox_virtual_environment_sdn_zone_simple" "srv" {
   ipam  = "pve"
   dhcp  = "dnsmasq"
   mtu   = 1500
+
+  depends_on = [proxmox_virtual_environment_sdn_applier.finalizer]
 }
 
 # ── Le VNet ──────────────────────────────────────────────────────────────────
@@ -21,37 +37,41 @@ resource "proxmox_virtual_environment_sdn_vnet" "srv" {
   id    = "vsrv"
   zone  = proxmox_virtual_environment_sdn_zone_simple.srv.id
   alias = "Services infra e${var.eleve}"
+
+  depends_on = [proxmox_virtual_environment_sdn_applier.finalizer]
 }
 
 # ── Le subnet ────────────────────────────────────────────────────────────────
+# ⚠ L'argument s'appelle « cidr », pas « subnet » : le provider ne calque pas
+#   le nommage de l'API Proxmox (où pvesh attend --subnet et --type subnet).
+#   « dhcp_range » est un ATTRIBUT (avec un « = »), pas un bloc.
 resource "proxmox_virtual_environment_sdn_subnet" "srv" {
-  subnet  = local.net_srv
+  cidr    = local.net_srv
   vnet    = proxmox_virtual_environment_sdn_vnet.srv.id
-  type    = "subnet"
   gateway = local.gw_srv
   snat    = true
 
-  dhcp_range {
+  dhcp_range = {
     start_address = "10.${var.eleve}.30.100"
     end_address   = "10.${var.eleve}.30.200"
   }
+
+  depends_on = [proxmox_virtual_environment_sdn_applier.finalizer]
 }
 
-# ── L'apply SDN ──────────────────────────────────────────────────────────────
-# Le SDN est transactionnel : tant qu'on n'applique pas, rien n'existe
-# réellement sur le nœud. Selon la version du provider, l'apply peut être
-# automatique — ce déclencheur explicite garantit le comportement.
-#
-# Si votre provider expose « auto_apply » sur les ressources SDN, préférez-le :
-#   terraform providers schema -json | jq '.. | .auto_apply? // empty'
-resource "terraform_data" "sdn_apply" {
-  triggers_replace = [
-    proxmox_virtual_environment_sdn_zone_simple.srv.id,
-    proxmox_virtual_environment_sdn_vnet.srv.id,
-    proxmox_virtual_environment_sdn_subnet.srv.subnet,
+# ── L'apply proprement dit ───────────────────────────────────────────────────
+resource "proxmox_virtual_environment_sdn_applier" "apply" {
+  depends_on = [
+    proxmox_virtual_environment_sdn_zone_simple.srv,
+    proxmox_virtual_environment_sdn_vnet.srv,
+    proxmox_virtual_environment_sdn_subnet.srv,
   ]
 
-  provisioner "local-exec" {
-    command = "ssh -o StrictHostKeyChecking=no root@${var.pve_host} 'pvesh set /cluster/sdn' && sleep 5"
+  lifecycle {
+    replace_triggered_by = [
+      proxmox_virtual_environment_sdn_zone_simple.srv,
+      proxmox_virtual_environment_sdn_vnet.srv,
+      proxmox_virtual_environment_sdn_subnet.srv,
+    ]
   }
 }

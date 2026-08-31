@@ -102,7 +102,7 @@ NFS monté dans le CT).
 ## 4. La même chose en CLI 🖥️
 
 ```bash
-CTID=N11
+CTID=${N}11
 N=N
 TPL=$(pveam list local | awk '/alpine/ {print $1}' | head -1)
 
@@ -180,7 +180,8 @@ Alpine, c'est le minimalisme. Rocky Linux, c'est l'inverse : la famille RHEL, av
 `dnf`, `systemd`, SELinux et `firewalld`. Deux philosophies dans le même hyperviseur.
 
 ```bash
-CTID2=N12
+N=3     # ⚠ VOTRE numéro d'élève
+CTID2=${N}12
 pveam update
 pveam available --section system | grep -i rocky
 ```
@@ -286,26 +287,28 @@ pct exec $CTID -- ls -ln /var/lib/nginx/html    # maintenant root:root dans le C
 ## 8. Sauvegarde, restauration, template
 
 ```bash
+N=3     # ⚠ VOTRE numéro d'élève
 # Sauvegarde
 vzdump $CTID --storage local --mode snapshot --compress zstd
 ls -lh /var/lib/vz/dump/ | grep lxc
 
 # Restauration sous un nouvel ID
-pct restore N13 /var/lib/vz/dump/vzdump-lxc-$CTID-*.tar.zst \
+pct restore ${N}13 /var/lib/vz/dump/vzdump-lxc-$CTID-*.tar.zst \
     --storage local-lvm --hostname ct-restore-e$N
 pct list
-pct destroy N13 --purge
+pct destroy ${N}13 --purge
 ```
 
 Transformer un CT en template :
 
 ```bash
+N=3     # ⚠ VOTRE numéro d'élève
 # On travaille sur une COPIE : ct-rocky nous servira encore aux TP 08 et 09
-pct stop $CTID2 && pct clone $CTID2 N14 --hostname ct-tpl-e$N && pct start $CTID2
-pct template N14
-pct clone N14 N15 --hostname ct-clone-e$N
+pct stop $CTID2 && pct clone $CTID2 ${N}14 --hostname ct-tpl-e$N && pct start $CTID2
+pct template ${N}14
+pct clone ${N}14 ${N}15 --hostname ct-clone-e$N
 pct list
-pct destroy N15 --purge ; pct destroy N14 --purge
+pct destroy ${N}15 --purge ; pct destroy ${N}14 --purge
 ```
 
 🪤 **Un template est irréversible.** On ne peut plus démarrer le CT d'origine, seulement

@@ -4,7 +4,9 @@
 *.tfvars
 !*.tfvars.example
 .terraform/
-.terraform.lock.hcl
+# ⚠ .terraform.lock.hcl N'EST PAS ignoré : il fige les versions exactes et
+#   leurs sommes de contrôle. C'est lui qui garantit que six élèves — et la CI —
+#   installent rigoureusement le même provider. On le COMMIT.
 tf.plan
 crash.log
 crash.*.log

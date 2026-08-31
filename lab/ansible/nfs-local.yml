@@ -16,7 +16,7 @@
       ansible.builtin.debug:
         msg: >-
           Export {{ nfs_root }} → autorisé pour {{ nfs_allowed_network }}
-          ({{ nfs_exports | join(', ') }})
+          (arborescence : {{ nfs_subdirs | join(', ') }})
 
   roles:
     - nfs

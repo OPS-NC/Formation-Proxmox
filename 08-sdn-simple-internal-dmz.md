@@ -199,14 +199,36 @@ vdmz    UNKNOWN  10.3.20.1/24
 ```
 
 ```bash
-# Le NAT généré automatiquement
-iptables -t nat -L PVESDN-SNAT -n -v 2>/dev/null || nft list ruleset | grep -A5 snat
+# Le NAT généré automatiquement : Proxmox écrit directement dans POSTROUTING
+iptables -t nat -S POSTROUTING | grep -E '10\.[0-9]+\.[0-9]+\.0/24'
 
 # Les instances DHCP
 systemctl status dnsmasq@zint --no-pager | head -5
 systemctl status dnsmasq@zdmz --no-pager | head -5
 ls /etc/dnsmasq.d/
 ```
+
+Pour le NAT, vous devez voir une ligne par subnet en SNAT, du type :
+
+```
+-A POSTROUTING -s 10.3.10.0/24 -o vmbr0 -m mark --mark 0x0/0x80000000 -j SNAT --to-source 192.168.50.13
+```
+
+🧠 **`iptables` sur Debian 13, c'est `iptables-nft`.** Depuis Debian 10, la commande
+`iptables` est une *alternative* qui pointe sur le back-end **nftables** : la règle
+ci-dessus **est** une règle nftables, exposée par la couche de compatibilité.
+Vérifiez-le :
+
+```bash
+iptables -V                # → iptables v1.8.x (nf_tables)   et non (legacy)
+nft list table ip nat      # exactement la même règle, vue côté nftables
+```
+
+⚠️ **Ne cherchez pas ces règles dans `nft list table inet proxmox-firewall`.** Le
+SNAT du SDN et le firewall `proxmox-firewall` (TP 09) vivent dans des **tables
+distinctes**, qui ne se voient pas l'une l'autre : `iptables -t nat -S` n'affichera
+jamais les règles du firewall, et inversement. C'est la première source de confusion
+quand on débogue « je ne trouve pas ma règle ».
 
 🧠 **Prenez trente secondes pour comparer** avec le TP 07 : bridge, IP, `ip_forward`,
 MASQUERADE, dnsmasq, plage DHCP, options de routeur — tout ce que vous aviez tapé à la
@@ -231,12 +253,12 @@ C'est aussi l'occasion de voir qu'un changement de bridge est une opération ban
 N=3
 
 # --- Zone interne ------------------------------------------------------------
-qm set N01 --net0 virtio,bridge=vint,firewall=1,mtu=1
-qm set N02 --net0 virtio,bridge=vint,firewall=1,mtu=1
+qm set ${N}01 --net0 virtio,bridge=vint,firewall=1,mtu=1
+qm set ${N}02 --net0 virtio,bridge=vint,firewall=1,mtu=1
 
 # --- DMZ ---------------------------------------------------------------------
-pct set N11 --net0 name=eth0,bridge=vdmz,firewall=1,ip=dhcp
-pct set N12 --net0 name=eth0,bridge=vdmz,firewall=1,ip=dhcp
+pct set ${N}11 --net0 name=eth0,bridge=vdmz,firewall=1,ip=dhcp
+pct set ${N}12 --net0 name=eth0,bridge=vdmz,firewall=1,ip=dhcp
 ```
 
 🧠 **`mtu=1` sur la carte virtio** signifie « hérite du MTU du bridge ». Ici le bridge
@@ -270,7 +292,8 @@ ipconfig /all
 ```
 
 ```bash
-pct reboot N11 ; pct reboot N12 ; qm reboot N01 ; qm reboot N02
+N=3     # ⚠ VOTRE numéro d'élève
+pct reboot ${N}11 ; pct reboot ${N}12 ; qm reboot ${N}01 ; qm reboot ${N}02
 ```
 
 ### Vérifier l'attribution par l'IPAM
@@ -283,13 +306,14 @@ pvesh get /cluster/sdn/ipam/pve/status --output-format json | jq -r \
 ```
 
 ```bash
-for id in N01 N02; do
+N=3     # ⚠ VOTRE numéro d'élève
+for id in ${N}01 ${N}02; do
   echo -n "VM $id : "
   qm agent $id network-get-interfaces 2>/dev/null \
     | jq -r '[.[]|."ip-addresses"[]?|select(."ip-address-type"=="ipv4")|."ip-address"]|join(" ")'
 done
-pct exec N11 -- ip -4 -br a show eth0
-pct exec N12 -- ip -4 -br a show eth0
+pct exec ${N}11 -- ip -4 -br a show eth0
+pct exec ${N}12 -- ip -4 -br a show eth0
 ```
 
 ✅ Vous devez voir des adresses en `10.N.10.1xx` (interne) et `10.N.20.1xx` (DMZ).
@@ -301,7 +325,8 @@ pct exec N12 -- ip -4 -br a show eth0
 ### Depuis `srv01` (zone interne)
 
 ```bash
-qm terminal N01      # Ctrl+O pour sortir
+N=3     # ⚠ VOTRE numéro d'élève
+qm terminal ${N}01      # Ctrl+O pour sortir
 ```
 
 ```bash
@@ -331,20 +356,23 @@ C'est exactement le problème que le **TP 09** va résoudre.
 Sur `ct-alpine-eN` (DMZ) — nginx est déjà installé au TP 05 :
 
 ```bash
-pct exec N11 -- sh -c 'rc-service nginx status || rc-service nginx start'
-pct exec N11 -- sh -c 'echo "<h1>Alpine en DMZ 🏔️</h1>" > /var/lib/nginx/html/index.html'
+N=3     # ⚠ VOTRE numéro d'élève
+pct exec ${N}11 -- sh -c 'rc-service nginx status || rc-service nginx start'
+pct exec ${N}11 -- sh -c 'echo "<h1>Alpine en DMZ 🏔️</h1>" > /var/lib/nginx/html/index.html'
 ```
 
 Sur `ct-rocky-eN` (DMZ) :
 
 ```bash
-pct exec N12 -- bash -c 'systemctl enable --now nginx; echo "<h1>Rocky en DMZ 🪨</h1>" > /usr/share/nginx/html/index.html'
+N=3     # ⚠ VOTRE numéro d'élève
+pct exec ${N}12 -- bash -c 'systemctl enable --now nginx; echo "<h1>Rocky en DMZ 🪨</h1>" > /usr/share/nginx/html/index.html'
 ```
 
 Sur `srv01-eN` (interne), on simule une base de données :
 
 ```bash
-qm terminal N01
+N=3     # ⚠ VOTRE numéro d'élève
+qm terminal ${N}01
 sudo apt install -y postgresql netcat-openbsd
 sudo systemctl enable --now postgresql
 sudo ss -tlnp | grep 5432
@@ -363,9 +391,12 @@ Où sont passées les commandes que vous n'avez pas tapées ?
 # Le bridge et son IP : générés
 grep -A8 'iface vint' /etc/network/interfaces.d/sdn
 
-# Le NAT : généré (iptables ou nftables selon la configuration du nœud)
-iptables -t nat -S | grep -i sdn
-nft list table ip proxmox-firewall 2>/dev/null | head -30
+# Le NAT : dans la table « ip nat », via iptables-nft
+iptables -t nat -S POSTROUTING | grep -E '10\.[0-9]+\.'
+nft list table ip nat | head -20
+
+# Le firewall : dans une table SÉPARÉE (une fois nftables activé au TP 09)
+nft list table inet proxmox-firewall 2>/dev/null | head -30
 
 # Le DHCP : généré, une instance par zone
 cat /etc/dnsmasq.d/zint/* 2>/dev/null || ls -R /etc/dnsmasq.d/

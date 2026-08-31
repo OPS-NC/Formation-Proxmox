@@ -166,7 +166,8 @@ pvesh get /pools
 Ajoutez-y toutes vos machines :
 
 ```bash
-for id in N01 N02 N11 N12; do
+N=3     # ⚠ VOTRE numéro d'élève
+for id in ${N}01 ${N}02 ${N}11 ${N}12; do
   pvesh set /pools/eleve$N --vms $id 2>/dev/null
 done
 pvesh get /pools/eleve$N
@@ -187,10 +188,11 @@ Un tag est une étiquette libre posée sur un guest. Contrairement au pool, un g
 en porter **plusieurs**.
 
 ```bash
-qm set N01 --tags "debian,interne,prod"
-qm set N02 --tags "windows,interne,rdp"
-pct set N11 --tags "alpine,dmz,web"
-pct set N12 --tags "rocky,dmz,web"
+N=3     # ⚠ VOTRE numéro d'élève
+qm set ${N}01 --tags "debian,interne,prod"
+qm set ${N}02 --tags "windows,interne,rdp"
+pct set ${N}11 --tags "alpine,dmz,web"
+pct set ${N}12 --tags "rocky,dmz,web"
 ```
 
 🌐 Basculez en **Tag View**, puis filtrez avec la barre de recherche.
@@ -445,9 +447,10 @@ Ne les négligez pas.
 ### L'option qui sauve : `Protection`
 
 ```bash
-qm set N01 --protection 1
-qm destroy N01           # → refusé
-qm set N01 --protection 0
+N=3     # ⚠ VOTRE numéro d'élève
+qm set ${N}01 --protection 1
+qm destroy ${N}01           # → refusé
+qm set ${N}01 --protection 0
 ```
 
 🧠 À activer sur toute VM de production. Empêche la suppression et l'effacement du
@@ -456,9 +459,10 @@ disque, même en `root`. Coût : zéro. Bénéfice : énorme.
 ### Les autres options utiles
 
 ```bash
-qm set N01 --onboot 1 --startup order=2,up=30,down=60
-qm set N01 --hotplug disk,network,usb,memory,cpu
-qm set N01 --description "Serveur applicatif — contact: eleve3@formation.local"
+N=3     # ⚠ VOTRE numéro d'élève
+qm set ${N}01 --onboot 1 --startup order=2,up=30,down=60
+qm set ${N}01 --hotplug disk,network,usb,memory,cpu
+qm set ${N}01 --description "Serveur applicatif — contact: eleve3@formation.local"
 ```
 
 `startup order=2,up=30` : démarre en deuxième position, puis attend 30 s avant de lancer
@@ -483,7 +487,8 @@ info snapshots
 Équivalent CLI :
 
 ```bash
-qm monitor N01
+N=3     # ⚠ VOTRE numéro d'élève
+qm monitor ${N}01
 # puis les mêmes commandes ; « quit » pour sortir
 ```
 

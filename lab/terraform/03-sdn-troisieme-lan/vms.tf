@@ -4,7 +4,7 @@
 #   Erreur typique : bridge 'vsrv' does not exist.
 
 resource "proxmox_virtual_environment_vm" "mon" {
-  depends_on = [terraform_data.sdn_apply]
+  depends_on = [proxmox_virtual_environment_sdn_applier.apply]
 
   name        = "mon01-e${var.eleve}"
   description = "Supervision — zone services — TP 12"
@@ -15,7 +15,8 @@ resource "proxmox_virtual_environment_vm" "mon" {
 
   clone {
     vm_id = local.template_id
-    full  = false
+    # 🪤 linked clone = non migrable entre nœuds sur stockage local (cf. TP 10 §5).
+    full = false
   }
 
   agent { enabled = true }
@@ -52,7 +53,7 @@ resource "proxmox_virtual_environment_vm" "mon" {
 }
 
 resource "proxmox_virtual_environment_container" "log" {
-  depends_on = [terraform_data.sdn_apply]
+  depends_on = [proxmox_virtual_environment_sdn_applier.apply]
 
   node_name   = var.pve_node
   vm_id       = var.eleve * 100 + 51

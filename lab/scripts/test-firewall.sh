@@ -3,9 +3,12 @@
 # À exécuter depuis une VM de la zone INTERNE, ou depuis le nœud avec --via-node.
 #
 #   ./test-firewall.sh --eleve 3 --int 10.3.10.101 --dmz 10.3.20.101 --win 10.3.10.102
+#   ./test-firewall.sh --eleve 3 --int 10.60.10.101 --dmz 10.60.20.101 --mtu 1450   # EVPN
 set -uo pipefail
 
 ELEVE=""; IP_INT=""; IP_DMZ=""; IP_WIN=""; IP_SRV=""
+# MTU du réseau testé : 1500 en zone Simple (TP 09/12), 1450 en zone EVPN (TP 17).
+MTU=1500
 GREEN=$'\033[0;32m'; RED=$'\033[0;31m'; YEL=$'\033[0;33m'; BLU=$'\033[0;34m'; NC=$'\033[0m'
 PASS=0; FAIL=0
 
@@ -16,7 +19,11 @@ while [[ $# -gt 0 ]]; do
     --dmz)   IP_DMZ="$2"; shift 2 ;;
     --win)   IP_WIN="$2"; shift 2 ;;
     --srv)   IP_SRV="$2"; shift 2 ;;
-    -h|--help) echo "Usage: $0 --eleve N --int IP --dmz IP [--win IP] [--srv IP]"; exit 0 ;;
+    --mtu)   MTU="$2"; shift 2 ;;
+    -h|--help)
+      echo "Usage: $0 --eleve N --int IP --dmz IP [--win IP] [--srv IP] [--mtu 1500|1450]"
+      echo "       --mtu 1450 pour une zone EVPN (TP 17)"
+      exit 0 ;;
     *) echo "option inconnue : $1"; exit 1 ;;
   esac
 done
@@ -63,9 +70,14 @@ else
   printf "  ${YEL}!!${NC} SSH vers %s indisponible — tests DMZ ignorés\n" "$IP_DMZ"
 fi
 
-printf "\n${BLU}── MTU (important en EVPN) ──${NC}\n"
-t "paquet 1422 octets, DF"               ok ping -M do -s 1422 -c1 -W2 9.9.9.9
-t "paquet 1473 octets, DF (doit échouer)" ko ping -M do -s 1473 -c1 -W2 9.9.9.9
+printf "\n${BLU}── MTU (attendu : %s) ──${NC}\n" "$MTU"
+# On ENCADRE le MTU : la charge utile vaut MTU - 28 (20 o d'en-tête IP + 8 d'ICMP).
+#   · MTU - 28      → paquet de la taille exacte du MTU   → doit passer
+#   · MTU - 27      → un octet de trop                    → doit échouer
+# Tester « -s 1473 » ne prouverait rien : ça échoue déjà sur un Ethernet à 1500.
+OKSZ=$(( MTU - 28 )); KOSZ=$(( MTU - 27 ))
+t "paquet de $MTU o (charge $OKSZ), DF"          ok ping -M do -s "$OKSZ" -c1 -W2 9.9.9.9
+t "paquet de $((MTU+1)) o (charge $KOSZ), DF"    ko ping -M do -s "$KOSZ" -c1 -W2 9.9.9.9
 
 printf "\n${BLU}══ Résultat : %d réussis, %d échoués ══${NC}\n" "$PASS" "$FAIL"
 if [ "$FAIL" -gt 0 ]; then
@@ -75,7 +87,8 @@ if [ "$FAIL" -gt 0 ]; then
     · un test « refusé » qui passe   → une règle ACCEPT trop large, ou placée trop haut
     · un test « ok » qui échoue      → policy_forward DROP sans règle correspondante
     · les règles VNet sans effet     → nftables non activé (host.fw : nftables: 1)
-    · le test MTU 1422 qui échoue    → MTU de la zone ou mtu=1 sur la carte virtio
+    · le test MTU bas qui échoue     → MTU de la zone ou mtu=1 sur la carte virtio
+    · le test MTU haut qui PASSE     → mauvais --mtu (1450 en EVPN, 1500 sinon)
 
 EOF
   exit 1

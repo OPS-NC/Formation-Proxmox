@@ -379,6 +379,69 @@ ses sessions BGP. `pvesh set /cluster/sdn` passera sans erreur visible. Vérifie
 
 ---
 
+### ✅ Récapitulatif : ce qu'une VM peut faire, et depuis quel nœud
+
+C'est **la** question que tout le monde se pose au TP 17, et à laquelle les §2.5 et §7
+répondent séparément sans jamais l'affirmer. Voici la synthèse.
+
+Prenons une VM de `vprod` (`10.60.10.42`) hébergée sur **pve4**, qui n'est **pas** un
+exit node (les exit nodes sont `pve1` et `pve2`, primaire `pve1`) :
+
+| Elle veut joindre… | Verdict | Par quel mécanisme |
+|---|:---:|---|
+| une VM de `vprod` sur **pve1** | ✅ | **L2 sur VXLAN**. FRR annonce les couples MAC/IP en **routes EVPN type-2** : pve4 sait derrière quel VTEP joindre la MAC avant même le premier paquet — pas de flood-and-learn |
+| une VM de `vpub` sur **pve6** | ✅ | **routage L3 dans le VRF** (IRB symétrique, via le `vrf-vxlan` 10000). La VM route sur **sa gateway anycast locale**, portée par pve4 : aucun trombone vers l'exit node |
+| **Internet** | ✅ | route par défaut apprise en **BGP (type-5)** → réencapsulation VXLAN vers le VTEP de pve1 → décapsulation, sortie du VRF, **SNAT sur pve1**, puis `vmbr0` |
+| une VM de `vdb` | ✅ | routage inter-VNet, **si** `vdb.fw` autorise le sens (cf. §8) |
+| Internet **depuis `vdb`** | ❌ | `snat` non coché sur le subnet — voulu |
+
+Et dans l'autre sens — c'est là que ça surprend :
+
+| Qui veut joindre la VM | Verdict | Pourquoi |
+|---|:---:|---|
+| une autre VM de la zone | ✅ | même fabric EVPN, cf. tableau ci-dessus |
+| le **shell de pve4** lui-même | ❌ **sans `exitnodes-local-routing`** | l'hôte n'a pas de route vers le VRF (cf. piège n°3) |
+| un poste du LAN de la salle | ❌ | pas de DNAT managé dans le SDN Proxmox (cf. §12) — il faut un reverse-proxy ou du DNAT à la main sur l'exit node |
+
+🪤 **Le piège de démonstration** : le formateur teste depuis le shell de son nœud,
+`ping 10.60.10.42` échoue, et tout le monde conclut que l'EVPN est cassé — alors que
+la VM sort très bien sur Internet. Testez **depuis une autre VM**, pas depuis l'hôte.
+
+🎯 **Les deux réponses courtes**, à savoir donner sans hésiter :
+
+1. **Oui**, deux VM du même VNet sur deux nœuds différents se parlent. C'est
+   exactement ce que la zone `VXLAN` pure apportait déjà — la zone `Simple`, elle,
+   ne le fait **pas** (deux îlots homonymes).
+2. **Oui**, une VM sort sur Internet **sans être hébergée sur un exit node**. C'est
+   la définition même d'un exit node : *« The configured nodes will announce a
+   default route in the EVPN network. »* Aucune VM n'a besoin d'y être.
+
+### La preuve, sur un nœud qui n'est PAS exit node
+
+```bash
+# Sur pve4, pve5 ou pve6
+vtysh -c "show evpn vni detail"                      # le VNI L2 + le L3VNI du VRF
+vtysh -c "show bgp l2vpn evpn route type macip"      # type-2 : les MAC des VM distantes
+vtysh -c "show bgp l2vpn evpn route type prefix"     # type-5 : la route par défaut
+ip -4 route show vrf vrf_zevpn                       # ⭐ doit contenir « default … proto bgp »
+bridge fdb show | grep vxlan                         # les VTEP distants
+```
+
+Si `ip -4 route show vrf vrf_zevpn` affiche une `default` en `proto bgp` sur un nœud
+qui n'est pas exit node, la question n°2 est **prouvée sur pièce**.
+
+```bash
+iptables -t nat -S POSTROUTING | grep 10.60          # → VIDE, et c'est NORMAL
+```
+
+🪤 **Ne cherchez pas de règle SNAT sur un nœud non-exit : il n'y en a pas.** Le code
+de `pve-network` (`EvpnPlugin.pm`) ne pose la règle **que si le nœud courant fait
+partie des gateway nodes**. Un stagiaire qui lance cette commande sur son propre nœud
+la trouvera vide et conclura à tort que sa configuration est cassée. C'est sur
+**l'exit node primaire** qu'il faut regarder.
+
+---
+
 ## 8. Firewall au niveau VNet 🛡️
 
 Depuis les versions récentes, on peut poser des règles **directement sur un VNet**,

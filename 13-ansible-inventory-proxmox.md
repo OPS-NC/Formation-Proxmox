@@ -6,7 +6,7 @@ Objectif : Terraform crée les machines, **Ansible les configure**. Et il ne le 
 au hasard : il interroge l'API Proxmox, lit les **tags** posés au TP 11, et applique le
 rôle correspondant. Zéro inventaire à maintenir à la main.
 
-📖 Plugin d'inventaire : <https://docs.ansible.com/ansible/latest/collections/community/general/proxmox_inventory.html>
+📖 Plugin d'inventaire : <https://docs.ansible.com/ansible/latest/collections/community/proxmox/proxmox_inventory.html>
 
 ---
 
@@ -59,12 +59,24 @@ Sur votre **PC Ubuntu** :
 sudo apt update
 sudo apt install -y ansible python3-proxmoxer python3-requests
 ansible --version
-ansible-galaxy collection install community.general ansible.posix
-ansible-galaxy collection list | grep -E 'community.general|ansible.posix'
+ansible-galaxy collection install community.general ansible.posix \
+                                 community.proxmox community.postgresql
+ansible-galaxy collection list | grep -E 'community.proxmox|community.general|ansible.posix'
 ```
 
-🪤 Le plugin d'inventaire Proxmox a besoin de **`proxmoxer`** côté contrôleur. Sans lui,
-l'erreur est laconique : `Invalid data from server`.
+🪤 **Deux prérequis, deux erreurs très différentes :**
+
+| Manquant | Symptôme |
+|---|---|
+| `python3-proxmoxer` (côté contrôleur) | `Invalid data from server` |
+| collection `community.proxmox` | inventaire **vide**, ou `Attempting to use a plugin that has been removed` |
+
+🧠 **Pourquoi `community.proxmox` alors qu'on écrivait `community.general.proxmox` ?**
+Le plugin a **déménagé**. `community.general.proxmox` n'est plus qu'une redirection,
+supprimée en `community.general` 15.0.0. C'est une situation très banale dans
+l'écosystème Ansible : les collections « fourre-tout » se scindent par domaine au fil
+du temps. Le réflexe à retenir : quand un plugin se met à râler, vérifiez d'abord
+s'il n'a pas simplement changé de collection.
 
 ---
 
@@ -91,8 +103,9 @@ lab/ansible/
 │   └── db/                   ← machines taguées « db »
 │       ├── tasks/main.yml
 │       ├── handlers/main.yml
-│       └── templates/pg_hba.conf.j2
-├── site.yml                  ← le playbook principal
+│       └── defaults/main.yml
+├── site.yml                  ← le playbook principal (les VM)
+├── alpine.yml                ← amorçage des LXC Alpine (module raw)
 └── ping.yml                  ← test de connectivité
 ```
 
@@ -109,7 +122,7 @@ ls -R | head -40
 
 ```yaml
 ---
-plugin: community.general.proxmox
+plugin: community.proxmox.proxmox     # ⚠ PAS community.general.proxmox (déprécié)
 url: "https://192.168.50.13:8006"
 user: ansible@pve
 token_id: inv
@@ -277,7 +290,6 @@ ansible -i inventory/proxmox.yml all -m setup -a 'filter=ansible_distribution*'
 - name: Fuseau horaire
   community.general.timezone:
     name: "{{ common_timezone }}"
-  notify: redemarrer cron
 
 - name: Bannière de connexion
   ansible.builtin.template:
@@ -322,11 +334,6 @@ ansible -i inventory/proxmox.yml all -m setup -a 'filter=ansible_distribution*'
 - name: redemarrer ssh
   ansible.builtin.service:
     name: "{{ 'ssh' if ansible_os_family == 'Debian' else 'sshd' }}"
-    state: restarted
-
-- name: redemarrer cron
-  ansible.builtin.service:
-    name: "{{ 'cron' if ansible_os_family == 'Debian' else 'crond' }}"
     state: restarted
 
 - name: activer node-exporter
@@ -541,8 +548,8 @@ ansible-playbook site.yml --ask-vault-pass
 
 ```yaml
 ---
-- name: Socle commun sur toutes les machines Linux
-  hosts: linux
+- name: Socle commun sur toutes les VM Linux
+  hosts: linux          # ⚠ pas « linux:conteneurs » — voir l'encart ci-dessous
   become: true
   gather_facts: true
   roles:
@@ -560,6 +567,30 @@ ansible-playbook site.yml --ask-vault-pass
   roles:
     - db
 ```
+
+🪤 **Et les conteneurs LXC Alpine ?** Ils ne sont **pas** dans `site.yml`, et c'est
+volontaire : Alpine n'embarque **pas de Python**, or Ansible en a besoin sur la cible.
+S'ajoutent trois différences : pas de `bash`, pas de `sudo`, et Terraform pose la clé
+SSH sur `root` et non sur `eleve`.
+
+On les amorce donc avec un playbook dédié, `alpine.yml`, qui utilise le module
+**`raw`** — le seul qui n'exige aucun interpréteur :
+
+```yaml
+- name: Installer Python, bash et sudo (module raw — aucun Python requis)
+  ansible.builtin.raw: |
+    command -v python3 >/dev/null && command -v sudo >/dev/null && exit 0
+    apk add --no-cache python3 bash sudo shadow
+```
+
+```bash
+ansible-playbook alpine.yml     # amorce + socle sur les LXC
+ansible-playbook site.yml       # les VM
+```
+
+🧠 **C'est exactement le problème de l'œuf et de la poule du provisioning**, et
+`raw` est la réponse standard. Vous rencontrerez le même besoin sur un switch, un
+routeur, ou une image *distroless*.
 
 ### Dérouler
 
@@ -686,6 +717,7 @@ resource "terraform_data" "ansible" {
 - [ ] La page web générée affiche le bon hostname, la bonne IP et les bons groupes
 - [ ] PostgreSQL tourne sur la machine taguée `db`, écoute sur le réseau interne
 - [ ] Le rôle `common` fonctionne **à la fois** sur Debian/Ubuntu et sur Rocky
+- [ ] `ansible-playbook alpine.yml` amorce les LXC Alpine (Python installé par `raw`)
 - [ ] Ajouter un tag dans Proxmox suffit à faire appliquer le rôle correspondant
 
 ---

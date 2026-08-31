@@ -21,8 +21,13 @@ statique — même rôle, autre cible.
 
 ```bash
 sudo apt install -y ansible python3-proxmoxer python3-requests
-ansible-galaxy collection install community.general ansible.posix community.postgresql
+ansible-galaxy collection install community.proxmox community.general \
+                                 ansible.posix community.postgresql
 ```
+
+> ⚠️ **`community.proxmox` est obligatoire.** Le plugin d'inventaire a déménagé :
+> `community.general.proxmox` n'est plus qu'une redirection, supprimée en
+> `community.general` 15.0.0. Sans la collection cible, l'inventaire sort vide.
 
 ## Configuration
 
@@ -50,9 +55,14 @@ ansible linux -m ping                  # test de connectivité
 
 ansible-playbook site.yml --syntax-check
 ansible-playbook site.yml --check --diff
-ansible-playbook site.yml
+ansible-playbook alpine.yml            # les LXC Alpine (à jouer en premier)
+ansible-playbook site.yml              # les VM
 ansible-playbook site.yml --limit proxmox_web
 ```
+
+🪤 **`site.yml` ne cible que les VM** (`hosts: linux`). Les conteneurs Alpine n'ont
+ni Python, ni bash, ni sudo, et leur clé SSH est sur `root` : ils passent par
+`alpine.yml`, qui les amorce avec le module `raw`.
 
 ## Le rebond SSH
 
@@ -96,7 +106,8 @@ ansible/
 │   ├── web/       nginx + vhost + page générée
 │   ├── db/        PostgreSQL, multi-OS (Debian ET Rocky)
 │   └── nfs/       serveur NFS + exports  (disque optionnel)
-├── site.yml       le parc Proxmox
+├── site.yml       les VM du parc Proxmox
+├── alpine.yml     ← amorçage des LXC Alpine (module raw : Python absent d'Alpine)
 ├── nfs-local.yml  ← le serveur NFS sur votre poste (TP 14)
 └── ping.yml       test de connectivité
 ```
@@ -130,6 +141,8 @@ ansible-playbook site.yml --ask-vault-pass
 | Symptôme | Solution |
 |---|---|
 | `Invalid data from server` | `apt install python3-proxmoxer` |
+| Inventaire vide / plugin introuvable | `ansible-galaxy collection install community.proxmox` |
+| `UNREACHABLE` sur un CT Alpine | Jouer `alpine.yml` d'abord (`remote_user: root`) |
 | Inventaire vide | Vérifiez le token, `validate_certs: false`, videz `/tmp/ansible-pve-cache` |
 | `ansible_host` absent | L'agent QEMU ne tourne pas dans la VM |
 | `UNREACHABLE` | Le `ProxyCommand` n'est pas configuré, ou `ssh root@node` échoue |

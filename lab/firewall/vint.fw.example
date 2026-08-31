@@ -30,5 +30,13 @@ FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p icmp -log nolog
 # ── Tout autre flux vers la DMZ : refusé et journalisé ───────────────────────
 FORWARD DROP -source +sdn/vint-all -dest +sdn/vdmz-all -log info
 
+# ── Supervision : la zone SERVICES scrape l'interne (ajouté au TP 12) ────────
+# ⚠ Une règle de FORWARD est UNIDIRECTIONNELLE et le paquet traverse les DEUX
+#   VNets. Autoriser « vsrv → vint » dans vsrv.fw ne suffit pas : sans la règle
+#   ci-dessous, vint.fw (policy_forward: DROP) jette le paquet à l'arrivée.
+#   Le conntrack ne gère que le RETOUR, pas le sens initial.
+FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vint-all -p tcp -dport 9100 -log nolog
+FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vint-all -p tcp -dport 22 -log info
+
 # ── Interne vers Internet : libre (doit rester EN DERNIER) ───────────────────
 FORWARD ACCEPT -source +sdn/vint-all -log nolog

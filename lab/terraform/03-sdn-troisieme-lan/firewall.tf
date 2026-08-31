@@ -1,10 +1,15 @@
 # Les règles de firewall d'un VNet vivent dans /etc/pve/sdn/firewall/<vnet>.fw.
-# On les génère depuis un template, puis on les dépose par SSH.
+# Le provider ne couvre pas cet objet : on génère le fichier depuis un template,
+# puis on le dépose par SSH.
 #
 # 🧠 Ce n'est pas de la triche : Terraform ne couvre pas encore tous les objets
 #    de l'API Proxmox. Combiner ressources natives et local-exec ciblés est une
 #    pratique acceptable — tant que c'est idempotent et déclenché par un trigger
 #    explicite, comme ici (content_md5).
+#
+#    Comparez avec sdn.tf : là où une ressource native existe
+#    (proxmox_virtual_environment_sdn_applier), on l'utilise. Le local-exec est
+#    le dernier recours, pas le réflexe.
 
 locals {
   fw_vsrv = templatefile("${path.module}/templates/vsrv.fw.tftpl", {
@@ -20,17 +25,18 @@ resource "local_file" "fw_vsrv" {
 }
 
 resource "terraform_data" "push_fw" {
-  depends_on = [terraform_data.sdn_apply]
+  depends_on = [proxmox_virtual_environment_sdn_applier.apply]
 
   triggers_replace = [local_file.fw_vsrv.content_md5]
 
   provisioner "local-exec" {
     command = <<-EOT
+      set -e
       ssh -o StrictHostKeyChecking=no root@${var.pve_host} 'mkdir -p /etc/pve/sdn/firewall'
       scp -o StrictHostKeyChecking=no ${local_file.fw_vsrv.filename} \
           root@${var.pve_host}:/etc/pve/sdn/firewall/vsrv.fw
       ssh -o StrictHostKeyChecking=no root@${var.pve_host} \
-          'pvesh set /cluster/sdn && (systemctl reload proxmox-firewall || systemctl restart proxmox-firewall)'
+          'systemctl reload proxmox-firewall 2>/dev/null || systemctl restart proxmox-firewall'
     EOT
   }
 }

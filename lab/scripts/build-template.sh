@@ -28,10 +28,10 @@ die()  { printf "${RED}ERREUR:${NC} %s\n" "$*" >&2; exit 1; }
 
 usage() {
   cat <<EOF
-Usage: $0 --eleve N --os <debian13|ubuntu2604|rocky10> --vmid ID [options]
+Usage: $0 --eleve $N --os <debian13|ubuntu2604|rocky10> --vmid ID [options]
 
 Options :
-  --eleve N          numéro d'élève (1-6)              [requis]
+  --eleve $N          numéro d'élève (1-6)              [requis]
   --os NAME          debian13 | ubuntu2604 | rocky10   [requis]
   --vmid ID          identifiant du template           [requis]
   --storage NAME     stockage des disques              [$STORAGE]
@@ -116,7 +116,7 @@ virt-customize -a "$WORK" \
   --timezone "$TZ_LAB" \
   --run-command "$EXTRA_CMD" \
   --run-command 'echo "PermitRootLogin prohibit-password" > /etc/ssh/sshd_config.d/10-lab.conf || true' \
-  --truncate /etc/machine-id     # ⭐ sinon tous les clones partagent la même identité DHCP
+  --truncate /etc/machine-id     # ⭐ sinon tous les clones envoient le même DUID DHCP → même bail
 
 # ─── 3. Créer la VM support ──────────────────────────────────────────────────
 info "création de la VM $VMID ($NAME)"

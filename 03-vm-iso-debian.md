@@ -125,7 +125,7 @@ quand il en manque. Utile en lab surchargé, à éviter pour les bases de donné
 Parce que c'est ce que vous ferez en vrai, et parce que c'est reproductible.
 
 ```bash
-VMID=N01                 # ex. 301
+VMID=${N}01                 # ex. 301
 N=N                      # votre numéro
 ISO=$(ls /var/lib/vz/template/iso/debian-13*-amd64-netinst.iso | head -1 | xargs basename)
 
@@ -287,8 +287,9 @@ une fois le cluster monté.
 ### Cloner
 
 ```bash
-qm clone $VMID N02 --name srv02-eN --full 1
-qm destroy N02 --purge     # on nettoie, c'était juste pour voir
+N=3     # ⚠ VOTRE numéro d'élève
+qm clone $VMID ${N}02 --name srv02-eN --full 1
+qm destroy ${N}02 --purge     # on nettoie, c'était juste pour voir
 ```
 
 ---

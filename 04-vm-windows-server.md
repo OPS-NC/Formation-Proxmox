@@ -144,7 +144,7 @@ Une VM peut avoir plusieurs lecteurs. On ajoute le second sur `ide0`.
 Ou en CLI, ce qui permet aussi de relire la configuration complète :
 
 ```bash
-N=3 ; VMID=N02
+N=3 ; VMID=${N}02
 
 qm set $VMID --ide0 local:iso/virtio-win.iso,media=cdrom
 qm config $VMID

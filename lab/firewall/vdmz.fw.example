@@ -24,6 +24,12 @@ FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 22 -log n
 FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 80 -log nolog
 FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 443 -log nolog
 
+# ── Supervision : la zone SERVICES scrape la DMZ (ajouté au TP 12) ──────────
+# ⚠ Le pendant de la règle « vsrv → vdmz:9100 » de vsrv.fw. Une règle FORWARD
+#   est unidirectionnelle et le paquet traverse les DEUX VNets : il faut
+#   l'autoriser des deux côtés.
+FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vdmz-all -p tcp -dport 9100 -log nolog
+
 # ── 🚨 DMZ vers INTERNE : INTERDIT (avant les règles Internet !) ─────────────
 FORWARD DROP -source +sdn/vdmz-all -dest +sdn/vint-all -log warning
 FORWARD DROP -source +sdn/vdmz-all -dest +sdn/vsrv-all -log warning

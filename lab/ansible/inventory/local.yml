@@ -10,8 +10,5 @@ all:
     nfs_manage_disk: false
     nfs_root: "/srv/nfs-e3"                  # ⚠ votre numéro
     nfs_allowed_network: "192.168.50.13"     # ⚠ l'IP de VOTRE nœud
-    nfs_exports:
-      - images
-      - iso
-      - backup
-      - snippets
+    # Laisser la valeur par défaut du rôle (layout Proxmox) sauf besoin précis :
+    # nfs_subdirs: [images, dump, template/iso, template/cache, snippets]

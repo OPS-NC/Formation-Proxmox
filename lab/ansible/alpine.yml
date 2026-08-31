@@ -1,0 +1,101 @@
+---
+# Prépare les conteneurs LXC Alpine du parc, puis leur applique un socle minimal.
+#
+#   ansible-playbook alpine.yml
+#
+# 🧠 Pourquoi un playbook séparé plutôt que « hosts: linux:conteneurs » ?
+#    Ansible n'est pas magique : il a besoin d'un interpréteur Python sur la
+#    cible. Une image Alpine n'en a pas. Le module « raw » est le seul qui
+#    n'en exige pas — c'est précisément à ça qu'il sert : amorcer une machine
+#    trop nue pour Ansible.
+#
+#    Trois autres différences avec les VM du parc :
+#      · Terraform pose la clé SSH sur ROOT du conteneur, pas sur « eleve »
+#      · Alpine n'a ni bash ni sudo par défaut
+#      · le gestionnaire de paquets est apk, pas apt
+
+- name: Amorcer les conteneurs Alpine
+  hosts: conteneurs
+  gather_facts: false
+  remote_user: root
+  become: false
+
+  vars:
+    ansible_ssh_common_args: >-
+      -o ProxyCommand="ssh -W %h:%p -q root@{{ pve_host }}"
+      -o StrictHostKeyChecking=no
+      -o UserKnownHostsFile=/dev/null
+
+  tasks:
+    - name: Attendre que SSH réponde
+      ansible.builtin.wait_for_connection:
+        timeout: 120
+        delay: 5
+
+    - name: Installer Python, bash et sudo (module raw — aucun Python requis)
+      ansible.builtin.raw: |
+        command -v python3 >/dev/null && command -v sudo >/dev/null && exit 0
+        apk add --no-cache python3 bash sudo shadow
+      register: bootstrap
+      changed_when: "'OK:' in (bootstrap.stdout | default(''))"
+
+    - name: Ansible peut maintenant travailler normalement
+      ansible.builtin.setup:
+
+- name: Socle minimal sur les conteneurs Alpine
+  hosts: conteneurs
+  gather_facts: true
+  remote_user: root
+  become: false
+
+  vars:
+    ansible_ssh_common_args: >-
+      -o ProxyCommand="ssh -W %h:%p -q root@{{ pve_host }}"
+      -o StrictHostKeyChecking=no
+      -o UserKnownHostsFile=/dev/null
+
+  tasks:
+    - name: Paquets de base
+      community.general.apk:
+        name: "{{ common_packages | join(',') }}"
+        state: present
+        update_cache: true
+
+    - name: Fuseau horaire
+      community.general.apk:
+        name: tzdata
+        state: present
+
+    - name: Appliquer le fuseau horaire
+      ansible.builtin.file:
+        src: "/usr/share/zoneinfo/{{ common_timezone }}"
+        dest: /etc/localtime
+        state: link
+        force: true
+
+    - name: Compte d'administration
+      ansible.builtin.user:
+        name: "{{ common_admin_user }}"
+        groups: wheel
+        append: true
+        shell: /bin/bash
+        state: present
+
+    - name: Sudo sans mot de passe pour ce compte
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/10-{{ common_admin_user }}"
+        content: "{{ common_admin_user }} ALL=(ALL) NOPASSWD:ALL\n"
+        mode: "0440"
+        validate: "visudo -cf %s"
+
+    - name: Clé SSH de l'administrateur
+      ansible.posix.authorized_key:
+        user: "{{ common_admin_user }}"
+        key: "{{ lookup('file', lookup('env', 'HOME') + '/.ssh/id_ed25519.pub') }}"
+        state: present
+
+    - name: Bannière de connexion
+      ansible.builtin.template:
+        src: roles/common/templates/motd.j2
+        dest: /etc/motd
+        mode: "0644"

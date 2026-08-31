@@ -285,9 +285,9 @@ pvesm status
 ```bash
 N=3
 pvesm list pbs-lab
-qm restore N01 pbs-lab:backup/vm/N01/<timestamp> --storage local-lvm
-qm restore N02 pbs-lab:backup/vm/N02/<timestamp> --storage local-lvm
-pct restore N11 pbs-lab:backup/ct/N11/<timestamp> --storage local-lvm
+qm restore ${N}01 pbs-lab:backup/vm/${N}01/<timestamp> --storage local-lvm
+qm restore ${N}02 pbs-lab:backup/vm/${N}02/<timestamp> --storage local-lvm
+pct restore ${N}11 pbs-lab:backup/ct/${N}11/<timestamp> --storage local-lvm
 qm list ; pct list
 ```
 
@@ -511,18 +511,19 @@ ceph fs status
 ```bash
 N=3
 # Déplacer un disque vers Ceph, à chaud
-qm move-disk N01 scsi0 vm-store --delete 1
-qm config N01 | grep scsi0
+qm move-disk ${N}01 scsi0 vm-store --delete 1
+qm config ${N}01 | grep scsi0
 rbd -p vm-store ls
-rbd -p vm-store info vm-N01-disk-0
+rbd -p vm-store info vm-${N}01-disk-0
 ```
 
 ```bash
+N=3     # ⚠ VOTRE numéro d'élève
 # Créer directement sur Ceph
-qm clone N90 N70 --name ceph-vm-e$N --pool eleve$N
-qm move-disk N70 scsi0 vm-store --delete 1
-qm set N70 --net0 virtio,bridge=vprod,firewall=1,mtu=1 --ipconfig0 ip=dhcp
-qm start N70
+qm clone ${N}90 ${N}70 --name ceph-vm-e$N --pool eleve$N
+qm move-disk ${N}70 scsi0 vm-store --delete 1
+qm set ${N}70 --net0 virtio,bridge=vprod,firewall=1,mtu=1 --ipconfig0 ip=dhcp
+qm start ${N}70
 ```
 
 ```bash

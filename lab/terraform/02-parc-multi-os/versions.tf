@@ -4,9 +4,10 @@ terraform {
   required_providers {
     proxmox = {
       source = "bpg/proxmox"
-      # Ajustez si votre version installée est différente :
-      #   terraform providers
-      version = ">= 0.80"
+      # ⚠ Les ressources SDN (vnet, subnet, applier) n'existent qu'à partir de
+      #   la v0.84.0 du provider. « >= 0.80 » se résoudrait sur une version qui
+      #   ne les connaît pas → « Invalid resource type » au TP 12.
+      version = "~> 0.111"
     }
   }
 }

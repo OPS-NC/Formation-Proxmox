@@ -413,9 +413,9 @@ restaurez-les.
 ```bash
 N=3
 pvesm list pbs-lab | grep "vm/$((N))"
-qm restore N01 pbs-lab:backup/vm/N01/<timestamp> --storage local-lvm
-qm restore N02 pbs-lab:backup/vm/N02/<timestamp> --storage local-lvm
-pct restore N11 pbs-lab:backup/ct/N11/<timestamp> --storage local-lvm
+qm restore ${N}01 pbs-lab:backup/vm/${N}01/<timestamp> --storage local-lvm
+qm restore ${N}02 pbs-lab:backup/vm/${N}02/<timestamp> --storage local-lvm
+pct restore ${N}11 pbs-lab:backup/ct/${N}11/<timestamp> --storage local-lvm
 qm list ; pct list
 ```
 
@@ -428,10 +428,11 @@ Un template n'existe que sur son nœud (stockage local, non sauvegardé). Chacun
 les siens — en cinq minutes, parce qu'on les a industrialisés au TP 10 :
 
 ```bash
+N=3     # ⚠ VOTRE numéro d'élève
 cd /root/formation
-./lab/scripts/build-template.sh --eleve N --os debian13   --vmid N90
-./lab/scripts/build-template.sh --eleve N --os ubuntu2604 --vmid N91
-./lab/scripts/build-template.sh --eleve N --os rocky10    --vmid N92
+./lab/scripts/build-template.sh --eleve N --os debian13   --vmid ${N}90
+./lab/scripts/build-template.sh --eleve N --os ubuntu2604 --vmid ${N}91
+./lab/scripts/build-template.sh --eleve N --os rocky10    --vmid ${N}92
 ```
 
 🧠 **C'est le retour sur investissement du jour 3.** Sans les scripts, Terraform et

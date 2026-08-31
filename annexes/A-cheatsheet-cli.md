@@ -17,7 +17,8 @@ Toutes les commandes utiles de la formation, classées. À imprimer.
 | `qm` | machines virtuelles |
 | `pct` | conteneurs LXC |
 | `vzdump` | sauvegardes |
-| `pve-firewall` | firewall (iptables) |
+| `pve-firewall` | firewall historique (back-end iptables — ignore les règles VNet) |
+| `proxmox-firewall` | firewall nftables (requis pour les règles VNet — `nftables: 1`) |
 | `ha-manager` | haute disponibilité |
 | `pvesr` | réplication |
 | `vtysh` | FRRouting (BGP/EVPN) |
@@ -305,7 +306,10 @@ pve-firewall status
 pve-firewall compile                        # voir les règles générées
 pve-firewall stop                           # 🚨 urgence
 systemctl status proxmox-firewall
-nft list tables ; nft list ruleset | head -50
+nft list tables                       # les tables : « ip nat » ET « inet proxmox-firewall »
+nft list table ip nat                 # le SNAT du SDN (écrit via iptables-nft)
+nft list table inet proxmox-firewall  # le firewall — table SÉPARÉE, elles ne se voient pas
+iptables -V                           # → (nf_tables) : iptables = front-end de nftables
 
 # Fichiers
 /etc/pve/firewall/cluster.fw

@@ -76,11 +76,30 @@ systemctl status nfs-server --no-pager | head -5
 ```bash
 N=3      # votre numéro d'élève
 
-sudo mkdir -p /srv/nfs-e$N/{images,iso,backup,snippets,template/{iso,cache}}
+# ⚠ Ces noms ne sont pas arbitraires : c'est le LAYOUT attendu par Proxmox.
+sudo mkdir -p /srv/nfs-e$N/{images,dump,snippets,template/{iso,cache}}
 sudo chown -R nobody:nogroup /srv/nfs-e$N
 sudo chmod -R 0777 /srv/nfs-e$N
 ls -lR /srv/nfs-e$N | head -20
 ```
+
+| Répertoire | Contenu | Type de `--content` |
+|---|---|---|
+| `images/` | disques de VM **et** rootfs de conteneurs | `images`, `rootdir` |
+| `dump/` | archives `vzdump` | `backup` |
+| `template/iso/` | images ISO | `iso` |
+| `template/cache/` | templates LXC | `vztmpl` |
+| `snippets/` | user-data / vendor-data cloud-init | `snippets` |
+
+🧠 **Proxmox créerait ces dossiers tout seul** au premier usage. On les pré-crée pour
+deux raisons : fixer les droits (`nobody:nogroup`, `0777`) une bonne fois — sinon le
+premier écrit les crée en `root:root` — et **voir la structure d'un stockage Proxmox**,
+identique sur `dir`, `nfs` et `cifs`. C'est aussi ce qui vous permettra, au TP 15, de
+comprendre où PBS range quoi.
+
+🪤 Ne cherchez pas de dossier `iso/` ou `backup/` : ils s'appellent `template/iso/`
+et `dump/`. Une erreur de nommage ici donne un stockage qui « apparaît vide » dans
+l'interface, sans le moindre message d'erreur.
 
 ### Déclarer l'export
 
@@ -158,9 +177,9 @@ all:
       ansible_connection: local
   vars:
     nfs_root: "/srv/nfs-e3"            # ⚠ votre numéro
-    nfs_allowed_network: "192.168.50.13"
-    nfs_exports: [images, iso, backup, snippets]
+    nfs_allowed_network: "192.168.50.13"   # ⚠ l'IP de VOTRE nœud
     nfs_manage_disk: false             # pas de disque dédié : on utilise /srv
+    # nfs_subdirs : la valeur par défaut du rôle est déjà le layout Proxmox
 ```
 
 ```bash
@@ -258,9 +277,9 @@ partage et le signalent en erreur.
 
 ```bash
 N=3
-qm move-disk N20 scsi0 nfs-e$N --delete 1
-qm config N20 | grep scsi0
-ls -lh /mnt/pve/nfs-e$N/images/N20/
+qm move-disk ${N}20 scsi0 nfs-e$N --delete 1
+qm config ${N}20 | grep scsi0
+ls -lh /mnt/pve/nfs-e$N/images/${N}20/
 ```
 
 🧠 Observez le format : sur un stockage `nfs` ou `dir`, le disque est un **fichier
@@ -271,13 +290,14 @@ NFS — et qui explique la légère perte de performance.
 ### Comparer les débits
 
 ```bash
+N=3     # ⚠ VOTRE numéro d'élève
 # Disque sur local-lvm
-qm move-disk N20 scsi0 local-lvm --delete 1
+qm move-disk ${N}20 scsi0 local-lvm --delete 1
 ssh -J root@192.168.50.13 eleve@10.3.10.50 \
   'dd if=/dev/zero of=/tmp/t bs=1M count=512 oflag=direct conv=fsync; rm /tmp/t'
 
 # Le même disque sur NFS
-qm move-disk N20 scsi0 nfs-e3 --delete 1
+qm move-disk ${N}20 scsi0 nfs-e3 --delete 1
 ssh -J root@192.168.50.13 eleve@10.3.10.50 \
   'dd if=/dev/zero of=/tmp/t bs=1M count=512 oflag=direct conv=fsync; rm /tmp/t'
 ```
@@ -290,19 +310,21 @@ plusieurs centaines de Mo/s en local. C'est la limite du réseau, pas du protoco
 C'est l'usage le plus utile.
 
 ```bash
+N=3     # ⚠ VOTRE numéro d'élève
 # Déplacer l'ISO Debian vers le NFS
 mv /var/lib/vz/template/iso/debian-13*.iso /mnt/pve/nfs-e3/template/iso/
 pvesm list nfs-e3
 
 # Un snippet cloud-init partagé
 cp /root/formation/lab/cloud-init/vendor-data-common.yaml /mnt/pve/nfs-e3/snippets/
-qm set N20 --cicustom "vendor=nfs-e3:snippets/vendor-data-common.yaml"
+qm set ${N}20 --cicustom "vendor=nfs-e3:snippets/vendor-data-common.yaml"
 ```
 
 ### Une sauvegarde
 
 ```bash
-vzdump N20 --storage nfs-e3 --mode snapshot --compress zstd
+N=3     # ⚠ VOTRE numéro d'élève
+vzdump ${N}20 --storage nfs-e3 --mode snapshot --compress zstd
 ls -lh /mnt/pve/nfs-e3/dump/
 ```
 
@@ -313,9 +335,10 @@ ls -lh /mnt/pve/nfs-e3/dump/
 **À faire, vraiment.** C'est l'incident que vous vivrez en production.
 
 ```bash
+N=3     # ⚠ VOTRE numéro d'élève
 # 1. Une VM tourne, son disque est sur le NFS
-qm move-disk N20 scsi0 nfs-e3 --delete 1
-qm start N20
+qm move-disk ${N}20 scsi0 nfs-e3 --delete 1
+qm start ${N}20
 ```
 
 ```bash
@@ -326,7 +349,8 @@ sudo systemctl stop nfs-server
 Observez, sur le nœud :
 
 ```bash
-qm status N20
+N=3     # ⚠ VOTRE numéro d'élève
+qm status ${N}20
 ls /mnt/pve/nfs-e3/            # ⏳ gèle
 dmesg -T | tail -20            # « nfs: server ... not responding, still trying »
 pvesm status                   # nfs-e3 en « inactive »

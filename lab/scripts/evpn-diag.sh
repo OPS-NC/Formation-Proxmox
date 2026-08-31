@@ -87,13 +87,37 @@ if ip link show "vrf_${ZONE}" &>/dev/null; then
 fi
 
 # ─── 6. SNAT (exit node) ─────────────────────────────────────────────────────
-titre "6. SNAT"
-NAT=$( { iptables -t nat -S 2>/dev/null; nft list ruleset 2>/dev/null; } | grep -ciE 'masquerade|snat' || true)
-if [ "$NAT" -gt 0 ]; then
-  ok "$NAT règle(s) de NAT présente(s) — ce nœud est probablement un exit node"
-  { iptables -t nat -S 2>/dev/null | grep -iE 'masquerade|snat'; } | head -5 | sed 's/^/       /'
+# 🧠 pve-network (EvpnPlugin.pm) ne pose les règles SNAT QUE sur les exit nodes.
+#    Sur un nœud ordinaire, l'absence de règle n'est pas une panne : le NAT se
+#    fait sur l'exit node, après décapsulation du VXLAN. On lit donc d'abord la
+#    configuration pour savoir ce qu'on DEVRAIT trouver.
+titre "6. SNAT (posé uniquement sur les exit nodes)"
+ME="$(hostname)"
+EXITNODES=$(grep -A15 "evpn: $ZONE" /etc/pve/sdn/zones.cfg 2>/dev/null \
+            | grep -oP '^\s*exitnodes \K.*' | head -1)
+PRIMARY=$(grep -A15 "evpn: $ZONE" /etc/pve/sdn/zones.cfg 2>/dev/null \
+          | grep -oP '^\s*exitnodes-primary \K.*' | head -1)
+IS_EXIT=0
+case ",${EXITNODES}," in *",${ME},"*) IS_EXIT=1 ;; esac
+
+printf "       exit nodes : %s   (primaire : %s)\n" "${EXITNODES:-aucun}" "${PRIMARY:-non défini}"
+
+NAT=$(iptables -t nat -S POSTROUTING 2>/dev/null | grep -ciE 'masquerade|snat' || true)
+if [ "$IS_EXIT" = 1 ]; then
+  if [ "$NAT" -gt 0 ]; then
+    ok "$ME est exit node et porte $NAT règle(s) SNAT"
+    iptables -t nat -S POSTROUTING 2>/dev/null | grep -iE 'masquerade|snat' | head -5 | sed 's/^/       /'
+  else
+    ko "$ME est déclaré exit node mais ne porte AUCUNE règle SNAT — apply oublié ?"
+  fi
 else
-  warn "aucune règle SNAT — normal si ce nœud n'est pas exit node"
+  if [ "$NAT" -gt 0 ]; then
+    warn "$ME n'est PAS exit node mais porte des règles SNAT (reste d'un TP précédent ?)"
+  else
+    ok "aucune règle SNAT, et c'est NORMAL : $ME n'est pas exit node"
+  fi
+  printf "       Le NAT se fait sur %s. Vos VM sortent quand meme :\n" "${PRIMARY:-un exit node}"
+  printf "       elles suivent la route par défaut apprise en BGP (section 5).\n"
 fi
 
 # ─── 7. Ports entre nœuds ────────────────────────────────────────────────────
