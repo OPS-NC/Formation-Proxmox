@@ -92,27 +92,27 @@ locals {
   net_dmz = "10.${var.eleve}.20.0/24"
 }
 
-resource "proxmox_virtual_environment_sdn_zone_simple" "srv" {
+resource "proxmox_sdn_zone_simple" "srv" {
   id    = "zsrv"
   nodes = [var.pve_node]
   ipam  = "pve"
   dhcp  = "dnsmasq"
   mtu   = 1500
 
-  depends_on = [proxmox_virtual_environment_sdn_applier.finalizer]
+  depends_on = [proxmox_sdn_applier.finalizer]
 }
 
-resource "proxmox_virtual_environment_sdn_vnet" "srv" {
+resource "proxmox_sdn_vnet" "srv" {
   id    = "vsrv"
-  zone  = proxmox_virtual_environment_sdn_zone_simple.srv.id
+  zone  = proxmox_sdn_zone_simple.srv.id
   alias = "Services infra e${var.eleve}"
 
-  depends_on = [proxmox_virtual_environment_sdn_applier.finalizer]
+  depends_on = [proxmox_sdn_applier.finalizer]
 }
 
-resource "proxmox_virtual_environment_sdn_subnet" "srv" {
+resource "proxmox_sdn_subnet" "srv" {
   cidr    = local.net_srv
-  vnet    = proxmox_virtual_environment_sdn_vnet.srv.id
+  vnet    = proxmox_sdn_vnet.srv.id
   gateway = local.gw_srv
   snat    = true
 
@@ -121,7 +121,7 @@ resource "proxmox_virtual_environment_sdn_subnet" "srv" {
     end_address   = "10.${var.eleve}.30.200"
   }
 
-  depends_on = [proxmox_virtual_environment_sdn_applier.finalizer]
+  depends_on = [proxmox_sdn_applier.finalizer]
 }
 ```
 
@@ -141,36 +141,36 @@ provider n'est pas un miroir de l'API** — c'est une traduction. Lisez toujours
 doc du provider, jamais celle de l'API, pour écrire du HCL.
 
 🧠 **Les dépendances sont implicites.** Terraform lit
-`proxmox_virtual_environment_sdn_zone_simple.srv.id` dans le VNet, en déduit l'ordre
+`proxmox_sdn_zone_simple.srv.id` dans le VNet, en déduit l'ordre
 de création, et l'ordre inverse pour la destruction. Vous n'écrivez jamais
 « crée la zone d'abord ».
 
 ### Le point délicat : l'apply SDN
 
 Le SDN est transactionnel (cf. TP 08 §7). Le provider expose une ressource dédiée,
-`proxmox_virtual_environment_sdn_applier`, qui appelle exactement le
+`proxmox_sdn_applier`, qui appelle exactement le
 `PUT /cluster/sdn` que vous tapiez à la main :
 
 ```hcl
 # Ne fait rien à la création. Tous les objets SDN en dépendent, donc Terraform
 # le détruit EN DERNIER — et son apply-on-destroy nettoie le nœud une fois les
 # objets retirés de la configuration.
-resource "proxmox_virtual_environment_sdn_applier" "finalizer" {}
+resource "proxmox_sdn_applier" "finalizer" {}
 
 # Celui-ci dépend des objets : il s'exécute APRÈS leur création, et
 # replace_triggered_by le rejoue à chaque modification.
-resource "proxmox_virtual_environment_sdn_applier" "apply" {
+resource "proxmox_sdn_applier" "apply" {
   depends_on = [
-    proxmox_virtual_environment_sdn_zone_simple.srv,
-    proxmox_virtual_environment_sdn_vnet.srv,
-    proxmox_virtual_environment_sdn_subnet.srv,
+    proxmox_sdn_zone_simple.srv,
+    proxmox_sdn_vnet.srv,
+    proxmox_sdn_subnet.srv,
   ]
 
   lifecycle {
     replace_triggered_by = [
-      proxmox_virtual_environment_sdn_zone_simple.srv,
-      proxmox_virtual_environment_sdn_vnet.srv,
-      proxmox_virtual_environment_sdn_subnet.srv,
+      proxmox_sdn_zone_simple.srv,
+      proxmox_sdn_vnet.srv,
+      proxmox_sdn_subnet.srv,
     ]
   }
 }
@@ -187,10 +187,27 @@ et `sdn_applier` n'existent **qu'à partir de la v0.84.0** de `bpg/proxmox` : un
 `>= 0.80` peut se résoudre sur une version qui les ignore, et vous obtenez
 `Invalid resource type`.
 
-> 📌 La famille `proxmox_virtual_environment_sdn_*` est **dépréciée** au profit de
-> `proxmox_sdn_*` (suppression annoncée en v1.0 du provider). Même schéma, nom plus
-> court : la migration sera un simple renommage. C'est le genre de détail à noter
-> dans le README d'un dépôt d'infra — votre futur vous-même vous remerciera.
+📌 **Pourquoi `proxmox_sdn_vnet` et pas `proxmox_virtual_environment_sdn_vnet` ?**
+Parce que la famille longue est **dépréciée** : elle fonctionne encore, mais
+`terraform validate` affiche un avertissement par ressource, et elle disparaîtra en
+v1.0 du provider. Les noms courts ont **exactement le même schéma** — la migration
+est un simple renommage.
+
+⚠️ **Attention, seul le SDN a été renommé.** Les VM et les conteneurs gardent leur
+nom long :
+
+| Objet | Nom de ressource |
+|---|---|
+| Zone, VNet, subnet, applier SDN | `proxmox_sdn_*` ✅ |
+| VM, conteneur, fichier, pool… | `proxmox_virtual_environment_*` (non déprécié) |
+
+🧠 **Vérifiez-le vous-même** plutôt que de me croire — c'est le réflexe utile :
+
+```bash
+terraform providers schema -json | jq -r '
+  .provider_schemas["registry.terraform.io/bpg/proxmox"].resource_schemas
+  | to_entries[] | select(.value.block.deprecated) | .key'
+```
 
 ---
 
@@ -250,7 +267,7 @@ resource "local_file" "fw_vsrv" {
 }
 
 resource "terraform_data" "push_fw" {
-  depends_on = [proxmox_virtual_environment_sdn_applier.apply]
+  depends_on = [proxmox_sdn_applier.apply]
 
   triggers_replace = [local_file.fw_vsrv.content_md5]
 
@@ -347,7 +364,7 @@ resource "proxmox_virtual_environment_vm" "mon" {
   }
 
   network_device {
-    bridge   = proxmox_virtual_environment_sdn_vnet.srv.id   # "vsrv"
+    bridge   = proxmox_sdn_vnet.srv.id   # "vsrv"
     model    = "virtio"
     mtu      = 1        # hérite du MTU du VNet — réflexe pour le jour 4
     firewall = true
@@ -361,7 +378,7 @@ resource "proxmox_virtual_environment_vm" "mon" {
     }
   }
 
-  depends_on = [proxmox_virtual_environment_sdn_applier.apply]
+  depends_on = [proxmox_sdn_applier.apply]
 }
 
 resource "proxmox_virtual_environment_container" "log" {
@@ -383,7 +400,7 @@ resource "proxmox_virtual_environment_container" "log" {
 
   network_interface {
     name     = "eth0"
-    bridge   = proxmox_virtual_environment_sdn_vnet.srv.id
+    bridge   = proxmox_sdn_vnet.srv.id
     firewall = true
   }
 
@@ -402,7 +419,7 @@ resource "proxmox_virtual_environment_container" "log" {
   unprivileged  = true
   start_on_boot = true
 
-  depends_on = [proxmox_virtual_environment_sdn_applier.apply]
+  depends_on = [proxmox_sdn_applier.apply]
 }
 ```
 

@@ -8,9 +8,10 @@ terraform {
       #   la v0.84.0 du provider. « >= 0.80 » se résoudrait sur une version qui
       #   ne les connaît pas → « Invalid resource type ».
       #
-      # 📌 La famille proxmox_virtual_environment_sdn_* est dépréciée au profit
-      #    de proxmox_sdn_* (suppression annoncée en v1.0). Même schéma, nom
-      #    plus court : la migration sera un simple renommage.
+      # 📌 On utilise les noms courts proxmox_sdn_* : la famille
+      #    proxmox_virtual_environment_sdn_* est dépréciée (suppression en v1.0
+      #    du provider) et fait crier « terraform validate ». Seul le SDN a été
+      #    renommé ; les VM et conteneurs gardent proxmox_virtual_environment_*.
       version = "~> 0.111"
     }
 

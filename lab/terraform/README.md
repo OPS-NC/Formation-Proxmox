@@ -55,9 +55,9 @@ terraform destroy
 | `401 authentication failure` | Format du token : `user@realm!tokenid=secret` |
 | `403 Permission check failed` | Privilège manquant dans le rôle |
 | `unable to parse directory volume name` | Bloc `ssh` absent, ou SSH par clé non fonctionnel |
-| `bridge 'X' does not exist` | Il manque un `depends_on` sur `proxmox_virtual_environment_sdn_applier.apply` |
+| `bridge 'X' does not exist` | Il manque un `depends_on` sur `proxmox_sdn_applier.apply` |
 | `An argument named "subnet" is not expected here` | Le subnet SDN s'appelle `cidr` dans le provider (`--subnet` côté `pvesh` seulement) |
 | `Blocks of type "dhcp_range" are not expected here` | `dhcp_range` est un **attribut** : `dhcp_range = { ... }` |
-| `Invalid resource type: proxmox_virtual_environment_sdn_vnet` | Provider < 0.84.0 — `terraform init -upgrade` |
+| `Invalid resource type: proxmox_sdn_vnet` | Provider < 0.84.0 — `terraform init -upgrade` |
 | `can't migrate ... as it's a clone of ...` | Linked clone sur stockage local : `full = true`, ou déplacer le disque sur Ceph |
 | `VM already exists` | Plan de VMID non respecté |

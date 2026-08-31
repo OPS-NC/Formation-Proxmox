@@ -8,7 +8,7 @@
 #    explicite, comme ici (content_md5).
 #
 #    Comparez avec sdn.tf : là où une ressource native existe
-#    (proxmox_virtual_environment_sdn_applier), on l'utilise. Le local-exec est
+#    (proxmox_sdn_applier), on l'utilise. Le local-exec est
 #    le dernier recours, pas le réflexe.
 
 locals {
@@ -25,7 +25,7 @@ resource "local_file" "fw_vsrv" {
 }
 
 resource "terraform_data" "push_fw" {
-  depends_on = [proxmox_virtual_environment_sdn_applier.apply]
+  depends_on = [proxmox_sdn_applier.apply]
 
   triggers_replace = [local_file.fw_vsrv.content_md5]
 

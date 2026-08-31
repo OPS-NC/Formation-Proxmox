@@ -4,7 +4,7 @@
 #   Erreur typique : bridge 'vsrv' does not exist.
 
 resource "proxmox_virtual_environment_vm" "mon" {
-  depends_on = [proxmox_virtual_environment_sdn_applier.apply]
+  depends_on = [proxmox_sdn_applier.apply]
 
   name        = "mon01-e${var.eleve}"
   description = "Supervision — zone services — TP 12"
@@ -31,7 +31,7 @@ resource "proxmox_virtual_environment_vm" "mon" {
   }
 
   network_device {
-    bridge   = proxmox_virtual_environment_sdn_vnet.srv.id
+    bridge   = proxmox_sdn_vnet.srv.id
     model    = "virtio"
     mtu      = 1
     firewall = true
@@ -53,7 +53,7 @@ resource "proxmox_virtual_environment_vm" "mon" {
 }
 
 resource "proxmox_virtual_environment_container" "log" {
-  depends_on = [proxmox_virtual_environment_sdn_applier.apply]
+  depends_on = [proxmox_sdn_applier.apply]
 
   node_name   = var.pve_node
   vm_id       = var.eleve * 100 + 51
@@ -71,7 +71,7 @@ resource "proxmox_virtual_environment_container" "log" {
 
   network_interface {
     name     = "eth0"
-    bridge   = proxmox_virtual_environment_sdn_vnet.srv.id
+    bridge   = proxmox_sdn_vnet.srv.id
     firewall = true
   }
 

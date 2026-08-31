@@ -1,6 +1,6 @@
-output "zone" { value = proxmox_virtual_environment_sdn_zone_simple.srv.id }
-output "vnet" { value = proxmox_virtual_environment_sdn_vnet.srv.id }
-output "subnet" { value = proxmox_virtual_environment_sdn_subnet.srv.cidr }
+output "zone" { value = proxmox_sdn_zone_simple.srv.id }
+output "vnet" { value = proxmox_sdn_vnet.srv.id }
+output "subnet" { value = proxmox_sdn_subnet.srv.cidr }
 output "gateway" { value = local.gw_srv }
 
 output "guests" {

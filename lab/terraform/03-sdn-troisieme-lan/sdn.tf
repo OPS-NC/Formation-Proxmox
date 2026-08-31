@@ -19,35 +19,35 @@ locals {
 #     le nœud une fois les objets retirés de la configuration.
 #   · « apply » dépend des objets : il s'exécute APRÈS leur création, et son
 #     replace_triggered_by le rejoue à chaque modification.
-resource "proxmox_virtual_environment_sdn_applier" "finalizer" {}
+resource "proxmox_sdn_applier" "finalizer" {}
 
 # ── La zone ──────────────────────────────────────────────────────────────────
-resource "proxmox_virtual_environment_sdn_zone_simple" "srv" {
+resource "proxmox_sdn_zone_simple" "srv" {
   id    = "zsrv"
   nodes = [var.pve_node]
   ipam  = "pve"
   dhcp  = "dnsmasq"
   mtu   = 1500
 
-  depends_on = [proxmox_virtual_environment_sdn_applier.finalizer]
+  depends_on = [proxmox_sdn_applier.finalizer]
 }
 
 # ── Le VNet ──────────────────────────────────────────────────────────────────
-resource "proxmox_virtual_environment_sdn_vnet" "srv" {
+resource "proxmox_sdn_vnet" "srv" {
   id    = "vsrv"
-  zone  = proxmox_virtual_environment_sdn_zone_simple.srv.id
+  zone  = proxmox_sdn_zone_simple.srv.id
   alias = "Services infra e${var.eleve}"
 
-  depends_on = [proxmox_virtual_environment_sdn_applier.finalizer]
+  depends_on = [proxmox_sdn_applier.finalizer]
 }
 
 # ── Le subnet ────────────────────────────────────────────────────────────────
 # ⚠ L'argument s'appelle « cidr », pas « subnet » : le provider ne calque pas
 #   le nommage de l'API Proxmox (où pvesh attend --subnet et --type subnet).
 #   « dhcp_range » est un ATTRIBUT (avec un « = »), pas un bloc.
-resource "proxmox_virtual_environment_sdn_subnet" "srv" {
+resource "proxmox_sdn_subnet" "srv" {
   cidr    = local.net_srv
-  vnet    = proxmox_virtual_environment_sdn_vnet.srv.id
+  vnet    = proxmox_sdn_vnet.srv.id
   gateway = local.gw_srv
   snat    = true
 
@@ -56,22 +56,22 @@ resource "proxmox_virtual_environment_sdn_subnet" "srv" {
     end_address   = "10.${var.eleve}.30.200"
   }
 
-  depends_on = [proxmox_virtual_environment_sdn_applier.finalizer]
+  depends_on = [proxmox_sdn_applier.finalizer]
 }
 
 # ── L'apply proprement dit ───────────────────────────────────────────────────
-resource "proxmox_virtual_environment_sdn_applier" "apply" {
+resource "proxmox_sdn_applier" "apply" {
   depends_on = [
-    proxmox_virtual_environment_sdn_zone_simple.srv,
-    proxmox_virtual_environment_sdn_vnet.srv,
-    proxmox_virtual_environment_sdn_subnet.srv,
+    proxmox_sdn_zone_simple.srv,
+    proxmox_sdn_vnet.srv,
+    proxmox_sdn_subnet.srv,
   ]
 
   lifecycle {
     replace_triggered_by = [
-      proxmox_virtual_environment_sdn_zone_simple.srv,
-      proxmox_virtual_environment_sdn_vnet.srv,
-      proxmox_virtual_environment_sdn_subnet.srv,
+      proxmox_sdn_zone_simple.srv,
+      proxmox_sdn_vnet.srv,
+      proxmox_sdn_subnet.srv,
     ]
   }
 }

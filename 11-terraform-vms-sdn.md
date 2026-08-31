@@ -467,6 +467,21 @@ chaque élève — exactement le problème que l'épinglage `~> 0.111` cherche �
    .terraform.lock.hcl  « c'est 0.111.1, sha256:… »    ← le fait, reproductible
 ```
 
+🪤 **Un lock généré sur un Mac ne suffit pas à une salle sous Linux.** Le fichier
+enregistre un hash `h1:` **par plateforme** : si vous ne verrouillez que la vôtre,
+le premier `terraform init` de chaque élève modifiera le fichier — donc un `git diff`
+parasite chez tout le monde. Verrouillez explicitement les plateformes visées :
+
+```bash
+terraform providers lock \
+  -platform=linux_amd64 \
+  -platform=darwin_arm64 \
+  -platform=darwin_amd64
+```
+
+C'est exactement ce qui a été fait dans ce dépôt : vos `init` ne toucheront pas au
+lock.
+
 ---
 
 ## 8. Quand ça casse 🔧
