@@ -14,7 +14,7 @@ Le formateur vous attribue un numéro **N** entre **1** et **6**.
 
 ```
    Élève N=3  →  nœud pve3
-              →  IP de gestion 192.168.50.13
+              →  IP de gestion 172.30.30.153
               →  VMID de 300 à 399
               →  subnets 10.3.10.0/24, 10.3.20.0/24, 10.3.30.0/24
               →  suffixe de nommage « -e3 »
@@ -26,14 +26,14 @@ Le formateur vous attribue un numéro **N** entre **1** et **6**.
 
 | Élément | Adresse | Note |
 |---|---|---|
-| Réseau de la salle | `192.168.50.0/24` | LAN plat, non modifiable |
-| Passerelle / Internet | `192.168.50.254` | pas d'accès admin |
-| DNS | `192.168.50.254` (ou `9.9.9.9`) | |
-| Nœud Proxmox élève N | `192.168.50.1N` | pve1 = .11 … pve6 = .16 |
-| PC Ubuntu élève N | `192.168.50.10N` | .101 … .106 |
-| **Serveur NFS** | votre **PC Ubuntu** `192.168.50.10N` | jour 3, TP 14 |
-| VM PBS (jour 3) | `192.168.50.41` | hébergée sur **pve1** |
-| Pulse (jour 4) | `192.168.50.42` | LXC sur pve1 |
+| Réseau de la salle | `172.30.30.0/24` | LAN plat, non modifiable |
+| Passerelle / Internet | `172.30.30.2` | pas d'accès admin |
+| DNS | `1.1.1.1` (primaire) et `8.8.8.8` (secours) | résolveurs publics |
+| Nœud Proxmox élève N | `172.30.30.15N` | pve1 = .151 … pve6 = .156 |
+| PC Ubuntu élève N | `172.30.30.10N` | .101 … .106 |
+| **Serveur NFS** | votre **PC Ubuntu** `172.30.30.10N` | jour 3, TP 14 |
+| VM PBS (jour 3) | `172.30.30.41` | hébergée sur **pve1** |
+| Pulse (jour 4) | `172.30.30.42` | LXC sur pve1 |
 
 ⚠️ **Rien d'autre ne doit prendre d'IP sur ce réseau.** Toutes vos VM de TP vivront
 dans les réseaux SDN en `10.x.x.x`.
@@ -74,12 +74,24 @@ explique le pourquoi au [TP 01 §3.1](01-installation-proxmox.md).
 
 ### Machines du jour 1 (sur `vmbr0`)
 
-| Machine | IP | OS | VMID |
-|---|---|---|---|
-| `srv01-eN` | `192.168.50.1N1` | Debian 13 (ISO netinstall) | `N01` |
-| `ct-alpine-eN` | `192.168.50.1N2` | Alpine (LXC) | `N11` |
-| `win01-eN` | `192.168.50.1N5` | Windows Server 2025 | `N02` |
-| `ct-rocky-eN` | `192.168.50.1N6` | Rocky Linux (LXC) | `N12` |
+Elles vivent dans la plage `.200` → `.250`, réservée aux VM branchées directement
+sur `vmbr0`. Chaque élève y dispose d'un **bloc de 5 adresses** :
+
+> **base de votre bloc : `B = 195 + N × 5`** — élève 3 → `B = 210`
+
+| Machine | OS | Adresse | VMID | Élève 3 |
+|---|---|---|---|---|
+| `srv01-eN` | Debian 13 (ISO netinstall) | `172.30.30.<B+1>` | `N01` | `.211` |
+| `ct-alpine-eN` | Alpine (LXC) | `172.30.30.<B+2>` | `N11` | `.212` |
+| `win01-eN` | Windows Server 2025 | `172.30.30.<B+3>` | `N02` | `.213` |
+| `ct-rocky-eN` | Rocky Linux (LXC) | `172.30.30.<B+4>` | `N12` | `.214` |
+
+| Élève | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|
+| **Bloc** | `.200`–`.204` | `.205`–`.209` | `.210`–`.214` | `.215`–`.219` | `.220`–`.224` | `.225`–`.229` |
+
+Les adresses `.230` → `.250` restent **libres** : c'est le pot commun si vous avez
+besoin d'une VM supplémentaire sur `vmbr0`.
 
 À partir du TP 08, elles déménagent dans les réseaux SDN et repassent en DHCP.
 
@@ -149,6 +161,16 @@ commence donc par la définir, et les VMID s'écrivent `${N}01` :
 N=3                       # ⚠ VOTRE numéro d'élève
 qm set ${N}01 --tags "debian,interne"
 pvesh create /cluster/sdn/vnets/vint/subnets --subnet 10.$N.10.0/24 ...
+```
+
+Même logique pour **`B`**, la base de votre bloc d'adresses sur `vmbr0` (§4) :
+dans le texte on écrit `172.30.30.<B+1>`, dans un shell c'est une expression
+arithmétique :
+
+```bash
+N=3
+echo $(( 195 + N * 5 ))          # → 210, la base de VOTRE bloc
+pct create ... ip=172.30.30.$(( 195 + N*5 + 2 ))/24,gw=172.30.30.2
 ```
 
 🪤 **`qm set N01` échoue** : `N01` n'est pas un nombre. Si vous copiez-collez un bloc

@@ -101,10 +101,10 @@ else
 fi
 
 titre "Connectivité de la salle"
-for h in 192.168.50.254 192.168.50.11; do
+for h in 172.30.30.2 172.30.30.151; do
   if ping -c1 -W1 "$h" >/dev/null 2>&1; then ok "ping $h"; else warn "pas de réponse de $h (normal si le lab n'est pas encore monté)"; fi
 done
-if curl -sk --max-time 3 https://192.168.50.11:8006 >/dev/null 2>&1; then
+if curl -sk --max-time 3 https://172.30.30.151:8006 >/dev/null 2>&1; then
   ok "interface web de pve1 joignable"
 else
   warn "pve1:8006 injoignable (normal avant le TP 01)"

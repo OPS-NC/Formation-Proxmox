@@ -1,5 +1,5 @@
 variable "pve_endpoint" {
-  description = "URL de l'API Proxmox, ex. https://192.168.50.13:8006/"
+  description = "URL de l'API Proxmox, ex. https://172.30.30.153:8006/"
   type        = string
 }
 

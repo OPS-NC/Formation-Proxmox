@@ -117,18 +117,18 @@ brancher un clavier sur le serveur.
 
 | Nom | Valeur | Commentaire |
 |---|---|---|
-| `lan_salle` | `192.168.50.0/24` | LAN physique |
+| `lan_salle` | `172.30.30.0/24` | LAN physique |
 | `net_internal` | `10.N.10.0/24` | zone interne |
 | `net_dmz` | `10.N.20.0/24` | zone DMZ |
-| `gw_salle` | `192.168.50.254` | routeur |
-| `pc_eleve` | `192.168.50.10N` | mon poste |
+| `gw_salle` | `172.30.30.2` | routeur |
+| `pc_eleve` | `172.30.30.10N` | mon poste |
 
 ```bash
 N=3
-pvesh create /cluster/firewall/aliases --name lan_salle   --cidr 192.168.50.0/24
+pvesh create /cluster/firewall/aliases --name lan_salle   --cidr 172.30.30.0/24
 pvesh create /cluster/firewall/aliases --name net_internal --cidr 10.$N.10.0/24
 pvesh create /cluster/firewall/aliases --name net_dmz      --cidr 10.$N.20.0/24
-pvesh create /cluster/firewall/aliases --name gw_salle     --cidr 192.168.50.254
+pvesh create /cluster/firewall/aliases --name gw_salle     --cidr 172.30.30.2
 ```
 
 ### 4.2 IPSet `management`
@@ -138,7 +138,7 @@ n'atteindra jamais `:8006` ni `:22`.
 
 ```bash
 pvesh create /cluster/firewall/ipset --name management --comment "Acces admin"
-pvesh create /cluster/firewall/ipset/management --cidr 192.168.50.0/24 --comment "LAN salle"
+pvesh create /cluster/firewall/ipset/management --cidr 172.30.30.0/24 --comment "LAN salle"
 pvesh get /cluster/firewall/ipset/management
 ```
 
@@ -195,13 +195,13 @@ policy_forward: DROP
 log_ratelimit: enable=1,rate=5/second,burst=20
 
 [ALIASES]
-lan_salle    192.168.50.0/24
+lan_salle    172.30.30.0/24
 net_internal 10.3.10.0/24
 net_dmz      10.3.20.0/24
-gw_salle     192.168.50.254
+gw_salle     172.30.30.2
 
 [IPSET management]
-192.168.50.0/24
+172.30.30.0/24
 
 [RULES]
 IN ACCEPT -source +management -p tcp -dport 8006 -log nolog # UI Proxmox
@@ -220,7 +220,7 @@ Vérifiez la casse :
 ```bash
 N=3     # ⚠ VOTRE numéro d'élève
 qm terminal ${N}01        # depuis srv01
-ping -c2 9.9.9.9       # → doit ÉCHOUER maintenant
+ping -c2 1.1.1.1       # → doit ÉCHOUER maintenant
 ```
 
 ---
@@ -463,7 +463,7 @@ qm terminal ${N}01
 |---|---|---|
 | Gateway | `ping -c2 10.3.10.1` | ✅ |
 | Interne → interne | `ping -c2 10.3.10.<win01>` | ✅ |
-| Internet | `ping -c2 9.9.9.9` | ✅ |
+| Internet | `ping -c2 1.1.1.1` | ✅ |
 | DNS | `getent hosts debian.org` | ✅ |
 | Interne → DMZ HTTP | `curl -sI http://10.3.20.<alpine>` | ✅ 200 |
 | Interne → DMZ SSH | `nc -zv 10.3.20.<alpine> 22` | ✅ |
@@ -477,7 +477,7 @@ qm terminal ${N}01
 | Gateway | `ping -c2 10.3.20.1` | ✅ |
 | Internet HTTPS | `curl -sI https://ubuntu.com` | ✅ |
 | Mise à jour | `apk update` | ✅ |
-| Internet ICMP | `ping -c2 9.9.9.9` | ❌ (non autorisé) |
+| Internet ICMP | `ping -c2 1.1.1.1` | ❌ (non autorisé) |
 | **DMZ → base** | `nc -zvw2 10.3.10.<srv01> 5432` | ❌ **timeout** 🎯 |
 | **DMZ → SSH interne** | `nc -zvw2 10.3.10.<srv01> 22` | ❌ **timeout** 🎯 |
 | **DMZ → RDP Windows** | `nc -zvw2 10.3.10.<win01> 3389` | ❌ **timeout** 🎯 |
@@ -570,7 +570,7 @@ systemctl start proxmox-firewall
 ## 🎁 Bonus
 
 1. **Publier `ct-alpine` sur Internet** : ajoutez un DNAT sur l'hôte pour exposer le
-   port 80 du conteneur sur `192.168.50.1N:8080`, et la règle FORWARD correspondante. Puis
+   port 80 du conteneur sur `172.30.30.15N:8080`, et la règle FORWARD correspondante. Puis
    demandez-vous pourquoi Proxmox ne propose pas ça nativement (indice : où placer la
    règle dans un cluster où la VM peut migrer ?).
 2. **Isolation totale** : activez `isolate-ports` sur `vdmz` **en plus** des règles.

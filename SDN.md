@@ -170,7 +170,7 @@ Ce que ça change tout :
 ```
               ☁ Internet
                    │
-            192.168.50.254
+            172.30.30.2
                    │
    ════════════ LAN PHYSIQUE (underlay) ════════════
       │            │            │            │
@@ -259,7 +259,7 @@ Config typique du contrôleur EVPN de ce lab (`/etc/pve/sdn/controllers.cfg`) :
 ```ini
 evpn: evpnctl
 	asn 65000
-	peers 192.168.50.11,192.168.50.12,192.168.50.13,192.168.50.14,192.168.50.15,192.168.50.16
+	peers 172.30.30.151,172.30.30.152,172.30.30.153,172.30.30.154,172.30.30.155,172.30.30.156
 ```
 
 Un seul ASN pour tout le monde ⇒ **iBGP full-mesh**. Avec 6 nœuds c'est parfaitement
@@ -332,12 +332,12 @@ SNAT est réalisé **sur les exit nodes**. Le chemin est :
       ▼
    EXIT NODE (pve1)
       │  ③ décapsulation, sortie du VRF
-      │  ④ SNAT : source 10.60.10.42 → 192.168.50.11
+      │  ④ SNAT : source 10.60.10.42 → 172.30.30.151
       ▼
-   routeur 192.168.50.254 ──→ ☁
+   routeur 172.30.30.2 ──→ ☁
 ```
 
-Et au retour, le routeur renvoie à `192.168.50.11`, qui dé-nate et réinjecte dans le
+Et au retour, le routeur renvoie à `172.30.30.151`, qui dé-nate et réinjecte dans le
 VXLAN. **Tout repose sur le fait que le paquet retour arrive sur le même nœud qui a
 naté.**
 
@@ -562,8 +562,8 @@ ip route show vrf vrf_<zone>                 # table de routage du VRF
 ## 11. Pourquoi EVPN pour CE lab — le raisonnement 🎯
 
 Contraintes :
-- 6 nœuds Proxmox, **un seul LAN plat** `192.168.50.0/24`,
-- une gateway `192.168.50.254` sur laquelle on n'a **aucun droit**,
+- 6 nœuds Proxmox, **un seul LAN plat** `172.30.30.0/24`,
+- une gateway `172.30.30.2` sur laquelle on n'a **aucun droit**,
 - pas d'accès au switch (donc pas de trunk, pas de 802.1ad),
 - il faut du L2/L3 entre nœuds, des VM qui migrent sans perdre le réseau,
   et un accès Internet depuis les VM.
@@ -584,7 +584,7 @@ Contraintes :
 
 ```
    ┌──────────────────────────────────────────────────────────────┐
-   │ UNDERLAY : le LAN plat 192.168.50.0/24, tel quel, non modifié │
+   │ UNDERLAY : le LAN plat 172.30.30.0/24, tel quel, non modifié │
    │            (les 6 nœuds se voient en direct = full mesh natif)│
    └──────────────────────────────────────────────────────────────┘
                                  ▲
@@ -607,7 +607,7 @@ Contraintes :
    ┌──────────────────────────────────────────────────────────────┐
    │ SORTIE : exitnodes = pve1, pve2                               │
    │          exitnodes-primary = pve1   ← impératif avec SNAT     │
-   │          → pve1 nate derrière 192.168.50.11                   │
+   │          → pve1 nate derrière 172.30.30.151                   │
    │          → bascule sur pve2 si pve1 tombe                     │
    └──────────────────────────────────────────────────────────────┘
                                  ▲

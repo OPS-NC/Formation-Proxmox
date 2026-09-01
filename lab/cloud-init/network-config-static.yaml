@@ -15,6 +15,6 @@ ethernets:
     gateway4: 10.3.10.1
     nameservers:
       search: [lab.local]
-      addresses: [10.3.10.1, 9.9.9.9]
+      addresses: [10.3.10.1, 1.1.1.1, 8.8.8.8]
     # ⭐ En EVPN, décommentez : 1500 − 50 octets d'entête VXLAN
     # mtu: 1450

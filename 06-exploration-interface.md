@@ -358,9 +358,9 @@ pveum user token add ansible@pve inv --privsep 0
 # 💻 Sur votre PC Ubuntu
 mkdir -p ~/.config/pve && chmod 700 ~/.config/pve
 cat > ~/.config/pve/token.env <<'EOF'
-export PVE_HOST="192.168.50.13"
+export PVE_HOST="172.30.30.153"
 export PVE_NODE="pve3"
-export PVE_ENDPOINT="https://192.168.50.13:8006/"
+export PVE_ENDPOINT="https://172.30.30.153:8006/"
 export PVE_API_TOKEN="terraform@pve!tf=12345678-90ab-cdef-1234-567890abcdef"
 export PVE_ANSIBLE_TOKEN_ID="ansible@pve!inv"
 export PVE_ANSIBLE_TOKEN_SECRET="abcdef00-1111-2222-3333-444455556666"
@@ -415,7 +415,7 @@ pveum user token remove terraform@pve tf     # ne le faites PAS maintenant
 
 ```markdown
 # pve3 — élève 3
-- IP : 192.168.50.13
+- IP : 172.30.30.153
 - Plage VMID : 300-399
 - Subnets SDN : 10.3.10.0/24 (int), 10.3.20.0/24 (dmz)
 - Disques : sda (système), sdb (données)

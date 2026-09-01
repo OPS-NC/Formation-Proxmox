@@ -288,7 +288,7 @@ ls -lh /root/pve-config-*.tgz
 Récupérez-la sur votre PC :
 
 ```bash
-scp root@192.168.50.1N:/root/pve-config-*.tgz ~/ProxmoxFormation/backup-conf/
+scp root@172.30.30.15N:/root/pve-config-*.tgz ~/ProxmoxFormation/backup-conf/
 ```
 
 ---

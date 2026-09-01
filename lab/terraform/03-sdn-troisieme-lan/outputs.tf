@@ -21,7 +21,7 @@ output "verification" {
     Tests attendus depuis mon01 :
       nc -zvw2 <ip-db> 9100   → ✅  (exige la règle vsrv→vint dans vint.fw)
       nc -zvw2 <ip-db> 5432   → ❌
-      ping 9.9.9.9            → ❌ (ICMP non autorisé vers Internet)
+      ping 1.1.1.1            → ❌ (ICMP non autorisé vers Internet)
       curl -sI https://debian.org → ✅
 
   EOT

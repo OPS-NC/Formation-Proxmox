@@ -57,7 +57,7 @@ pvesm free <storage>:<volume>
 cat /etc/pve/storage.cfg
 
 # NFS  (le serveur, c'est votre poste Ubuntu — TP 14)
-pvesm add nfs nfs-e3 --server 192.168.50.103 --export /srv/nfs-e3 \
+pvesm add nfs nfs-e3 --server 172.30.30.103 --export /srv/nfs-e3 \
     --content images,rootdir,iso,backup,snippets --options vers=4.2 --nodes pve3
 showmount -e <serveur>
 mount -t nfs -o vers=4.2 <serveur>:/srv/nfs-e3 /mnt/test     # tester AVANT de déclarer
@@ -216,7 +216,7 @@ systemctl status dnsmasq@<zone>
 ```bash
 # Déploiement
 pveceph install --repository no-subscription
-pveceph init --network 192.168.50.0/24 --size 3 --min_size 2
+pveceph init --network 172.30.30.0/24 --size 3 --min_size 2
 pveceph mon create                      # sur 3 nœuds
 pveceph mgr create                      # sur 2 nœuds
 pveceph mds create                      # pour CephFS

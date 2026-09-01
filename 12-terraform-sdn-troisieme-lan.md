@@ -453,7 +453,7 @@ terraform output
 Vérifications côté nœud :
 
 ```bash
-ssh root@192.168.50.1N '
+ssh root@172.30.30.15N '
   ip -br a | grep vsrv
   cat /etc/pve/sdn/subnets.cfg
   cat /etc/pve/sdn/firewall/vsrv.fw
@@ -467,7 +467,7 @@ Tests fonctionnels :
 ```bash
 # depuis mon01 (SERVICES)
 ping -c2 10.N.30.1            # ✅ gateway
-ping -c2 9.9.9.9              # ❌ ICMP non autorisé vers Internet
+ping -c2 1.1.1.1              # ❌ ICMP non autorisé vers Internet
 curl -sI https://debian.org   # ✅ 443 autorisé
 nc -zvw2 10.N.10.<db01> 5432  # ❌ refusé
 nc -zvw2 10.N.10.<db01> 9100  # ✅ autorisé — SI la règle inverse est dans vint.fw (§5)
@@ -477,7 +477,7 @@ nc -zvw2 10.N.30.<mon01> 22   # ❌ refusé, et journalisé en warning
 ```
 
 ```bash
-ssh root@192.168.50.1N 'tail -20 /var/log/pve-firewall.log'
+ssh root@172.30.30.15N 'tail -20 /var/log/pve-firewall.log'
 ```
 
 ---
@@ -521,7 +521,7 @@ Observez l'ordre : VM → firewall → subnet → VNet → zone. L'inverse exact
 création. C'est le graphe de dépendances qui travaille.
 
 ```bash
-ssh root@192.168.50.1N 'ip -br a | grep vsrv; pvesh get /cluster/sdn/zones'
+ssh root@172.30.30.15N 'ip -br a | grep vsrv; pvesh get /cluster/sdn/zones'
 ```
 
 🪤 Si la destruction bloque sur « zone in use », c'est qu'un guest est encore branché

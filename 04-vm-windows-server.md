@@ -249,18 +249,18 @@ Dans Windows : `Paramètres → Réseau → Ethernet → Modifier`
 
 | Champ | Valeur |
 |---|---|
-| IP | `192.168.50.1N5` (ex. `192.168.50.135`) |
+| IP | `172.30.30.<B+3>` où `B = 195 + N × 5` (élève 3 → `172.30.30.213`) |
 | Masque | `255.255.255.0` |
-| Passerelle | `192.168.50.254` |
-| DNS | `192.168.50.254` |
+| Passerelle | `172.30.30.2` |
+| DNS | `1.1.1.1`, `8.8.8.8` |
 
 En PowerShell, c'est plus rapide :
 
 ```powershell
 $if = (Get-NetAdapter | Where-Object Status -eq 'Up').ifIndex
-New-NetIPAddress -InterfaceIndex $if -IPAddress 192.168.50.135 `
-                 -PrefixLength 24 -DefaultGateway 192.168.50.254
-Set-DnsClientServerAddress -InterfaceIndex $if -ServerAddresses 192.168.50.254
+New-NetIPAddress -InterfaceIndex $if -IPAddress 172.30.30.213 `
+                 -PrefixLength 24 -DefaultGateway 172.30.30.2
+Set-DnsClientServerAddress -InterfaceIndex $if -ServerAddresses 1.1.1.1,8.8.8.8
 Rename-Computer -NewName "WIN01-E3" -Restart
 ```
 
@@ -334,7 +334,7 @@ Depuis votre PC Ubuntu :
 ```bash
 sudo apt install -y freerdp3-x11    # ou remmina, plus graphique
 
-xfreerdp3 /v:192.168.50.135 /u:Administrateur /p:'Formation2026!' \
+xfreerdp3 /v:172.30.30.213 /u:Administrateur /p:'Formation2026!' \
           /size:1600x900 /dynamic-resolution /clipboard /cert:ignore
 ```
 

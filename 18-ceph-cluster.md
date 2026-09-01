@@ -312,7 +312,7 @@ pveceph --version 2>/dev/null; ceph --version
 ### 6.2 Initialiser — sur `pve1` uniquement
 
 ```bash
-pveceph init --network 192.168.50.0/24 --size 3 --min_size 2
+pveceph init --network 172.30.30.0/24 --size 3 --min_size 2
 cat /etc/pve/ceph.conf
 cat /etc/ceph/ceph.conf     # lien symbolique vers /etc/pve/ceph.conf
 ```
@@ -556,7 +556,7 @@ et hôte de PBS) ni un monitor si vous voulez rester simple.
 watch -n2 'ceph -s; echo; ceph osd tree | head -20'
 
 # Terminal 2 — une VM sur Ceph, avec des écritures continues
-ssh -J root@192.168.50.11 eleve@10.60.10.<ip> \
+ssh -J root@172.30.30.151 eleve@10.60.10.<ip> \
   'while true; do dd if=/dev/urandom of=/tmp/t bs=1M count=20 2>/dev/null; sync; date; done'
 ```
 

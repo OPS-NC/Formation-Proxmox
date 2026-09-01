@@ -4,35 +4,45 @@ La référence unique. En cas de doute, c'est ce document qui fait foi.
 
 ---
 
-## 🌍 Réseau physique — LAN salle `192.168.50.0/24`
+## 🌍 Réseau physique — LAN salle `172.30.30.0/24`
 
 | Élément | Adresse | Note |
 |---|---|---|
-| Passerelle / Internet | `192.168.50.254` | box, aucun accès admin |
-| DNS | `192.168.50.254` (secours : `9.9.9.9`) | |
-| **Nœud pve1** | `192.168.50.11` | élève 1 · **exit node primaire** · héberge PBS et Pulse · crée le cluster · MON + MGR Ceph |
-| **Nœud pve2** | `192.168.50.12` | élève 2 · exit node secondaire · MON + MGR Ceph |
-| **Nœud pve3** | `192.168.50.13` | élève 3 · MON Ceph |
-| **Nœud pve4** | `192.168.50.14` | élève 4 |
-| **Nœud pve5** | `192.168.50.15` | élève 5 |
-| **Nœud pve6** | `192.168.50.16` | élève 6 |
-| PC élève 1 → 6 | `192.168.50.101` → `.106` | postes de pilotage |
-| **Serveur NFS de chaque élève** | son **PC Ubuntu**, `192.168.50.10N` | TP 14 |
-| **VM `pbs-lab`** | `192.168.50.41` | TP 15 · **hébergée sur pve1** · UI sur `:8007` |
-| **CT `pulse`** | `192.168.50.42` | TP 20 · sur pve1 · UI sur `:7655` |
-| Réservé | `192.168.50.50` → `.99` | extensions du formateur |
+| Passerelle / Internet | `172.30.30.2` | box, aucun accès admin |
+| DNS | `1.1.1.1` (primaire) et `8.8.8.8` (secours) | résolveurs publics |
+| **Nœud pve1** | `172.30.30.151` | élève 1 · **exit node primaire** · héberge PBS et Pulse · crée le cluster · MON + MGR Ceph |
+| **Nœud pve2** | `172.30.30.152` | élève 2 · exit node secondaire · MON + MGR Ceph |
+| **Nœud pve3** | `172.30.30.153` | élève 3 · MON Ceph |
+| **Nœud pve4** | `172.30.30.154` | élève 4 |
+| **Nœud pve5** | `172.30.30.155` | élève 5 |
+| **Nœud pve6** | `172.30.30.156` | élève 6 |
+| PC élève 1 → 6 | `172.30.30.101` → `.106` | postes de pilotage |
+| **Serveur NFS de chaque élève** | son **PC Ubuntu**, `172.30.30.10N` | TP 14 |
+| **VM `pbs-lab`** | `172.30.30.41` | TP 15 · **hébergée sur pve1** · UI sur `:8007` |
+| **CT `pulse`** | `172.30.30.42` | TP 20 · sur pve1 · UI sur `:7655` |
+| Réservé | `172.30.30.50` → `.99` | extensions du formateur |
+| Pot commun VM `vmbr0` | `172.30.30.230` → `.250` | VM ajoutées au besoin |
 
 > 🧠 Le serveur NFS n'est **pas** une VM : c'est le PC Ubuntu de chaque élève, qui
 > exporte `/srv/nfs-eN` vers son propre nœud (TP 14).
 
 ### Les VM du jour 1 (sur `vmbr0`, avant le passage au SDN)
 
-| Machine | IP | Formule |
+Plage `.200` → `.250`, un **bloc de 5 adresses par élève** :
+**`B = 195 + N × 5`** (élève 3 → `B = 210`).
+
+| Machine | Adresse | Élève 3 |
 |---|---|---|
-| `srv01-eN` (Debian ISO) | `192.168.50.1N1` | élève 3 → `.131` |
-| `ct-alpine-eN` | `192.168.50.1N2` | élève 3 → `.132` |
-| `win01-eN` (Windows) | `192.168.50.1N5` | élève 3 → `.135` |
-| `ct-rocky-eN` | `192.168.50.1N6` | élève 3 → `.136` |
+| `srv01-eN` (Debian ISO) | `172.30.30.<B+1>` | `.211` |
+| `ct-alpine-eN` | `172.30.30.<B+2>` | `.212` |
+| `win01-eN` (Windows) | `172.30.30.<B+3>` | `.213` |
+| `ct-rocky-eN` | `172.30.30.<B+4>` | `.214` |
+
+| Élève | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|
+| **Bloc** | `.200`–`.204` | `.205`–`.209` | `.210`–`.214` | `.215`–`.219` | `.220`–`.224` | `.225`–`.229` |
+
+`.230` → `.250` : pot commun, pour toute VM supplémentaire branchée sur `vmbr0`.
 
 ⚠️ À partir du TP 08, ces machines déménagent dans les VNets SDN et repassent en DHCP.
 
@@ -247,7 +257,7 @@ Voir [TP 01 §3.1](../01-installation-proxmox.md) et [TP 18 §3](../18-ceph-clus
 
 | Élément | Valeur |
 |---|---|
-| Réseau public | `192.168.50.0/24` (⚠️ pas de réseau cluster dédié — limite du lab) |
+| Réseau public | `172.30.30.0/24` (⚠️ pas de réseau cluster dédié — limite du lab) |
 | Monitors | `pve1`, `pve2`, `pve3` (3, impair) |
 | Managers | `pve1` (actif), `pve2` (veille) |
 | MDS (CephFS) | `pve1`, `pve2` |
@@ -279,8 +289,8 @@ Voir [TP 01 §3.1](../01-installation-proxmox.md) et [TP 18 §3](../18-ceph-clus
    ┌────────────────────────────────────────────────────────┐
    │  ÉLÈVE 3                                               │
    ├────────────────────────────────────────────────────────┤
-   │  Nœud        pve3          192.168.50.13:8006          │
-   │  PC          192.168.50.103                            │
+   │  Nœud        pve3          172.30.30.153:8006          │
+   │  PC          172.30.30.103                             │
    │  VMID        300 → 399                                 │
    │  Pool        eleve3                                    │
    │                                                        │
@@ -301,11 +311,11 @@ Voir [TP 01 §3.1](../01-installation-proxmox.md) et [TP 18 §3](../18-ceph-clus
    │              pve/ceph-osd 120 Go  → OSD Ceph           │
    │                                                        │
    │  Stockages   local-lvm   (défaut, local)               │
-   │              nfs-e3      export de mon PC .103          │
-   │              pbs-lab     192.168.50.41:8007             │
-   │              vm-store    Ceph, ×3 copies (J4)           │
-   │              cephfs      Ceph, fichiers  (J4)           │
+   │              nfs-e3      export de mon PC .103         │
+   │              pbs-lab     172.30.30.41:8007             │
+   │              vm-store    Ceph, ×3 copies (J4)          │
+   │              cephfs      Ceph, fichiers  (J4)          │
    │                                                        │
-   │  Services    Pulse  192.168.50.42:7655                 │
+   │  Services    Pulse  172.30.30.42:7655                  │
    └────────────────────────────────────────────────────────┘
 ```

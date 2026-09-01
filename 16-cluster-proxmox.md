@@ -93,7 +93,7 @@ ls -lh /root/pre-cluster/
 Récupérez tout sur votre PC — il est dehors, lui :
 
 ```bash
-scp -r root@192.168.50.1N:/root/pre-cluster ~/ProxmoxFormation/backup-conf/
+scp -r root@172.30.30.15N:/root/pre-cluster ~/ProxmoxFormation/backup-conf/
 ```
 
 🧠 **Ce que PBS ne sauvegarde pas** : la configuration du nœud (`/etc/pve`), les
@@ -127,7 +127,7 @@ ip -br a | grep -E 'vint|vdmz|vsrv'    # aucune sortie
 
 ```bash
 qm list && pct list                       # vides
-hostname --ip-address                     # 192.168.50.1N, pas 127.x
+hostname --ip-address                     # 172.30.30.15N, pas 127.x
 ping -c1 pve1 && ping -c1 pve2 && ping -c1 pve3 \
   && ping -c1 pve4 && ping -c1 pve5 && ping -c1 pve6
 timedatectl status | grep -E 'synchron|Time zone'
@@ -145,7 +145,7 @@ retard : `apt update && apt full-upgrade && reboot`.
 Un seul élève, l'élève 1, exécute ceci :
 
 ```bash
-pvecm create FORMATION --link0 192.168.50.11
+pvecm create FORMATION --link0 172.30.30.151
 ```
 
 ```bash
@@ -193,7 +193,7 @@ mentionner en soutenance.
 le suivant. Six `pvecm add` simultanés, c'est le meilleur moyen de tout casser.
 
 ```bash
-pvecm add 192.168.50.11 --link0 192.168.50.1N
+pvecm add 172.30.30.151 --link0 172.30.30.15N
 ```
 
 Il demande :
@@ -376,7 +376,7 @@ une seule déclaration suffit pour tout le cluster.
 
 ```bash
 pvesm add pbs pbs-lab \
-  --server 192.168.50.41 --datastore lab-store \
+  --server 172.30.30.41 --datastore lab-store \
   --username eleve1@pbs --password 'Formation2026!' \
   --fingerprint '<empreinte relevée au TP 15>' \
   --content backup
@@ -390,7 +390,7 @@ Vérifiez depuis un autre nœud : `pbs-lab` y apparaît tout seul. 🎩
 ```bash
 N=3
 pvesm add nfs nfs-e$N \
-  --server 192.168.50.10$N --export /srv/nfs-e$N \
+  --server 172.30.30.10$N --export /srv/nfs-e$N \
   --content images,rootdir,iso,backup,snippets \
   --options vers=4.2 --nodes pve$N
 ```

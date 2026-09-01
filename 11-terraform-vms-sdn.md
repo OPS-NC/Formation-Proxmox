@@ -51,7 +51,7 @@ vim terraform.tfvars
 Renseignez :
 
 ```hcl
-pve_endpoint  = "https://192.168.50.13:8006/"     # VOTRE nœud
+pve_endpoint  = "https://172.30.30.153:8006/"     # VOTRE nœud
 pve_api_token = "terraform@pve!tf=xxxxxxxx-...."  # VOTRE token
 pve_node      = "pve3"
 eleve         = 3
@@ -105,7 +105,7 @@ provider "proxmox" {
 🧠 **Pourquoi un bloc `ssh` ?** L'API Proxmox ne permet pas de téléverser un
 *snippet* cloud-init. Le provider passe donc par SCP pour ces opérations.
 Sans clé SSH sur le nœud, la ressource `proxmox_virtual_environment_file`
-en `snippets` échoue. Assurez-vous que `ssh root@192.168.50.1N` fonctionne sans
+en `snippets` échoue. Assurez-vous que `ssh root@172.30.30.15N` fonctionne sans
 mot de passe.
 
 ### `main.tf` — une VM clonée depuis le template
@@ -189,7 +189,7 @@ terraform output
 Vérifiez côté Proxmox :
 
 ```bash
-ssh root@192.168.50.1N 'qm list; qm config <vmid> | head -20'
+ssh root@172.30.30.15N 'qm list; qm config <vmid> | head -20'
 ```
 
 Puis testez la VM :

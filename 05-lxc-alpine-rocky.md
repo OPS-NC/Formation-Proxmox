@@ -90,12 +90,12 @@ NFS monté dans le CT).
 |---|---|
 | Name | `eth0` |
 | Bridge | `vmbr0` |
-| IPv4 | **Static** · `192.168.50.1N2/24` |
-| Gateway | `192.168.50.254` |
+| IPv4 | **Static** · `172.30.30.<B+2>/24` (élève 3 → `172.30.30.212/24`) |
+| Gateway | `172.30.30.2` |
 | Firewall | ✅ |
 
 ### Onglet **DNS**
-`192.168.50.254`, domaine `lab.local`.
+`172.30.30.2`, domaine `lab.local`.
 
 ---
 
@@ -115,8 +115,8 @@ pct create $CTID $TPL \
   --ssh-public-keys /root/.ssh/authorized_keys \
   --rootfs local-lvm:2 \
   --cores 1 --memory 256 --swap 128 \
-  --net0 name=eth0,bridge=vmbr0,firewall=1,ip=192.168.50.1${N}2/24,gw=192.168.50.254 \
-  --nameserver 192.168.50.254 --searchdomain lab.local \
+  --net0 name=eth0,bridge=vmbr0,firewall=1,ip=172.30.30.$((195 + N*5 + 2))/24,gw=172.30.30.2 \
+  --nameserver 1.1.1.1 --searchdomain lab.local \
   --onboot 1 \
   --start 1
 
@@ -157,7 +157,7 @@ exit
 Depuis votre PC :
 
 ```bash
-curl http://192.168.50.1N2/
+curl http://172.30.30.$((195 + N*5 + 2))/
 ```
 
 🧠 Alpine utilise **OpenRC** (pas systemd), **apk** (pas apt), **musl libc**
@@ -198,8 +198,8 @@ pct create $CTID2 $TPL2LOCAL \
   --password 'Formation2026!' \
   --ssh-public-keys /root/.ssh/authorized_keys \
   --rootfs local-lvm:6 --cores 1 --memory 512 --swap 256 \
-  --net0 name=eth0,bridge=vmbr0,firewall=1,ip=192.168.50.1${N}6/24,gw=192.168.50.254 \
-  --nameserver 192.168.50.254 --searchdomain lab.local \
+  --net0 name=eth0,bridge=vmbr0,firewall=1,ip=172.30.30.$((195 + N*5 + 4))/24,gw=172.30.30.2 \
+  --nameserver 1.1.1.1 --searchdomain lab.local \
   --onboot 1 --start 1
 ```
 
@@ -211,7 +211,7 @@ pct exec $CTID2 -- bash -c '
   systemctl enable --now nginx
   ss -tlnp | grep :80
 '
-curl -s http://192.168.50.1${N}6/
+curl -s http://172.30.30.$((195 + N*5 + 4))/
 ```
 
 🪤 **Trois surprises dans un LXC Rocky :**
@@ -264,7 +264,7 @@ echo "<h1>Servi depuis l'hôte</h1>" > /srv/www-e$N/index.html
 pct set $CTID -mp0 /srv/www-e$N,mp=/var/lib/nginx/html
 pct reboot $CTID
 sleep 5
-curl http://192.168.50.1N2/
+curl http://172.30.30.$((195 + N*5 + 2))/
 ```
 
 🪤 **Le piège du non privilégié** : les uid du conteneur sont décalés de 100000 sur
@@ -338,8 +338,8 @@ cat /sys/fs/cgroup/lxc/$CTID/cpu.max
 
 ## ✅ Checklist de validation
 
-- [ ] `ct-alpine-eN` tourne et répond en HTTP sur `192.168.50.1N2`
-- [ ] `ct-rocky-eN` tourne et répond en HTTP sur `192.168.50.1N6`
+- [ ] `ct-alpine-eN` tourne et répond en HTTP sur `172.30.30.<B+2>` (élève 3 : `.212`)
+- [ ] `ct-rocky-eN` tourne et répond en HTTP sur `172.30.30.<B+4>` (élève 3 : `.214`)
 - [ ] `pct enter` fonctionne, `apk` et `dnf` installent des paquets
 - [ ] J'ai comparé les empreintes disque/RAM Alpine vs Rocky
 - [ ] Le bind mount fonctionne et je comprends le décalage d'uid (100000)

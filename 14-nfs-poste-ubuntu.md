@@ -18,17 +18,17 @@ NAS ou d'une baie de stockage.
 
 ```
    ┌──────────────────────────────────────────────────────────────┐
-   │                LAN salle  192.168.50.0/24                    │
+   │                LAN salle  172.30.30.0/24                     │
    │                                                              │
    │   ┌──────────────┐                    ┌──────────────┐       │
    │   │  PC Ubuntu   │                    │  Nœud pve3   │       │
-   │   │ 192.168.50.  │   NFS v4 / 2049    │ 192.168.50.13│       │
-   │   │     103      │◄──────────────────►│              │       │
+   │   │172.30.30.103 │   NFS v4 / 2049    │172.30.30.153 │       │
+   │   │              │◄──────────────────►│              │       │
    │   │              │                    │  /mnt/pve/   │       │
    │   │ /srv/nfs-e3/ │                    │   nfs-e3/    │       │
    │   │  ├─ images/  │                    │              │       │
-   │   │  ├─ iso/     │                    │              │       │
-   │   │  ├─ backup/  │                    │              │       │
+   │   │  ├─ dump/    │                    │              │       │
+   │   │  ├─ template/│                    │              │       │
    │   │  └─ snippets/│                    │              │       │
    │   └──────────────┘                    └──────────────┘       │
    └──────────────────────────────────────────────────────────────┘
@@ -109,7 +109,7 @@ sudo tee /etc/exports.d/proxmox-lab.exports >/dev/null <<EOF
 # Export pour la formation Proxmox — élève $N
 # ⚠ no_root_squash : Proxmox écrit en root pour créer les disques de VM.
 #   On l'accepte, MAIS on restreint l'export à la seule IP du nœud.
-/srv/nfs-e$N  192.168.50.1$N(rw,sync,no_subtree_check,no_root_squash)
+/srv/nfs-e$N  172.30.30.15$N(rw,sync,no_subtree_check,no_root_squash)
 EOF
 
 sudo exportfs -ra
@@ -119,7 +119,7 @@ sudo exportfs -v
 Sortie attendue :
 
 ```
-/srv/nfs-e3     192.168.50.13(sync,wdelay,hide,no_subtree_check,sec=sys,rw,
+/srv/nfs-e3     172.30.30.153(sync,wdelay,hide,no_subtree_check,sec=sys,rw,
                 secure,no_root_squash,no_all_squash)
 ```
 
@@ -129,8 +129,8 @@ On désactive donc le squash, **et en compensation on restreint l'export à une 
 adresse IP**. Sur une infrastructure réelle, ce partage aurait son propre VLAN de
 stockage, isolé de tout le reste.
 
-> 💡 Pour partager avec tous les nœuds (utile au jour 4) : remplacez `192.168.50.1$N`
-> par `192.168.50.0/24`. Mesurez la différence de posture de sécurité — vous venez
+> 💡 Pour partager avec tous les nœuds (utile au jour 4) : remplacez `172.30.30.15$N`
+> par `172.30.30.0/24`. Mesurez la différence de posture de sécurité — vous venez
 > d'ouvrir un accès root en écriture à tout le réseau.
 
 ### Forcer NFSv4 uniquement
@@ -156,7 +156,7 @@ cauchemar à filtrer. Forcez toujours la v4.
 ```bash
 sudo ufw status
 # S'il est actif :
-sudo ufw allow from 192.168.50.13 to any port 2049 proto tcp comment 'NFS Proxmox'
+sudo ufw allow from 172.30.30.153 to any port 2049 proto tcp comment 'NFS Proxmox'
 sudo ufw status numbered
 ```
 
@@ -177,7 +177,7 @@ all:
       ansible_connection: local
   vars:
     nfs_root: "/srv/nfs-e3"            # ⚠ votre numéro
-    nfs_allowed_network: "192.168.50.13"   # ⚠ l'IP de VOTRE nœud
+    nfs_allowed_network: "172.30.30.153"   # ⚠ l'IP de VOTRE nœud
     nfs_manage_disk: false             # pas de disque dédié : on utilise /srv
     # nfs_subdirs : la valeur par défaut du rôle est déjà le layout Proxmox
 ```
@@ -197,19 +197,19 @@ saute les tâches de partitionnement, inutiles ici.
 
 ```bash
 apt install -y nfs-common
-showmount -e 192.168.50.103        # l'IP de VOTRE PC
+showmount -e 172.30.30.103        # l'IP de VOTRE PC
 ```
 
 ```
-Export list for 192.168.50.103:
-/srv/nfs-e3 192.168.50.13
+Export list for 172.30.30.103:
+/srv/nfs-e3 172.30.30.153
 ```
 
 Test manuel **avant** de déclarer le stockage — toujours :
 
 ```bash
 mkdir -p /mnt/test-nfs
-mount -t nfs -o vers=4.2 192.168.50.103:/srv/nfs-e3 /mnt/test-nfs
+mount -t nfs -o vers=4.2 172.30.30.103:/srv/nfs-e3 /mnt/test-nfs
 touch /mnt/test-nfs/ok-depuis-pve3 && ls -l /mnt/test-nfs/
 rm /mnt/test-nfs/ok-depuis-pve3
 umount /mnt/test-nfs
@@ -240,7 +240,7 @@ ss -tlnp | grep 2049
 | Champ | Valeur |
 |---|---|
 | ID | `nfs-eN` |
-| Server | `192.168.50.10N` (votre PC) |
+| Server | `172.30.30.10N` (votre PC) |
 | Export | `/srv/nfs-eN` — choisi dans la liste déroulante |
 | Content | `Disk image`, `Container`, `ISO image`, `Backup`, `Snippets` |
 | Nodes | `pveN` uniquement (l'export n'autorise que lui) |
@@ -251,7 +251,7 @@ ss -tlnp | grep 2049
 ```bash
 N=3
 pvesm add nfs nfs-e$N \
-  --server 192.168.50.10$N \
+  --server 172.30.30.10$N \
   --export /srv/nfs-e$N \
   --content images,rootdir,iso,backup,snippets \
   --options vers=4.2 \
@@ -293,12 +293,12 @@ NFS — et qui explique la légère perte de performance.
 N=3     # ⚠ VOTRE numéro d'élève
 # Disque sur local-lvm
 qm move-disk ${N}20 scsi0 local-lvm --delete 1
-ssh -J root@192.168.50.13 eleve@10.3.10.50 \
+ssh -J root@172.30.30.153 eleve@10.3.10.50 \
   'dd if=/dev/zero of=/tmp/t bs=1M count=512 oflag=direct conv=fsync; rm /tmp/t'
 
 # Le même disque sur NFS
 qm move-disk ${N}20 scsi0 nfs-e3 --delete 1
-ssh -J root@192.168.50.13 eleve@10.3.10.50 \
+ssh -J root@172.30.30.153 eleve@10.3.10.50 \
   'dd if=/dev/zero of=/tmp/t bs=1M count=512 oflag=direct conv=fsync; rm /tmp/t'
 ```
 
@@ -417,7 +417,7 @@ copies réparties, complexe, sans point de défaillance.
    avec `pvesm add cifs`. Comparez les débits avec NFS.
 3. **Les options de montage** : passez `--options vers=4.2,rsize=1048576,wsize=1048576`
    et re-mesurez avec `dd`. Documentez l'écart.
-4. **Partager avec tout le cluster** : élargissez l'export à `192.168.50.0/24`, retirez
+4. **Partager avec tout le cluster** : élargissez l'export à `172.30.30.0/24`, retirez
    `--nodes`, et au jour 4 constatez que les six nœuds le montent. Puis expliquez
    pourquoi ce n'est **pas** une bonne idée en production (indice : qui éteint son PC
    à 18 h ?).

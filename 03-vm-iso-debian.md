@@ -13,22 +13,24 @@ la brancher sur `vmbr0` (le LAN de la salle).
 
 ```
    ┌──────────── vmbr0 ─────────────┐
-   │  hôte 192.168.50.1N/24         │
+   │  hôte 172.30.30.15N/24         │
    │                                │
    │   ┌────────────────────────┐   │
    │   │ VM  srv01-eN           │   │
    │   │ VMID  N01              │   │
    │   │ Debian 13              │   │
    │   │ 2 vCPU / 2 Go / 20 Go  │   │
-   │   │ IP 192.168.50.1N1      │   │  ← ex. élève 3 → 192.168.50.131
+   │   │ IP 172.30.30.<B+1>     │   │  ← ex. élève 3 → 172.30.30.211
    │   └────────────────────────┘   │
    └────────────────────────────────┘
                   │
-             192.168.50.254 ──→ ☁
+             172.30.30.2 ──→ ☁
 ```
 
-> IP de la VM = `192.168.50.1N1`. Élève 1 → `.111`, élève 2 → `.121`, …, élève 6 → `.161`.
-> Ces adresses ne chevauchent ni les nœuds (.11-.16) ni les PC (.101-.106).
+> IP de la VM = **`B + 1`**, où `B = 195 + N × 5` est la base de votre bloc.
+> Élève 1 → `.201`, élève 2 → `.206`, élève 3 → `.211`, …, élève 6 → `.226`.
+> Le bloc `.200`-`.229` ne chevauche ni les nœuds (`.151`-`.156`) ni les PC (`.101`-`.106`).
+> Tableau complet : [TP 00 §4](00-prerequis-topologie.md).
 
 ---
 
@@ -186,9 +188,9 @@ Puis 🌐 `VM N01 → Console` (noVNC).
 **Réseau manuel** (le DHCP échouera ou vous donnera une IP non maîtrisée) :
 
 ```
-Adresse IP  : 192.168.50.1N1/24     ← ex. 192.168.50.131
-Passerelle  : 192.168.50.254
-DNS         : 192.168.50.254
+Adresse IP  : 172.30.30.<B+1>/24     ← ex. élève 3 : 172.30.30.211
+Passerelle  : 172.30.30.2
+DNS         : 1.1.1.1 8.8.8.8
 ```
 
 ☕ L'installation prend 10-15 min. Profitez-en pour lire le §5.
@@ -326,8 +328,8 @@ tcpdump -ni tap${VMID}i0 -c 20
 ## ✅ Checklist de validation
 
 - [ ] La VM `srv01-eN` démarre et affiche un login
-- [ ] Depuis mon PC : `ssh eleve@192.168.50.1N1` fonctionne
-- [ ] Depuis la VM : `ping 9.9.9.9` et `apt update` fonctionnent
+- [ ] Depuis mon PC : `ssh eleve@172.30.30.<B+1>` fonctionne (élève 3 : `.211`)
+- [ ] Depuis la VM : `ping 1.1.1.1` et `apt update` fonctionnent
 - [ ] `qm agent N01 ping` répond
 - [ ] Le Summary de la VM affiche son IP
 - [ ] Un snapshot existe et le rollback a été testé

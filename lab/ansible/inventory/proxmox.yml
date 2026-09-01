@@ -18,7 +18,7 @@ plugin: community.proxmox.proxmox
 
 # ⚠ adapter à votre nœud, et exporter le secret :
 #   source ~/.config/pve/token.env
-url: "https://192.168.50.13:8006"
+url: "https://172.30.30.153:8006"
 user: ansible@pve
 token_id: inv
 token_secret: "{{ lookup('env', 'PVE_ANSIBLE_TOKEN_SECRET') }}"

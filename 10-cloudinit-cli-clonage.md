@@ -140,7 +140,7 @@ qm set $VMID \
   --cipassword "$(openssl passwd -6 'Formation2026!')" \
   --sshkeys /root/.ssh/authorized_keys \
   --ciupgrade 1 \
-  --nameserver 192.168.50.254 \
+  --nameserver "1.1.1.1 8.8.8.8" \
   --searchdomain lab.local \
   --ipconfig0 ip=dhcp
 ```

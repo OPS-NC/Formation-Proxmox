@@ -1,8 +1,8 @@
 # Copiez en terraform.tfvars et renseignez VOS valeurs.
 # ⚠ terraform.tfvars ne doit JAMAIS être commité (voir .gitignore).
 
-pve_endpoint  = "https://192.168.50.13:8006/"
-pve_host      = "192.168.50.13"
+pve_endpoint  = "https://172.30.30.153:8006/"
+pve_host      = "172.30.30.153"
 pve_node      = "pve3"
 pve_api_token = "terraform@pve!tf=12345678-90ab-cdef-1234-567890abcdef"
 

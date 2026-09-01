@@ -105,7 +105,7 @@ ping -c2 <ip-app>            # → ❌ (seul le 8080 est ouvert)
 nc -zvw2 <ip-app> 8080       # → ✅
 
 # Depuis data (vdb)
-ping -c2 9.9.9.9             # → ❌ aucun Internet
+ping -c2 1.1.1.1             # → ❌ aucun Internet
 ping -c2 10.60.30.1          # → ✅ sa gateway
 nc -zvw2 <ip-front> 80       # → ❌
 ```
@@ -122,7 +122,7 @@ qm migrate <vmid-app> pve5 --online    # dans un autre terminal
 
 ```bash
 # depuis n'importe quelle VM
-ping -M do -s 1422 -c2 9.9.9.9      # → ✅
+ping -M do -s 1422 -c2 1.1.1.1      # → ✅
 sudo apt update && sudo apt install -y cowsay   # → ✅ (le vrai test)
 ```
 
@@ -201,14 +201,14 @@ rendu-eleveN/
 
 ```bash
 # Extraire la configuration réelle pour le rendu
-ssh root@192.168.50.1N 'tar cz /etc/pve/sdn /etc/pve/firewall' \
+ssh root@172.30.30.15N 'tar cz /etc/pve/sdn /etc/pve/firewall' \
   | tar xz -C rendu-eleveN/ --strip-components=2
 
 mkdir -p rendu-eleveN/ceph
-ssh root@192.168.50.1N 'cat /etc/pve/ceph.conf'  > rendu-eleveN/ceph/ceph.conf
-ssh root@192.168.50.1N 'ceph -s'                 > rendu-eleveN/ceph/ceph-s.txt
-ssh root@192.168.50.1N 'ceph osd tree'           > rendu-eleveN/ceph/ceph-osd-tree.txt
-ssh root@192.168.50.1N 'lvs; vgs'                > rendu-eleveN/docs/lvm.txt
+ssh root@172.30.30.15N 'cat /etc/pve/ceph.conf'  > rendu-eleveN/ceph/ceph.conf
+ssh root@172.30.30.15N 'ceph -s'                 > rendu-eleveN/ceph/ceph-s.txt
+ssh root@172.30.30.15N 'ceph osd tree'           > rendu-eleveN/ceph/ceph-osd-tree.txt
+ssh root@172.30.30.15N 'lvs; vgs'                > rendu-eleveN/docs/lvm.txt
 ```
 
 🪤 **Vérifiez qu'aucun secret ne part dans le dépôt** :

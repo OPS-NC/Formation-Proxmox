@@ -138,9 +138,9 @@ E-mail : `eleveN@formation.local` — il doit être syntaxiquement valide, pas r
 |---|---|
 | Management interface | votre carte Ethernet (`enp1s0`, `eno1`…) |
 | Hostname (FQDN) | `pveN.lab.local` ← **le FQDN est obligatoire** |
-| IP address (CIDR) | `192.168.50.1N/24` |
-| Gateway | `192.168.50.254` |
-| DNS server | `192.168.50.254` |
+| IP address (CIDR) | `172.30.30.15N/24` |
+| Gateway | `172.30.30.2` |
+| DNS server | `1.1.1.1` |
 
 🪤 **Pièges classiques :**
 - Un hostname sans domaine (`pve3` au lieu de `pve3.lab.local`) → refusé.
@@ -157,7 +157,7 @@ Validez, **Install**, patientez, retirez la clé au reboot.
 ### 4.1 Interface web 🌐
 
 ```
-https://192.168.50.1N:8006
+https://172.30.30.15N:8006
 ```
 
 Le certificat est auto-signé → « Avancé » → « Continuer ».
@@ -171,8 +171,8 @@ n'a pas d'abonnement. On le traite au TP 02.
 Depuis votre PC :
 
 ```bash
-ssh-copy-id root@192.168.50.1N     # injecte votre clé publique
-ssh root@192.168.50.1N
+ssh-copy-id root@172.30.30.15N     # injecte votre clé publique
+ssh root@172.30.30.15N
 ```
 
 Vérifiez immédiatement :
@@ -195,8 +195,8 @@ iface enp1s0 inet manual
 
 auto vmbr0
 iface vmbr0 inet static
-        address 192.168.50.13/24
-        gateway 192.168.50.254
+        address 172.30.30.153/24
+        gateway 172.30.30.2
         bridge-ports enp1s0
         bridge-stp off
         bridge-fd 0
@@ -209,7 +209,7 @@ L'hôte et les VM sont branchés sur le même switch, donc sur le même LAN.
 ```
                        ┌──────── vmbr0 (switch virtuel) ────────┐
                        │                                        │
-   LAN ─── enp1s0 ─────┤  IP hôte 192.168.50.13/24              │
+   LAN ─── enp1s0 ─────┤  IP hôte 172.30.30.153/24              │
                        │                                        │
                        │   ┌──────┐   ┌──────┐   ┌──────┐       │
                        └───┤ VM 1 ├───┤ VM 2 ├───┤ CT 1 ├───────┘
@@ -300,21 +300,21 @@ Un décalage de quelques secondes entre nœuds = des perturbations de quorum.
 
 ```
 127.0.0.1       localhost.localdomain localhost
-192.168.50.11   pve1.lab.local pve1
-192.168.50.12   pve2.lab.local pve2
-192.168.50.13   pve3.lab.local pve3
-192.168.50.14   pve4.lab.local pve4
-192.168.50.15   pve5.lab.local pve5
-192.168.50.16   pve6.lab.local pve6
-192.168.50.40   nfs.lab.local nfs
-192.168.50.41   pbs.lab.local pbs
+172.30.30.151   pve1.lab.local pve1
+172.30.30.152   pve2.lab.local pve2
+172.30.30.153   pve3.lab.local pve3
+172.30.30.154   pve4.lab.local pve4
+172.30.30.155   pve5.lab.local pve5
+172.30.30.156   pve6.lab.local pve6
+172.30.30.103   nfs.lab.local nfs     # ⚠ le PC de VOTRE élève : .10N (TP 14)
+172.30.30.41    pbs.lab.local pbs
 ```
 
 🪤 **La ligne de votre propre nœud doit contenir votre vraie IP**, pas `127.0.1.1`.
 Sinon Corosync s'annonce sur la loopback et le cluster ne se forme pas.
 
 ```bash
-hostname --ip-address     # doit renvoyer 192.168.50.1N, pas 127.x
+hostname --ip-address     # doit renvoyer 172.30.30.15N, pas 127.x
 ```
 
 ---
@@ -344,12 +344,12 @@ reboot
 Après le redémarrage :
 
 ```bash
-ssh root@192.168.50.1N
+ssh root@172.30.30.15N
 pveversion
 systemctl --failed
 ip -br a
-ping -c2 192.168.50.254
-ping -c2 9.9.9.9
+ping -c2 172.30.30.2
+ping -c2 1.1.1.1
 ```
 
 ---
@@ -357,10 +357,10 @@ ping -c2 9.9.9.9
 ## ✅ Checklist de validation
 
 - [ ] `pveversion` renvoie une version **9.x**
-- [ ] L'interface web répond en `https://192.168.50.1N:8006`
+- [ ] L'interface web répond en `https://172.30.30.15N:8006`
 - [ ] SSH par clé fonctionne (pas de mot de passe demandé)
 - [ ] `apt update` ne renvoie **aucune** erreur 401
-- [ ] `hostname --ip-address` renvoie `192.168.50.1N`
+- [ ] `hostname --ip-address` renvoie `172.30.30.15N`
 - [ ] `ping pve1` … `ping pve6` fonctionnent (au fur et à mesure des installs)
 - [ ] `dpkg -l | grep frr-pythontools` renvoie une ligne
 - [ ] `systemctl is-enabled dnsmasq` renvoie `disabled`

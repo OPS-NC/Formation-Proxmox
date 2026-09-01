@@ -37,20 +37,20 @@ Objectif : partir d'une machine nue et arriver à un **cluster de 6 nœuds**, av
                               ☁  Internet
                                    │
                         ┌──────────┴──────────┐
-                        │   Routeur / Box     │  192.168.50.254
+                        │   Routeur / Box     │  172.30.30.2
                         │  (aucun accès admin)│  ← contrainte du lab
                         └──────────┬──────────┘
                                    │
-  ═══════════════════════ LAN SALLE  192.168.50.0/24 ═══════════════════════
+  ═══════════════════════ LAN SALLE  172.30.30.0/24 ════════════════════════
         │           │           │           │           │           │
    ┌────┴───┐  ┌────┴───┐  ┌────┴───┐  ┌────┴───┐  ┌────┴───┐  ┌────┴───┐
    │  pve1  │  │  pve2  │  │  pve3  │  │  pve4  │  │  pve5  │  │  pve6  │
-   │  .11   │  │  .12   │  │  .13   │  │  .14   │  │  .15   │  │  .16   │
+   │  .151  │  │  .152  │  │  .153  │  │  .154  │  │  .155  │  │  .156  │
    └────────┘  └────────┘  └────────┘  └────────┘  └────────┘  └────────┘
      élève 1     élève 2     élève 3     élève 4     élève 5     élève 6
 
    ┌──────────┐  Chaque élève dispose aussi d'un PC Ubuntu 26.04
-   │ PC Ubuntu│  (192.168.50.101 → .106) : navigateur, ssh, git,
+   │ PC Ubuntu│  (172.30.30.101 → .106) : navigateur, ssh, git,
    │  élève N │  terraform, ansible. C'est votre poste de pilotage.
    └──────────┘
 ```
@@ -178,14 +178,14 @@ Puis ouvrez [`00-prerequis-topologie.md`](00-prerequis-topologie.md).
 |---|---|
 | 💻 | Commande à taper sur **votre PC Ubuntu** |
 | 🖥️ | Commande à taper sur **le nœud Proxmox** (shell / SSH) |
-| 🌐 | Action à faire dans **l'interface web** `https://192.168.50.1N:8006` |
+| 🌐 | Action à faire dans **l'interface web** `https://172.30.30.15N:8006` |
 | ✅ | Point de validation : ça doit marcher avant de continuer |
 | 🧠 | Explication de fond, à lire (ce n'est pas du remplissage) |
 | 🪤 | Piège classique |
 | 🎁 | Bonus si vous avez de l'avance |
 
 Dans tous les fichiers, `N` = **votre numéro d'élève** (1 à 6).
-Si vous êtes l'élève 3 : `pve3`, `192.168.50.13`, VMID `300-399`, subnets `10.3.x.0/24`.
+Si vous êtes l'élève 3 : `pve3`, `172.30.30.153`, VMID `300-399`, subnets `10.3.x.0/24`.
 
 ---
 

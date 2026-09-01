@@ -5,7 +5,7 @@ nfs_device: /dev/sdb            # utilisé seulement si nfs_manage_disk: true
 
 nfs_root: /srv/nfs
 nfs_exports_file: /etc/exports.d/proxmox-lab.exports
-nfs_allowed_network: "192.168.50.0/24"
+nfs_allowed_network: "172.30.30.0/24"
 # ⚠ Ce sont les répertoires du LAYOUT PROXMOX, pas des noms arbitraires.
 #   C'est la RACINE qui est exportée (voir exports.j2) ; ces dossiers ne sont
 #   que la structure interne du stockage, telle que Proxmox l'attend :

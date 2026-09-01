@@ -3,7 +3,7 @@
 # Les VM vivent dans les VNets 10.N.x.0/24, derrière le NAT du nœud.
 # Votre PC ne peut pas les joindre directement : le nœud Proxmox sert de bastion.
 # C'est exactement ce qu'on fait en production.
-pve_host: 192.168.50.13
+pve_host: 172.30.30.153
 eleve: 3
 
 ansible_ssh_common_args: >-

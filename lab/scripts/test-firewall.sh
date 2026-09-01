@@ -49,7 +49,7 @@ printf "  interne=%s  dmz=%s  windows=%s\n" "$IP_INT" "$IP_DMZ" "${IP_WIN:-n/a}"
 
 printf "\n${BLU}── Depuis la zone INTERNE ──${NC}\n"
 t "gateway interne joignable"            ok ping_test "10.${ELEVE}.10.1"
-t "Internet (ICMP)"                      ok ping_test 9.9.9.9
+t "Internet (ICMP)"                      ok ping_test 1.1.1.1
 t "résolution DNS"                       ok getent hosts debian.org
 t "interne → DMZ : HTTP 80"              ok nc_test "$IP_DMZ" 80
 t "interne → DMZ : SSH 22"               ok nc_test "$IP_DMZ" 22
@@ -76,8 +76,8 @@ printf "\n${BLU}── MTU (attendu : %s) ──${NC}\n" "$MTU"
 #   · MTU - 27      → un octet de trop                    → doit échouer
 # Tester « -s 1473 » ne prouverait rien : ça échoue déjà sur un Ethernet à 1500.
 OKSZ=$(( MTU - 28 )); KOSZ=$(( MTU - 27 ))
-t "paquet de $MTU o (charge $OKSZ), DF"          ok ping -M do -s "$OKSZ" -c1 -W2 9.9.9.9
-t "paquet de $((MTU+1)) o (charge $KOSZ), DF"    ko ping -M do -s "$KOSZ" -c1 -W2 9.9.9.9
+t "paquet de $MTU o (charge $OKSZ), DF"          ok ping -M do -s "$OKSZ" -c1 -W2 1.1.1.1
+t "paquet de $((MTU+1)) o (charge $KOSZ), DF"    ko ping -M do -s "$KOSZ" -c1 -W2 1.1.1.1
 
 printf "\n${BLU}══ Résultat : %d réussis, %d échoués ══${NC}\n" "$PASS" "$FAIL"
 if [ "$FAIL" -gt 0 ]; then

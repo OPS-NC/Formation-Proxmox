@@ -156,12 +156,12 @@ Corosync. En production, on lui dédie un lien.
 
 | Champ | Valeur (lab) | Production |
 |---|---|---|
-| Network | `192.168.50.0/24` | un VLAN dédié 10 Gb/s |
+| Network | `172.30.30.0/24` | un VLAN dédié 10 Gb/s |
 | Type | `secure` (chiffré SSH) | `insecure` si le réseau est de confiance |
 
 ```bash
 cat /etc/pve/datacenter.cfg
-# migration: network=192.168.50.0/24,type=secure
+# migration: network=172.30.30.0/24,type=secure
 ```
 
 🧠 `insecure` n'est pas « non sécurisé au hasard » : cela veut dire « transfert en clair,

@@ -14,7 +14,7 @@ Objectif : construire à la main un second bridge isolé avec NAT et DHCP. On fa
 Jusqu'ici, toutes vos VM sont sur `vmbr0`, donc **directement sur le LAN de la salle**.
 Conséquences :
 
-- elles consomment des IP du réseau `192.168.50.0/24`,
+- elles consomment des IP du réseau `172.30.30.0/24`,
 - elles voient les machines des autres élèves,
 - rien ne les protège,
 - vous ne pouvez pas rejouer un plan d'adressage sans conflit.
@@ -104,7 +104,7 @@ iptables -t nat -L POSTROUTING -n -v
 
 🧠 **MASQUERADE vs SNAT** : `MASQUERADE` détermine l'IP source dynamiquement à partir de
 l'interface de sortie (utile en DHCP/PPP, un peu plus coûteux). `SNAT --to-source
-192.168.50.13` est statique et plus rapide. Sur un serveur à IP fixe, `SNAT` est le
+172.30.30.153` est statique et plus rapide. Sur un serveur à IP fixe, `SNAT` est le
 choix correct.
 
 ### 🧠 « Debian 13, ce n'est pas nftables ? » — si, et vous venez d'en écrire
@@ -198,7 +198,7 @@ bind-interfaces
 except-interface=lo
 dhcp-range=10.3.99.100,10.3.99.200,12h
 dhcp-option=option:router,10.3.99.1
-dhcp-option=option:dns-server,192.168.50.254
+dhcp-option=option:dns-server,1.1.1.1,8.8.8.8
 log-dhcp
 EOF
 
@@ -237,8 +237,8 @@ pct exec ${N}19 -- sh -c '
   ip -br a
   ip route
   ping -c2 10.3.99.1        # la gateway = l'"'"'hôte
-  ping -c2 192.168.50.254   # le routeur de la salle → passe grâce au NAT
-  ping -c2 9.9.9.9          # Internet
+  ping -c2 172.30.30.2   # le routeur de la salle → passe grâce au NAT
+  ping -c2 1.1.1.1          # Internet
   apk update
 '
 ```
@@ -324,7 +324,7 @@ On garde `net.ipv4.ip_forward = 1` : le SDN en a besoin de toute façon.
 
 - [ ] `vmbr1` existe avec `10.N.99.1/24` et **aucun** port physique
 - [ ] Un guest sur `vmbr1` obtient une IP par DHCP
-- [ ] Ce guest ping `9.9.9.9` et met à jour ses paquets
+- [ ] Ce guest ping `1.1.1.1` et met à jour ses paquets
 - [ ] Je vois les compteurs de la règle MASQUERADE augmenter
 - [ ] Je sais citer **trois** limites de cette approche manuelle
 - [ ] Je sais expliquer pourquoi `iptables` sur Debian 13 écrit en réalité du nftables
@@ -341,7 +341,7 @@ On garde `net.ipv4.ip_forward = 1` : le SDN en a besoin de toute façon.
             -j DNAT --to-destination 10.3.99.100:80
    iptables -A FORWARD -d 10.3.99.100 -p tcp --dport 80 -j ACCEPT
    ```
-   Testez depuis votre PC : `curl http://192.168.50.13:8080/`. Puis supprimez les règles.
+   Testez depuis votre PC : `curl http://172.30.30.153:8080/`. Puis supprimez les règles.
 2. Refaites le bridge en **OVS** (`apt install openvswitch-switch`, type
    *OVS Bridge*). Comparez `ovs-vsctl show` avec `brctl show`.
 3. Créez un **bond** LACP fictif (`bond0` en `balance-alb` sur une seule NIC, pour voir

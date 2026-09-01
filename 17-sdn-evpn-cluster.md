@@ -85,7 +85,7 @@ pvesh set /cluster/sdn
 
 ```
    ┌──────────────────────────────────────────────────────────────┐
-   │ UNDERLAY : le LAN plat 192.168.50.0/24, non modifié           │
+   │ UNDERLAY : le LAN plat 172.30.30.0/24, non modifié           │
    │            les 6 nœuds se voient en direct = full mesh natif  │
    └──────────────────────────────────────────────────────────────┘
                                  ▲  transport VXLAN UDP/4789
@@ -150,8 +150,8 @@ arrivent, mais aucun paquet de données ne passe — le symptôme le plus dérou
 
 ```bash
 # Test de connectivité de l'underlay depuis chaque nœud
-for i in 11 12 13 14 15 16; do
-  echo -n "192.168.50.$i : " ; ping -c1 -W1 192.168.50.$i >/dev/null && echo OK || echo KO
+for i in 151 152 153 154 155 156; do
+  echo -n "172.30.30.$i : " ; ping -c1 -W1 172.30.30.$i >/dev/null && echo OK || echo KO
 done
 ```
 
@@ -167,12 +167,12 @@ done
 |---|---|
 | ID | `evpnctl` |
 | ASN # | `65000` |
-| Peers | `192.168.50.11,192.168.50.12,192.168.50.13,192.168.50.14,192.168.50.15,192.168.50.16` |
+| Peers | `172.30.30.151,172.30.30.152,172.30.30.153,172.30.30.154,172.30.30.155,172.30.30.156` |
 
 ```bash
 pvesh create /cluster/sdn/controllers \
   --controller evpnctl --type evpn --asn 65000 \
-  --peers 192.168.50.11,192.168.50.12,192.168.50.13,192.168.50.14,192.168.50.15,192.168.50.16
+  --peers 172.30.30.151,172.30.30.152,172.30.30.153,172.30.30.154,172.30.30.155,172.30.30.156
 ```
 
 🧠 **Un seul ASN pour tout le monde ⇒ iBGP en full-mesh.** Avec 6 nœuds, cela fait 15
@@ -342,8 +342,8 @@ Attendu : **5 voisins en état `Established`** (les 5 autres nœuds).
 
 ```
 Neighbor        V   AS  MsgRcvd  MsgSent  Up/Down  State/PfxRcd
-192.168.50.11   4 65000     142      139  00:05:12            8
-192.168.50.12   4 65000     140      138  00:05:10            8
+172.30.30.151   4 65000     142      139  00:05:12            8
+172.30.30.152   4 65000     140      138  00:05:10            8
 ...
 ```
 
@@ -480,9 +480,9 @@ Depuis votre VM `evpn-prod-eN` :
 | 1 | Gateway locale | `ping -c2 10.60.10.1` | ✅ |
 | 2 | **VM d'un autre élève, autre nœud** | `ping -c2 10.60.10.<autre>` | ✅ 🎯 |
 | 3 | **Routage inter-VNet** | `ping -c2 10.60.20.<vpub>` | ✅ 🎯 |
-| 4 | Internet | `ping -c2 9.9.9.9` | ✅ |
-| 5 | **MTU — juste en dessous** | `ping -M do -s 1422 -c2 9.9.9.9` | ✅ |
-| 6 | **MTU — juste au-dessus** | `ping -M do -s 1423 -c2 9.9.9.9` | ❌ *frag needed* 🎯 |
+| 4 | Internet | `ping -c2 1.1.1.1` | ✅ |
+| 5 | **MTU — juste en dessous** | `ping -M do -s 1422 -c2 1.1.1.1` | ✅ |
+| 6 | **MTU — juste au-dessus** | `ping -M do -s 1423 -c2 1.1.1.1` | ❌ *frag needed* 🎯 |
 | 7 | **Gros transfert** | `curl -o /dev/null https://cdimage.debian.org/.../SHA256SUMS` | ✅ |
 | 8 | `apt update` complet | `sudo apt update && sudo apt install -y htop` | ✅ |
 
@@ -492,7 +492,7 @@ Depuis une VM de `vdb` :
 |---|---|---|
 | 9 | `ping 10.60.30.1` | ✅ |
 | 10 | `ping 10.60.10.<prod>` | ✅ routage inter-VNet |
-| 11 | **`ping 9.9.9.9`** | ❌ **pas de SNAT, c'est voulu** 🎯 |
+| 11 | **`ping 1.1.1.1`** | ❌ **pas de SNAT, c'est voulu** 🎯 |
 
 
 🧠 **Pourquoi ces deux tailles ?** `ping -s N` fixe la charge utile ; il faut ajouter
@@ -516,13 +516,13 @@ dans 64 octets. C'est le transfert massif qui révèle un problème de MTU.
 Sur `pve1` (l'exit node primaire), pendant qu'une VM d'un **autre** nœud télécharge :
 
 ```bash
-tcpdump -ni vmbr0 -c 20 'host 9.9.9.9 or port 443'
+tcpdump -ni vmbr0 -c 20 'host 1.1.1.1 or port 443'
 conntrack -L 2>/dev/null | grep 10.60 | head
 watch -n1 'iptables -t nat -L -n -v | grep -A2 10.60'
 ```
 
 Vous voyez le trafic d'une VM de `pve4` sortir par `pve1`, naté derrière
-`192.168.50.11`. **C'est la démonstration visuelle de l'exit node.**
+`172.30.30.151`. **C'est la démonstration visuelle de l'exit node.**
 
 Et le chemin aller :
 
@@ -553,7 +553,7 @@ et son réseau n'a pas bougé d'un millimètre.
 
 ```bash
 qm config ${N}60 | grep -E 'net0'
-ssh -J root@192.168.50.11 eleve@10.60.10.<ip> 'ip -br a; ip route; arp -n'
+ssh -J root@172.30.30.151 eleve@10.60.10.<ip> 'ip -br a; ip route; arp -n'
 ```
 
 L'entrée ARP de la gateway est **identique** avant et après. C'est l'anycast.
@@ -644,7 +644,7 @@ peut-être des services de la salle.
 
 ```bash
 # Depuis une VM d'un nœud quelconque, un ping continu vers Internet
-ping 9.9.9.9
+ping 1.1.1.1
 ```
 
 Sur `pve1` :
@@ -755,7 +755,7 @@ journalctl -u frr -n 50
 2. **Une fabric WireGuard** : `Datacenter → SDN → Fabrics → Add → WireGuard`. Montez un
    underlay chiffré entre deux nœuds et déplacez-y le VTEP. C'est ainsi qu'on étend un
    cluster entre deux sites via Internet.
-3. **Publier un service** : sur `pve1`, un DNAT `192.168.50.11:8443 → 10.60.20.x:443`,
+3. **Publier un service** : sur `pve1`, un DNAT `172.30.30.151:8443 → 10.60.20.x:443`,
    plus la règle FORWARD. Puis réfléchissez : que se passe-t-il si `pve1` tombe ?
    Comment feriez-vous propre ? (Indice : HAProxy + IP virtuelle keepalived.)
 4. **`rt-import`** : lisez la documentation de cette option et expliquez dans quel cas

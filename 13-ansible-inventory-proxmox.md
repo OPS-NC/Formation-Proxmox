@@ -123,7 +123,7 @@ ls -R | head -40
 ```yaml
 ---
 plugin: community.proxmox.proxmox     # ⚠ PAS community.general.proxmox (déprécié)
-url: "https://192.168.50.13:8006"
+url: "https://172.30.30.153:8006"
 user: ansible@pve
 token_id: inv
 token_secret: "{{ lookup('env', 'PVE_ANSIBLE_TOKEN_SECRET') }}"
@@ -245,7 +245,7 @@ Dans `group_vars/all.yml` :
 ansible_ssh_common_args: >-
   -o ProxyCommand="ssh -W %h:%p -q root@{{ pve_host }}"
   -o StrictHostKeyChecking=no
-pve_host: 192.168.50.13
+pve_host: 172.30.30.153
 ```
 
 Le nœud Proxmox devient votre bastion. C'est exactement ce qu'on fait en production.
@@ -253,7 +253,7 @@ Le nœud Proxmox devient votre bastion. C'est exactement ce qu'on fait en produc
 ### Solution B — une route statique sur votre PC
 
 ```bash
-sudo ip route add 10.3.0.0/16 via 192.168.50.13
+sudo ip route add 10.3.0.0/16 via 172.30.30.153
 ```
 
 ⚠️ Ne fonctionne que si le firewall du nœud accepte le forward depuis le LAN.
@@ -636,14 +636,14 @@ sur ce qu'il change devient inutilisable pour détecter les dérives.
 
 ```bash
 # La page web générée
-ssh -J root@192.168.50.13 eleve@10.3.20.<ip-web01> 'curl -s localhost | grep h1'
+ssh -J root@172.30.30.153 eleve@10.3.20.<ip-web01> 'curl -s localhost | grep h1'
 
 # La base
-ssh -J root@192.168.50.13 eleve@10.3.10.<ip-db01> \
+ssh -J root@172.30.30.153 eleve@10.3.10.<ip-db01> \
   'sudo -u postgres psql -c "\l" | grep applab'
 
 # Le motd
-ssh -J root@192.168.50.13 eleve@10.3.10.<ip-app01>
+ssh -J root@172.30.30.153 eleve@10.3.10.<ip-app01>
 ```
 
 ---
@@ -653,7 +653,7 @@ ssh -J root@192.168.50.13 eleve@10.3.10.<ip-app01>
 Ajoutez le tag `web` à une machine qui ne l'avait pas :
 
 ```bash
-ssh root@192.168.50.13 'qm set 321 --tags "terraform,app,interne,web"'
+ssh root@172.30.30.153 'qm set 321 --tags "terraform,app,interne,web"'
 ```
 
 Puis, **sans toucher à l'inventaire** :

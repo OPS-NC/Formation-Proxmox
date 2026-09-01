@@ -49,7 +49,7 @@ Dépôt *enterprise* actif sans abonnement. Voir [TP 01 §5](../01-installation-
 `/etc/hosts` mal renseigné. **À corriger avant toute mise en cluster.**
 
 ```
-192.168.50.13   pve3.lab.local pve3
+172.30.30.153   pve3.lab.local pve3
 ```
 
 ### Une VM refuse de démarrer : « KVM virtualisation not available »
@@ -270,8 +270,8 @@ La panne la plus fréquente et la plus déroutante.
 
 ```bash
 # depuis la VM
-ping -M do -s 1422 -c2 9.9.9.9      # ✅ doit passer      (1422 + 28 = 1450)
-ping -M do -s 1423 -c2 9.9.9.9      # ❌ doit échouer     (1423 + 28 = 1451)
+ping -M do -s 1422 -c2 1.1.1.1      # ✅ doit passer      (1422 + 28 = 1450)
+ping -M do -s 1423 -c2 1.1.1.1      # ❌ doit échouer     (1423 + 28 = 1451)
 ```
 
 Correctifs :
@@ -436,7 +436,7 @@ chown -R ceph:ceph /var/lib/ceph/osd/ceph-<id>
 Ceph est **très** sensible à la dérive d'horloge.
 
 ```bash
-for i in 11 12 13 14 15 16; do ssh root@192.168.50.$i 'date -Is; timedatectl | grep synchro'; done
+for i in 151 152 153 154 155 156; do ssh root@172.30.30.$i 'date -Is; timedatectl | grep synchro'; done
 ```
 
 ### `HEALTH_WARN` qui ne se résorbe pas

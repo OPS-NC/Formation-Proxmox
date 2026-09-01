@@ -15,9 +15,9 @@ vers Internet, **sans écrire une seule règle iptables ni éditer `/etc/network
 ```
                               ☁ Internet
                                    │
-                          192.168.50.254
+                          172.30.30.2
                                    │
-   ══════════════ LAN salle 192.168.50.0/24 ══════════════
+   ══════════════ LAN salle 172.30.30.0/24 ══════════════
                                    │
                               ┌────┴────┐
                               │  vmbr0  │
@@ -211,7 +211,7 @@ ls /etc/dnsmasq.d/
 Pour le NAT, vous devez voir une ligne par subnet en SNAT, du type :
 
 ```
--A POSTROUTING -s 10.3.10.0/24 -o vmbr0 -m mark --mark 0x0/0x80000000 -j SNAT --to-source 192.168.50.13
+-A POSTROUTING -s 10.3.10.0/24 -o vmbr0 -m mark --mark 0x0/0x80000000 -j SNAT --to-source 172.30.30.153
 ```
 
 🧠 **`iptables` sur Debian 13, c'est `iptables-nft`.** Depuis Debian 10, la commande
@@ -332,7 +332,7 @@ qm terminal ${N}01      # Ctrl+O pour sortir
 ```bash
 ip -br a ; ip route
 ping -c2 10.3.10.1        # gateway locale        → OK
-ping -c2 9.9.9.9          # Internet via SNAT     → OK
+ping -c2 1.1.1.1          # Internet via SNAT     → OK
 curl -sI https://deb.debian.org | head -1
 ping -c2 10.3.20.100      # une machine de la DMZ → OK (rien ne bloque encore !)
 ```
@@ -341,7 +341,7 @@ ping -c2 10.3.20.100      # une machine de la DMZ → OK (rien ne bloque encore 
 
 ```powershell
 Test-NetConnection 10.3.10.1
-Test-NetConnection 9.9.9.9
+Test-NetConnection 1.1.1.1
 Test-NetConnection 10.3.20.100 -Port 80
 ```
 

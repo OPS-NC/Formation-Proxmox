@@ -16,18 +16,18 @@ log_ratelimit: enable=1,rate=5/second,burst=20
 
 [ALIASES]
 
-lan_salle 192.168.50.0/24        # LAN physique de la salle
-gw_salle 192.168.50.254          # routeur / accès Internet
-pc_eleve 192.168.50.103          # ⚠ VOTRE poste = votre serveur NFS (TP 14) — .10N
-srv_pbs 192.168.50.41            # Proxmox Backup Server (TP 15), VM sur pve1
-net_internal 10.3.10.0/24        # ⚠ adapter au numéro d'élève
+lan_salle 172.30.30.0/24   # LAN physique de la salle
+gw_salle 172.30.30.2       # routeur / accès Internet
+pc_eleve 172.30.30.103     # ⚠ VOTRE poste = votre serveur NFS (TP 14) — .10N
+srv_pbs 172.30.30.41       # Proxmox Backup Server (TP 15), VM sur pve1
+net_internal 10.3.10.0/24  # ⚠ adapter au numéro d'élève
 net_dmz 10.3.20.0/24
 net_services 10.3.30.0/24
-net_evpn 10.60.0.0/16            # les VNets EVPN du jour 4
+net_evpn 10.60.0.0/16      # les VNets EVPN du jour 4
 
 [IPSET management]               # tout ce qui peut administrer les nœuds
 
-192.168.50.0/24
+172.30.30.0/24
 
 [IPSET blacklist]
 
