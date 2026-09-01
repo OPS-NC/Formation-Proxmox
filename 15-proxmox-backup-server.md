@@ -101,18 +101,22 @@ deviennent fragiles — Proxmox le déconseille explicitement. On reste donc en 
 | Disque système | 32 Go (`scsi0`) |
 | **Disque datastore** | 120 Go (`scsi1`) — **séparé du système, toujours** |
 | RAM | 4 Go minimum (la déduplication est gourmande en index) |
-| IP | `172.30.30.41/24`, gw `172.30.30.2` |
+| IP | **fixée par le formateur**, `/24`, gw `172.30.30.2` — notez-la, c'est votre `$PBS` |
 | Nœud hôte | **pve1** (celui qui créera le cluster) |
 | FQDN | `pbs.lab.local` |
 
 L'installateur est le même que celui de PVE. Après le premier démarrage :
 
 ```bash
-ssh root@172.30.30.41
+PBS=172.30.30.___            # ⚠ l'adresse annoncée par le formateur
+ssh root@$PBS
 proxmox-backup-manager version
 ```
 
-Interface web : **<https://172.30.30.41:8007>** (port **8007**, pas 8006).
+Interface web : **`https://$PBS:8007`** (port **8007**, pas 8006).
+
+📌 **Gardez `$PBS` sous la main** : ce TP et les TP 16 et 20 la réutilisent. Une VM
+PBS pour toute la salle, une seule adresse à retenir.
 
 ### Dépôts sans abonnement
 
@@ -222,7 +226,7 @@ commune aux six nœuds (merci pmxcfs) : il faudra alors la refaire **une seule f
 | Champ | Valeur |
 |---|---|
 | ID | `pbs-lab` |
-| Server | `172.30.30.41` |
+| Server | votre `$PBS` |
 | Username | `eleveN@pbs` |
 | Password | `Formation2026!` |
 | Datastore | `lab-store` |
@@ -231,8 +235,9 @@ commune aux six nœuds (merci pmxcfs) : il faudra alors la refaire **une seule f
 | Encryption Key | *(voir §8)* |
 
 ```bash
+PBS=172.30.30.___            # ⚠ l'adresse de la VM PBS
 pvesm add pbs pbs-lab \
-  --server 172.30.30.41 \
+  --server $PBS \
   --datastore lab-store \
   --namespace eleve3 \
   --username eleve3@pbs \
@@ -327,7 +332,8 @@ sauvegarde avec l'espace réellement consommé.
 # Sur PBS
 proxmox-backup-manager datastore list --output-format json | jq
 df -h /mnt/datastore/data
-proxmox-backup-client snapshot list --repository eleve3@pbs@172.30.30.41:lab-store
+PBS=172.30.30.___            # ⚠ l'adresse de la VM PBS
+proxmox-backup-client snapshot list --repository eleve3@pbs@$PBS:lab-store
 ```
 
 ---
@@ -359,7 +365,8 @@ téléchargez le fichier ou le dossier.
 
 ```bash
 # En CLI, depuis n'importe quelle machine avec proxmox-backup-client
-export PBS_REPOSITORY='eleve3@pbs@172.30.30.41:lab-store'
+PBS=172.30.30.___            # ⚠ l'adresse de la VM PBS
+export PBS_REPOSITORY="eleve3@pbs@$PBS:lab-store"
 export PBS_PASSWORD='Formation2026!'
 
 proxmox-backup-client snapshot list --ns eleve3
@@ -523,7 +530,7 @@ données au lieu de les recevoir, et idéalement une bande ou un stockage WORM.
 
 ## ✅ Checklist de validation
 
-- [ ] PBS est installé et accessible sur `https://172.30.30.41:8007`
+- [ ] PBS est installé et accessible sur `https://$PBS:8007`
 - [ ] Un datastore `lab-store` existe sur un disque dédié
 - [ ] Un namespace par élève existe
 - [ ] Le stockage `pbs-lab` est actif sur mon nœud (`pvesm status`)
@@ -546,7 +553,7 @@ données au lieu de les recevoir, et idéalement une bande ou un stockage WORM.
 2. **`proxmox-backup-client` sur une machine quelconque** : sauvegardez le `/etc` d'une
    VM directement vers PBS, sans passer par Proxmox. PBS n'est pas réservé aux VM.
    ```bash
-   proxmox-backup-client backup etc.pxar:/etc --repository eleve3@pbs@172.30.30.41:lab-store
+   proxmox-backup-client backup etc.pxar:/etc --repository eleve3@pbs@<IP-PBS>:lab-store
    ```
 3. **Restauration croisée** : restaurez une sauvegarde faite depuis `pve3` sur `pve5`.
    Que faut-il pour que ça marche ? (Indice : le stockage cible et le VNet.)

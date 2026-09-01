@@ -57,7 +57,8 @@ pvesm free <storage>:<volume>
 cat /etc/pve/storage.cfg
 
 # NFS  (le serveur, c'est votre poste Ubuntu — TP 14)
-pvesm add nfs nfs-e3 --server 172.30.30.103 --export /srv/nfs-e3 \
+PC=172.30.30.___   # l'IP de votre poste — hostname -I
+pvesm add nfs nfs-e3 --server $PC --export /srv/nfs-e3 \
     --content images,rootdir,iso,backup,snippets --options vers=4.2 --nodes pve3
 showmount -e <serveur>
 mount -t nfs -o vers=4.2 <serveur>:/srv/nfs-e3 /mnt/test     # tester AVANT de déclarer

@@ -16,12 +16,17 @@ La référence unique. En cas de doute, c'est ce document qui fait foi.
 | **Nœud pve4** | `172.30.30.154` | élève 4 |
 | **Nœud pve5** | `172.30.30.155` | élève 5 |
 | **Nœud pve6** | `172.30.30.156` | élève 6 |
-| PC élève 1 → 6 | `172.30.30.101` → `.106` | postes de pilotage |
-| **Serveur NFS de chaque élève** | son **PC Ubuntu**, `172.30.30.10N` | TP 14 |
-| **VM `pbs-lab`** | `172.30.30.41` | TP 15 · **hébergée sur pve1** · UI sur `:8007` |
-| **CT `pulse`** | `172.30.30.42` | TP 20 · sur pve1 · UI sur `:7655` |
-| Réservé | `172.30.30.50` → `.99` | extensions du formateur |
+| PC élève 1 → 6 | **`$PC`** | postes de pilotage · adresse fournie par le formateur |
+| **Serveur NFS de chaque élève** | son **PC Ubuntu**, donc `$PC` | TP 14 |
+| **VM `pbs-lab`** | **`$PBS`** | TP 15 · **hébergée sur pve1** · UI sur `:8007` |
+| **CT `pulse`** | **`$PULSE`** | TP 20 · sur pve1 · UI sur `:7655` |
+| VM du jour 1 sur `vmbr0` | `172.30.30.200` → `.229` | bloc de 5 par élève, voir plus bas |
 | Pot commun VM `vmbr0` | `172.30.30.230` → `.250` | VM ajoutées au besoin |
+
+> ⚠️ **`$PC`, `$PBS` et `$PULSE` ne sont pas figés dans ce document** : seules les
+> plages `.151`–`.156` (nœuds) et `.200`–`.250` (VM sur `vmbr0`) le sont. Relevez
+> l'adresse de votre poste avec `hostname -I`, et notez celles de PBS et Pulse au
+> moment où le formateur les annonce (TP 15 et TP 20).
 
 > 🧠 Le serveur NFS n'est **pas** une VM : c'est le PC Ubuntu de chaque élève, qui
 > exporte `/srv/nfs-eN` vers son propre nœud (TP 14).
@@ -290,7 +295,7 @@ Voir [TP 01 §3.1](../01-installation-proxmox.md) et [TP 18 §3](../18-ceph-clus
    │  ÉLÈVE 3                                               │
    ├────────────────────────────────────────────────────────┤
    │  Nœud        pve3          172.30.30.153:8006          │
-   │  PC          172.30.30.103                             │
+   │  PC          $PC  (hostname -I sur le poste)           │
    │  VMID        300 → 399                                 │
    │  Pool        eleve3                                    │
    │                                                        │
@@ -311,11 +316,11 @@ Voir [TP 01 §3.1](../01-installation-proxmox.md) et [TP 18 §3](../18-ceph-clus
    │              pve/ceph-osd 120 Go  → OSD Ceph           │
    │                                                        │
    │  Stockages   local-lvm   (défaut, local)               │
-   │              nfs-e3      export de mon PC .103         │
-   │              pbs-lab     172.30.30.41:8007             │
+   │              nfs-e3      export de mon poste ($PC)     │
+   │              pbs-lab     $PBS:8007                     │
    │              vm-store    Ceph, ×3 copies (J4)          │
    │              cephfs      Ceph, fichiers  (J4)          │
    │                                                        │
-   │  Services    Pulse  172.30.30.42:7655                  │
+   │  Services    Pulse  $PULSE:7655                        │
    └────────────────────────────────────────────────────────┘
 ```

@@ -121,7 +121,7 @@ brancher un clavier sur le serveur.
 | `net_internal` | `10.N.10.0/24` | zone interne |
 | `net_dmz` | `10.N.20.0/24` | zone DMZ |
 | `gw_salle` | `172.30.30.2` | routeur |
-| `pc_eleve` | `172.30.30.10N` | mon poste |
+| `pc_eleve` | l'IP de **votre poste** (`hostname -I`) | mon poste |
 
 ```bash
 N=3

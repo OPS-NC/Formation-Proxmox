@@ -306,8 +306,9 @@ Un décalage de quelques secondes entre nœuds = des perturbations de quorum.
 172.30.30.154   pve4.lab.local pve4
 172.30.30.155   pve5.lab.local pve5
 172.30.30.156   pve6.lab.local pve6
-172.30.30.103   nfs.lab.local nfs     # ⚠ le PC de VOTRE élève : .10N (TP 14)
-172.30.30.41    pbs.lab.local pbs
+# Les deux lignes suivantes : adressez-les quand vous connaîtrez les IP.
+#172.30.30.__   nfs.lab.local nfs      # votre poste Ubuntu   (TP 14)
+#172.30.30.__   pbs.lab.local pbs      # la VM PBS            (TP 15)
 ```
 
 🪤 **La ligne de votre propre nœud doit contenir votre vraie IP**, pas `127.0.1.1`.

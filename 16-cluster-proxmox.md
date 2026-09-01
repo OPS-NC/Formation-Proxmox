@@ -375,8 +375,9 @@ une seule déclaration suffit pour tout le cluster.
 **PBS** — une seule personne le fait, c'est cluster-wide :
 
 ```bash
+PBS=172.30.30.___            # ⚠ l'adresse de la VM PBS (TP 15)
 pvesm add pbs pbs-lab \
-  --server 172.30.30.41 --datastore lab-store \
+  --server $PBS --datastore lab-store \
   --username eleve1@pbs --password 'Formation2026!' \
   --fingerprint '<empreinte relevée au TP 15>' \
   --content backup
@@ -389,8 +390,9 @@ Vérifiez depuis un autre nœud : `pbs-lab` y apparaît tout seul. 🎩
 
 ```bash
 N=3
+PC=172.30.30.___             # ⚠ l'IP de VOTRE poste (hostname -I)
 pvesm add nfs nfs-e$N \
-  --server 172.30.30.10$N --export /srv/nfs-e$N \
+  --server $PC --export /srv/nfs-e$N \
   --content images,rootdir,iso,backup,snippets \
   --options vers=4.2 --nodes pve$N
 ```

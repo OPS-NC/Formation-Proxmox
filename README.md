@@ -50,7 +50,7 @@ Objectif : partir d'une machine nue et arriver à un **cluster de 6 nœuds**, av
      élève 1     élève 2     élève 3     élève 4     élève 5     élève 6
 
    ┌──────────┐  Chaque élève dispose aussi d'un PC Ubuntu 26.04
-   │ PC Ubuntu│  (172.30.30.101 → .106) : navigateur, ssh, git,
+   │ PC Ubuntu│  (adresse fournie par le formateur) : navigateur,
    │  élève N │  terraform, ansible. C'est votre poste de pilotage.
    └──────────┘
 ```

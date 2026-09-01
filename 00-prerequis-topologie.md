@@ -30,10 +30,31 @@ Le formateur vous attribue un numéro **N** entre **1** et **6**.
 | Passerelle / Internet | `172.30.30.2` | pas d'accès admin |
 | DNS | `1.1.1.1` (primaire) et `8.8.8.8` (secours) | résolveurs publics |
 | Nœud Proxmox élève N | `172.30.30.15N` | pve1 = .151 … pve6 = .156 |
-| PC Ubuntu élève N | `172.30.30.10N` | .101 … .106 |
-| **Serveur NFS** | votre **PC Ubuntu** `172.30.30.10N` | jour 3, TP 14 |
-| VM PBS (jour 3) | `172.30.30.41` | hébergée sur **pve1** |
-| Pulse (jour 4) | `172.30.30.42` | LXC sur pve1 |
+| VM du jour 1 sur `vmbr0` | `172.30.30.200` → `.250` | voir §4 |
+| PC Ubuntu élève N | **`$PC`** | ⚠️ à relever, voir ci-dessous |
+| **Serveur NFS** | votre **PC Ubuntu**, donc `$PC` | jour 3, TP 14 |
+| VM PBS (jour 3) | **`$PBS`** | hébergée sur **pve1** — adresse fixée au TP 15 |
+| Pulse (jour 4) | **`$PULSE`** | LXC sur pve1 — adresse fixée au TP 20 |
+
+⚠️ **Seules les deux premières plages sont figées** (`.151`–`.156` pour les nœuds,
+`.200`–`.250` pour les VM du jour 1). Les autres adresses vous sont **communiquées
+par le formateur** ou se relèvent sur la machine — ne les inventez pas, et ne
+recopiez pas celles d'un autre élève.
+
+| Variable | Ce que c'est | Comment l'obtenir |
+|---|---|---|
+| `$PC` | votre poste Ubuntu | sur le PC : `hostname -I \| awk '{print $1}'` |
+| `$PBS` | la VM Proxmox Backup Server | fixée au TP 15, commune à la salle |
+| `$PULSE` | le conteneur Pulse | fixé au TP 20, commun à la salle |
+
+📌 **Notez ces trois valeurs dès maintenant**, vous les retaperez souvent :
+
+```bash
+# À garder sous la main — à recopier au début de chaque session de travail
+export PC=172.30.30.___        # votre poste Ubuntu   (hostname -I sur le PC)
+export PBS=172.30.30.___       # renseigné au TP 15
+export PULSE=172.30.30.___     # renseigné au TP 20
+```
 
 ⚠️ **Rien d'autre ne doit prendre d'IP sur ce réseau.** Toutes vos VM de TP vivront
 dans les réseaux SDN en `10.x.x.x`.
@@ -162,6 +183,10 @@ N=3                       # ⚠ VOTRE numéro d'élève
 qm set ${N}01 --tags "debian,interne"
 pvesh create /cluster/sdn/vnets/vint/subnets --subnet 10.$N.10.0/24 ...
 ```
+
+Trois autres valeurs apparaissent comme **`$PC`**, **`$PBS`** et **`$PULSE`** : ce
+sont de vraies variables shell, dont l'adresse n'est pas connue à l'avance (§2).
+Définissez-les dans votre shell avant de coller un bloc qui les utilise.
 
 Même logique pour **`B`**, la base de votre bloc d'adresses sur `vmbr0` (§4) :
 dans le texte on écrit `172.30.30.<B+1>`, dans un shell c'est une expression
@@ -311,6 +336,7 @@ cette page.
 
 - [ ] Je connais mon numéro d'élève **N**
 - [ ] Je sais quelles IP, quels VMID et quels subnets sont les miens
+- [ ] J'ai relevé l'IP de mon poste Ubuntu (`hostname -I`) et je l'ai notée
 - [ ] `terraform version` (ou `tofu version`) répond sur mon PC
 - [ ] `ansible --version` répond, et `community.proxmox` est installée
 - [ ] `cat ~/.ssh/id_ed25519.pub` affiche ma clé

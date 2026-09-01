@@ -22,7 +22,7 @@ NAS ou d'une baie de stockage.
    │                                                              │
    │   ┌──────────────┐                    ┌──────────────┐       │
    │   │  PC Ubuntu   │                    │  Nœud pve3   │       │
-   │   │172.30.30.103 │   NFS v4 / 2049    │172.30.30.153 │       │
+   │   │172.30.30.<PC>│   NFS v4 / 2049    │172.30.30.153 │       │
    │   │              │◄──────────────────►│              │       │
    │   │              │                    │  /mnt/pve/   │       │
    │   │ /srv/nfs-e3/ │                    │   nfs-e3/    │       │
@@ -195,23 +195,35 @@ saute les tâches de partitionnement, inutiles ici.
 
 ## 5. Vérifier depuis le nœud Proxmox 🖥️
 
+Relevez d'abord l'adresse de votre poste, **sur le poste** :
+
 ```bash
+hostname -I | awk '{print $1}'        # → notez-la, c'est votre $PC
+```
+
+Puis, **sur le nœud Proxmox** :
+
+```bash
+N=3
+PC=172.30.30.___                  # ⚠ l'IP relevée ci-dessus
+
 apt install -y nfs-common
-showmount -e 172.30.30.103        # l'IP de VOTRE PC
+showmount -e $PC
 ```
 
 ```
-Export list for 172.30.30.103:
+Export list for 172.30.30.35:
 /srv/nfs-e3 172.30.30.153
 ```
 
 Test manuel **avant** de déclarer le stockage — toujours :
 
 ```bash
+N=3 ; PC=172.30.30.___            # ⚠ votre numéro, et l'IP de votre poste
 mkdir -p /mnt/test-nfs
-mount -t nfs -o vers=4.2 172.30.30.103:/srv/nfs-e3 /mnt/test-nfs
-touch /mnt/test-nfs/ok-depuis-pve3 && ls -l /mnt/test-nfs/
-rm /mnt/test-nfs/ok-depuis-pve3
+mount -t nfs -o vers=4.2 $PC:/srv/nfs-e$N /mnt/test-nfs
+touch /mnt/test-nfs/ok-depuis-pve$N && ls -l /mnt/test-nfs/
+rm /mnt/test-nfs/ok-depuis-pve$N
 umount /mnt/test-nfs
 ```
 
@@ -240,7 +252,7 @@ ss -tlnp | grep 2049
 | Champ | Valeur |
 |---|---|
 | ID | `nfs-eN` |
-| Server | `172.30.30.10N` (votre PC) |
+| Server | l'IP de **votre poste** (`hostname -I`) |
 | Export | `/srv/nfs-eN` — choisi dans la liste déroulante |
 | Content | `Disk image`, `Container`, `ISO image`, `Backup`, `Snippets` |
 | Nodes | `pveN` uniquement (l'export n'autorise que lui) |
@@ -250,8 +262,9 @@ ss -tlnp | grep 2049
 
 ```bash
 N=3
+PC=172.30.30.___                  # ⚠ l'IP de VOTRE poste
 pvesm add nfs nfs-e$N \
-  --server 172.30.30.10$N \
+  --server $PC \
   --export /srv/nfs-e$N \
   --content images,rootdir,iso,backup,snippets \
   --options vers=4.2 \

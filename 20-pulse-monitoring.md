@@ -96,20 +96,21 @@ Suivez <https://github.com/rcourtman/Pulse/blob/main/docs/INSTALL.md>.
 machine dédiée. Dans ce lab, un LXC sur un nœud fera l'affaire — mais notez la
 contradiction, et sachez l'expliquer.
 
-Adresse retenue pour le lab : `172.30.30.42:7655`.
+Adresse : **fixée par le formateur** — notez-la, c'est votre `$PULSE`. L'UI écoute
+sur le port **7655**.
 
 ---
 
 ## 4. Connecter le cluster et PBS 🔌
 
-Ouvrez `http://172.30.30.42:7655`, puis l'assistant de configuration.
+Ouvrez `http://$PULSE:7655`, puis l'assistant de configuration.
 
 ### Nœud Proxmox VE
 
 | Champ | Valeur |
 |---|---|
 | Name | `cluster-formation` |
-| Host | `https://172.30.30.151:8006` |
+| Host | `https://172.30.30.151:8006` (pve1) |
 | Token ID | `pulse@pve!mon` |
 | Token Secret | *(le secret noté plus haut)* |
 | Verify SSL | ❌ (certificat auto-signé) |
@@ -123,7 +124,7 @@ nœud comme point d'entrée de secours, sinon la supervision tombe avec `pve1`.
 | Champ | Valeur |
 |---|---|
 | Name | `pbs-lab` |
-| Host | `https://172.30.30.41:8007` |
+| Host | `https://$PBS:8007` |
 | Token | `pulse@pbs!mon` |
 | Fingerprint | *(empreinte du certificat PBS)* |
 
@@ -190,8 +191,9 @@ fait échouer toutes les sauvegardes en silence. Alertez à 85 %, pas à 98 %.
 Canaux de notification : e-mail, webhook, Gotify, ntfy, Telegram, Discord.
 
 ```bash
+PULSE=172.30.30.___          # ⚠ l'adresse du conteneur Pulse
 # Test rapide de webhook
-curl -X POST http://172.30.30.42:7655/api/alerts/test
+curl -X POST http://$PULSE:7655/api/alerts/test
 ```
 
 ---
@@ -216,8 +218,9 @@ Proxmox sait exporter ses métriques nativement :
 🌐 `Datacenter → Metric Server → Add → InfluxDB`
 
 ```bash
+PULSE=172.30.30.___          # ⚠ l'adresse du conteneur Pulse
 pvesh create /cluster/metrics/server/influx \
-  --type influxdb --server 172.30.30.42 --port 8086 \
+  --type influxdb --server $PULSE --port 8086 \
   --influxdbproto http --organization lab --bucket proxmox --token '<token>'
 ```
 

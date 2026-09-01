@@ -21,4 +21,4 @@ protection_synflood_burst: 1000
 
 # Règles spécifiques à CE nœud uniquement.
 # Exemple : autoriser un collecteur de métriques
-# IN ACCEPT -source 172.30.30.42 -p tcp -dport 9100 -log nolog
+# IN ACCEPT -source <IP-du-collecteur> -p tcp -dport 9100 -log nolog
