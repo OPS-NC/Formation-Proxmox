@@ -23,8 +23,13 @@
     <span class="tag">{{ g }}</span>
     {% endfor %}
   </p>
+  {# 🪤 NE PAS mettre {{ ansible_date_time... }} ici.                        #}
+  {#    Le contenu rendu changerait à CHAQUE exécution, la tâche template     #}
+  {#    remonterait « changed » à chaque fois, et le playbook mentirait sur   #}
+  {#    ce qu'il modifie — exactement ce que le TP 13 §10 interdit.           #}
+  {#    Un horodatage se met dans un journal, pas dans un fichier géré.       #}
   <p style="margin-top:2.5em;font-size:.85em;opacity:.6">
-    Déployé par Ansible le {{ ansible_date_time.iso8601 }}
+    Déployé par Ansible &middot; {{ ansible_managed }}
   </p>
 </body>
 </html>

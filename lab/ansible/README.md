@@ -144,7 +144,8 @@ ansible-playbook site.yml --ask-vault-pass
 | Inventaire vide / plugin introuvable | `ansible-galaxy collection install community.proxmox` |
 | `UNREACHABLE` sur un CT Alpine | Jouer `alpine.yml` d'abord (`remote_user: root`) |
 | Inventaire vide | Vérifiez le token, `validate_certs: false`, videz `/tmp/ansible-pve-cache` |
-| `ansible_host` absent | L'agent QEMU ne tourne pas dans la VM |
+| `ansible_host` absent (VM) | L'agent QEMU ne tourne pas dans la VM |
+| `ansible_host` = le nom du guest (LXC) | Conteneur arrêté, ou `want_facts` désactivé — un LXC passe par `proxmox_lxc_interfaces`, pas par l'agent |
 | `UNREACHABLE` | Le `ProxyCommand` n'est pas configuré, ou `ssh root@node` échoue |
 | `changed` à chaque fois | Tâche non idempotente |
 

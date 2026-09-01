@@ -151,14 +151,22 @@ groups:
   linux: "proxmox_vmtype == 'qemu' and 'windows' not in (proxmox_tags | default(''))"
   conteneurs: "proxmox_vmtype == 'lxc'"
 
-# L'IP de connexion vient de l'agent QEMU
+# L'IP de connexion : DEUX sources selon le type de guest
 compose:
   ansible_host: >-
-    (proxmox_agent_interfaces | default([])
-     | selectattr('name','ne','lo')
-     | map(attribute='ip-addresses') | flatten
-     | selectattr('ip-address-type','eq','ipv4')
-     | map(attribute='ip-address') | list | first) | default(proxmox_name)
+    (
+      (proxmox_agent_interfaces | default([])
+        | rejectattr('name', 'eq', 'lo')
+        | map(attribute='ip-addresses') | flatten
+        | selectattr('ip-address-type', 'eq', 'ipv4')
+        | map(attribute='ip-address') | list)
+      +
+      (proxmox_lxc_interfaces | default([])
+        | rejectattr('name', 'eq', 'lo')
+        | selectattr('inet', 'defined')
+        | map(attribute='inet')
+        | map('regex_replace', '/.*$', '') | list)
+    ) | first | default(proxmox_name)
 
 cache: true
 cache_plugin: jsonfile
@@ -210,8 +218,31 @@ ansible-inventory -i inventory/proxmox.yml --host web01-e3 | jq
 ansible-inventory -i inventory/proxmox.yml --list | jq '._meta.hostvars | keys'
 ```
 
-🪤 **Une machine sans agent QEMU n'aura pas d'`ansible_host`.** Vérifiez que
+🪤 **Une VM sans agent QEMU n'aura pas d'`ansible_host`.** Vérifiez que
 `qemu-guest-agent` tourne sur vos VM (il est dans les templates du TP 10).
+
+🧠 **Et les conteneurs LXC ?** Ils n'ont **pas** d'agent QEMU — ce serait absurde,
+un conteneur partage le noyau de l'hôte. Proxmox connaît quand même leurs adresses,
+mais par un autre chemin : l'API `/nodes/<nœud>/lxc/<id>/interfaces`. Le plugin
+d'inventaire l'expose dans une variable **différente**, `proxmox_lxc_interfaces`,
+avec une **structure différente** :
+
+| Type | Variable | Champ de l'IP | Format |
+|---|---|---|---|
+| VM QEMU | `proxmox_agent_interfaces` | `ip-addresses[].ip-address` | `10.3.20.104` |
+| LXC | `proxmox_lxc_interfaces` | `inet` | `10.3.20.117/24` ⚠️ **avec le masque** |
+
+D'où le `regex_replace('/.*$', '')` qui retire le `/24`, et la concaténation des deux
+listes. Sans la branche LXC, `ansible_host` retomberait sur `proxmox_name` — le nom du
+conteneur, que rien ne résout dans le lab — et vous auriez un `UNREACHABLE` inexplicable.
+
+Les deux exigent `want_facts: true` **et** un guest démarré.
+
+```bash
+# Vérifier ce que l'inventaire a réellement trouvé
+ansible-inventory --host ct-cache-e3 | jq '.ansible_host, .proxmox_lxc_interfaces'
+ansible-inventory --host web01-e3   | jq '.ansible_host, .proxmox_agent_interfaces'
+```
 
 ---
 
@@ -441,7 +472,7 @@ code{background:#222;padding:.2em .5em;border-radius:4px}</style></head>
   <p>IP : <code>{{ ansible_default_ipv4.address }}</code></p>
   <p>Nœud Proxmox : <code>{{ proxmox_node | default('?') }}</code></p>
   <p>Groupes Ansible : <code>{{ group_names | join(' · ') }}</code></p>
-  <p>Déployé le {{ ansible_date_time.iso8601 }}</p>
+  <p>{{ ansible_managed }}</p>   {# ⚠ surtout PAS d'horodatage ici — voir §10 #}
 </body></html>
 ```
 
@@ -631,6 +662,26 @@ db01-e3   : ok=16  changed=0  unreachable=0  failed=0
 Si une tâche reste en `changed` à chaque exécution, elle est mal écrite (typiquement
 un `command` sans `creates:` ni `changed_when:`). Corrigez-la : un playbook qui ment
 sur ce qu'il change devient inutilisable pour détecter les dérives.
+
+🪤 **Le piège le plus courant : l'horodatage dans un template.**
+
+```jinja
+Déployé le {{ ansible_date_time.iso8601 }}     ← ❌ jamais
+```
+
+Le contenu rendu change à chaque seconde : la tâche `template` voit une différence,
+écrit le fichier, remonte `changed`. Votre playbook affiche `changed=3` pour
+l'éternité, et vous ne savez plus distinguer « quelque chose a dérivé » de « c'est
+juste l'horloge ».
+
+Les variantes à repérer dans une revue de code : `ansible_date_time`, `now()`,
+`lookup('pipe', 'date')`, un mot de passe généré par `lookup('password')` sans
+fichier de stockage, un UUID aléatoire. **Un fichier géré doit être une fonction
+pure de son état désiré** — même entrée, même sortie.
+
+👉 Si vous voulez vraiment tracer les déploiements, écrivez-les dans un journal
+(`/var/log/`) avec un `lineinfile`, pas dans un fichier de configuration. Et pour
+signer un fichier généré, `{{ ansible_managed }}` suffit : il est stable.
 
 ### Vérifier le résultat
 

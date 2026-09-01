@@ -27,7 +27,7 @@ C'est un **point de défaillance unique**.
    │pve1│pve2│pve3│                         en 3 copies, sur
    └────┴────┴────┘                         3 nœuds différents
 
-   Le PC tombe → TOUT gèle              2 nœuds tombent → ça continue
+   Le PC tombe → TOUT gèle              1 nœud tombe → ça continue
 ```
 
 ### Le vocabulaire, en une image
@@ -57,9 +57,36 @@ C'est un **point de défaillance unique**.
 ```
 
 🧠 **`size 3, min_size 2`**, la règle d'or : trois copies de chaque bloc, et l'écriture
-n'est acceptée que si au moins deux sont confirmées. Traduction opérationnelle : vous
-survivez à la perte d'**un** nœud sans perdre le service, et à la perte de **deux** sans
-perdre de données (mais le pool passe en lecture seule).
+n'est acceptée que si au moins deux sont confirmées.
+
+Traduction opérationnelle, et **soyez précis** — c'est une question d'entretien
+d'embauche :
+
+| Nœuds perdus (sur 6) | Données | Service |
+|---|---|---|
+| **1** | intactes (2 copies restantes) | ✅ continu, `HEALTH_WARN`, backfill automatique |
+| **2** | intactes (au moins 1 copie) | ⚠️ **partiellement bloqué** |
+| **3** | ⚠️ perte possible | ❌ |
+
+🪤 **Le cas « 2 nœuds » est le plus mal compris.** On lit souvent « size 3 donc je
+survis à 2 pannes » : c'est vrai pour les *données*, faux pour le *service*.
+
+Un PG n'a que 3 réplicas, sur 3 hôtes tirés par CRUSH parmi les 6. Si les deux hôtes
+tombés font partie de ces 3, le PG descend à **1 copie — sous `min_size 2`** : Ceph
+refuse alors les E/S sur ce PG pour ne pas risquer une divergence. Les autres PG
+continuent normalement.
+
+```
+   PG dont les 3 réplicas sont sur  pve1 pve2 pve3   → pve1+pve2 tombent → 1 copie → ✋ E/S bloquées
+   PG dont les 3 réplicas sont sur  pve3 pve4 pve5   → pve1+pve2 tombent → 3 copies → ✅ rien à signaler
+```
+
+Avec 6 hôtes et 3 réplicas, **environ un PG sur cinq** est concerné (les combinaisons
+qui contiennent les 2 hôtes tombés : `C(4,1) / C(6,3)` = 4/20). Le volume redevient
+pleinement disponible une fois le *backfill* terminé sur les 4 nœuds restants.
+
+👉 La formule juste : **`size` protège les données, `min_size` protège la
+cohérence — et c'est `min_size` qui décide si vous êtes encore en service.**
 
 ---
 

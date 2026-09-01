@@ -46,14 +46,33 @@ groups:
   conteneurs: "proxmox_vmtype == 'lxc'"
   windows: "'windows' in (proxmox_tags | default(''))"
 
-# L'adresse de connexion vient de l'agent QEMU
+# ── L'adresse de connexion ────────────────────────────────────────────────
+# ⚠ Deux sources DIFFÉRENTES selon le type de guest :
+#   · VM QEMU → proxmox_agent_interfaces, via l'agent invité
+#               (/nodes/<n>/qemu/<id>/agent/network-get-interfaces)
+#   · LXC     → proxmox_lxc_interfaces, via l'API du conteneur
+#               (/nodes/<n>/lxc/<id>/interfaces) — un LXC n'a PAS d'agent QEMU
+#
+# Les deux exigent « want_facts: true » et un guest DÉMARRÉ. On concatène les
+# deux listes : la première adresse IPv4 non-loopback gagne.
+#
+# 🪤 Sans la branche LXC, ansible_host retombe sur proxmox_name — le nom du
+#    conteneur, que rien ne résout dans le lab → UNREACHABLE.
 compose:
   ansible_host: >-
-    (proxmox_agent_interfaces | default([])
-     | selectattr('name', 'ne', 'lo')
-     | map(attribute='ip-addresses') | flatten
-     | selectattr('ip-address-type', 'eq', 'ipv4')
-     | map(attribute='ip-address') | list | first) | default(proxmox_name)
+    (
+      (proxmox_agent_interfaces | default([])
+        | rejectattr('name', 'eq', 'lo')
+        | map(attribute='ip-addresses') | flatten
+        | selectattr('ip-address-type', 'eq', 'ipv4')
+        | map(attribute='ip-address') | list)
+      +
+      (proxmox_lxc_interfaces | default([])
+        | rejectattr('name', 'eq', 'lo')
+        | selectattr('inet', 'defined')
+        | map(attribute='inet')
+        | map('regex_replace', '/.*$', '') | list)
+    ) | first | default(proxmox_name)
 
 cache: true
 cache_plugin: jsonfile

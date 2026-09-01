@@ -17,7 +17,7 @@ charges, et vous.
 > 2. sa base de données **inaccessible depuis Internet** ;
 > 3. un poste Windows d'administration, joignable en RDP par le service informatique
 >    **uniquement** ;
-> 4. tout doit survivre à la panne d'un serveur ;
+> 4. le **service web** doit survivre à la panne d'un serveur ;
 > 5. tout doit être sauvegardé et **la restauration doit être prouvée** ;
 > 6. l'infrastructure doit être reproductible : « si un incendie détruit la salle, on
 >    doit pouvoir tout remonter depuis Git ».
@@ -67,8 +67,23 @@ Matrice de flux attendue :
 | `app-eN` | Debian 13 | `vprod` | une appli qui écoute en 8080 | déployé par Terraform |
 | `data-eN` | Rocky Linux 10 | `vdb` | PostgreSQL | déployé par Terraform |
 | `cache-eN` | Alpine (LXC) | `vprod` | Redis ou nginx cache | déployé par Terraform |
-| — | — | — | Stockage | `front` et `app` sur **Ceph**, `data` sur `local-lvm` |
+| — | — | — | Stockage | `front` et `app` sur **Ceph** · `data` sur **`local-lvm`** — ⚠️ voir ci-dessous |
 | `adm-eN` | Windows Server 2025 | `vprod` | poste d'administration | RDP depuis `vprod` **seulement** |
+
+> 🎯 **`data` sur `local-lvm` : ce n'est pas un oubli, c'est l'arbitrage à défendre.**
+>
+> Un disque local n'est pas répliqué : si son nœud tombe, `data` **ne redémarre pas
+> ailleurs** — la HA n'a nulle part où la relancer. La base est donc protégée par la
+> **sauvegarde** (épreuve 6), pas par la haute disponibilité.
+>
+> C'est un choix courant et défendable : une base de données a ses propres mécanismes
+> de réplication, et beaucoup d'équipes préfèrent un disque local rapide + une
+> réplication applicative plutôt qu'un stockage distribué sous la base. Ce qui n'est
+> **pas** défendable, c'est de ne pas le savoir.
+>
+> **Le formateur vous demandera** : « quel est votre RPO et votre RTO sur `data` ? »
+> La bonne réponse cite la fréquence du job de sauvegarde et le temps de restauration
+> mesuré à l'épreuve 6 — pas « c'est en HA ».
 
 ### Exigences transverses
 
@@ -76,6 +91,7 @@ Matrice de flux attendue :
 - [ ] Un `ansible-playbook site.yml` répété affiche **`changed=0`**
 - [ ] Les disques de `front` et `app` sont sur **`vm-store` (Ceph)**
 - [ ] `front` et `app` sont en **HA**, avec une règle d'**anti-affinité**
+- [ ] `data` n'est **pas** en HA, et je sais dire pourquoi (RPO/RTO à l'appui)
 - [ ] Un job de **sauvegarde par pool** tourne, avec une rétention définie
 - [ ] Le **firewall** applique exactement la matrice ci-dessus, en *default deny*
 - [ ] Le dépôt Git contient tout le code : `terraform apply` + `ansible-playbook`
@@ -133,6 +149,11 @@ Le formateur coupe l'alimentation d'un nœud hébergeant `front` ou `app`.
 → La VM redémarre ailleurs en moins de **3 minutes**, et `front` répond de nouveau.
 → `ceph -s` passe en `HEALTH_WARN` puis se reconstruit seul jusqu'à `HEALTH_OK`.
 → Aucune donnée perdue.
+
+**Question piège du formateur** : « et si j'avais coupé le nœud de `data` ? »
+Réponse attendue : elle ne redémarre pas ailleurs — son disque est sur `local-lvm`,
+donc local à ce nœud. On la restaure depuis PBS (épreuve 6), et on assume le RPO
+correspondant. Répondre « elle bascule aussi » est **la** faute à ne pas commettre.
 
 ```bash
 ceph -s
