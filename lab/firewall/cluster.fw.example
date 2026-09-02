@@ -4,6 +4,13 @@
 #   1. écrire les règles [RULES] d'autorisation
 #   2. SEULEMENT ENSUITE passer policy_in / policy_forward en DROP
 #   Sinon vous perdez l'accès à :8006 et il faut un clavier sur le serveur.
+#
+# ⭐ C'EST ICI QUE VIT LA SEGMENTATION INTER-ZONES, pas dans les .fw de VNet.
+#   Un paquet qui SORT de son VNet (vers un autre VNet ou vers Internet) est
+#   ROUTÉ par l'hôte : il traverse le hook « forward », où seules les règles
+#   FORWARD du Datacenter et du nœud sont évaluées. Les fichiers
+#   /etc/pve/sdn/firewall/<vnet>.fw ne voient que le trafic INTRA-VNet et
+#   VNet ↔ hôte.  Détail et démonstration : TP 09 §5.4.
 # ─────────────────────────────────────────────────────────────────────────────
 
 [OPTIONS]
@@ -75,3 +82,47 @@ IN ACCEPT -source lan_salle -p tcp -dport 8007 -log nolog # UI PBS
 
 # ── Diagnostic ───────────────────────────────────────────────────────────────
 IN ACCEPT -source lan_salle -p icmp -log nolog
+
+# ── Services d'infrastructure portés par le nœud (gateway des VNets) ─────────
+# 🧠 policy_in: DROP s'applique AUSSI aux VM : la gateway d'un subnet SDN est une
+#    IP de l'hôte. Sans ces lignes, plus de DNS ni de ping vers la gateway — et
+#    les règles de vint.fw / vdmz.fw n'y changent rien.
+# 🪤 Le DHCP part de 0.0.0.0 : aucun IPSet SDN ne peut le matcher, d'où le filtre
+#    par interface. Sans ça, un guest redémarré ne récupère plus d'IP.
+IN ACCEPT -i vint -p udp -dport 67 -log nolog # DHCP vint
+IN ACCEPT -i vdmz -p udp -dport 67 -log nolog # DHCP vdmz
+IN ACCEPT -i vsrv -p udp -dport 67 -log nolog # DHCP vsrv (TP 12)
+IN ACCEPT -source +sdn/vint-all -p udp -dport 53 -log nolog # DNS depuis vint
+IN ACCEPT -source +sdn/vint-all -p tcp -dport 53 -log nolog
+IN ACCEPT -source +sdn/vint-all -p icmp -log nolog # ping de la gateway
+IN ACCEPT -source +sdn/vdmz-all -p udp -dport 53 -log nolog # DNS depuis vdmz
+IN ACCEPT -source +sdn/vdmz-all -p tcp -dport 53 -log nolog
+IN ACCEPT -source +sdn/vdmz-all -p icmp -log nolog
+
+# ── Zone HOST : le trafic ROUTÉ par le nœud ⭐ ────────────────────────────────
+# C'est la traduction directe de la matrice de flux du TP 09 §1.
+# Même règle d'or qu'ailleurs : les DROP explicites AVANT les règles fourre-tout
+# sans -dest, sinon celles-ci attrapent aussi le trafic inter-zones.
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 22 -log nolog # int->dmz SSH
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 80 -log nolog
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 443 -log nolog
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p icmp -log nolog
+FORWARD DROP -source +sdn/vint-all -dest +sdn/vdmz-all -log info # tout autre int->dmz
+FORWARD DROP -source +sdn/vdmz-all -dest +sdn/vint-all -log warning # 🚨 DMZ -> INTERNE
+FORWARD ACCEPT -source +sdn/vint-all -log nolog # interne -> Internet, libre
+FORWARD ACCEPT -source +sdn/vdmz-all -p tcp -dport 80 -log nolog # dmz -> Internet
+FORWARD ACCEPT -source +sdn/vdmz-all -p tcp -dport 443 -log nolog
+FORWARD ACCEPT -source +sdn/vdmz-all -p udp -dport 53 -log nolog
+FORWARD ACCEPT -source +sdn/vdmz-all -p udp -dport 123 -log nolog # NTP
+
+# ── Zone SERVICES (à décommenter au TP 12, quand vsrv existe) ────────────────
+# FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vint-all -p tcp -dport 9100 -log nolog
+# FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vdmz-all -p tcp -dport 9100 -log nolog
+# FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vint-all -p tcp -dport 22 -log info
+# FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vsrv-all -p tcp -dport 22 -log nolog
+# FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vsrv-all -p tcp -dport 3000 -log nolog
+# FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vsrv-all -p tcp -dport 9090 -log nolog
+# FORWARD DROP -source +sdn/vdmz-all -dest +sdn/vsrv-all -log warning
+# FORWARD ACCEPT -source +sdn/vsrv-all -p tcp -dport 80 -log nolog
+# FORWARD ACCEPT -source +sdn/vsrv-all -p tcp -dport 443 -log nolog
+# FORWARD ACCEPT -source +sdn/vsrv-all -p udp -dport 53 -log nolog

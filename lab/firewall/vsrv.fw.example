@@ -2,6 +2,14 @@
 #
 # SERVICES peut SCRAPER les autres zones (métriques), mais rien ne peut
 # initier vers SERVICES, sauf l'administration depuis la zone interne.
+#
+# ⭐ PORTÉE RÉELLE DE CE FICHIER — à lire avant de débugger pendant une heure :
+#   un fichier .fw de VNet ne filtre QUE le trafic intra-VNet (guest ↔ guest) et
+#   le trafic VNet ↔ hôte (DNS/DHCP/ping vers la gateway). Dès qu'un paquet SORT
+#   du VNet — autre VNet, ou Internet — il est ROUTÉ par l'hôte et ne traverse
+#   plus cette chaîne : il faut une règle FORWARD dans cluster.fw / host.fw.
+#   Les règles ci-dessous en gardent une trace (défense en profondeur), mais
+#   elles ne suffisent PAS à elles seules. Voir TP 09 §5.4.
 
 [OPTIONS]
 
@@ -9,6 +17,14 @@ enable: 1
 policy_forward: DROP
 
 [RULES]
+
+# ── DHCP : la ligne que personne n'écrit 🪤 ───────────────────────────────────
+# Le DISCOVER part de 0.0.0.0 vers 255.255.255.255 : AUCUN IPSet SDN ne peut le
+# matcher. L'OFFER de dnsmasq repart de la gateway vers le guest. Sans cette
+# règle, le drop final de la chaîne tue les deux, et un guest redémarré ne
+# récupère plus jamais d'IP (dnsmasq : « Error sending DHCP packet … Operation
+# not permitted »).
+FORWARD ACCEPT -p udp -dport 67:68 -log nolog
 
 FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vsrv-gateway -p udp -dport 53 -log nolog
 FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vsrv-gateway -p icmp -log nolog
@@ -27,7 +43,7 @@ FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vsrv-all -p tcp -dport 9090 -log
 # La DMZ n'a rien à faire ici
 FORWARD DROP -source +sdn/vdmz-all -dest +sdn/vsrv-all -log warning
 
-# Sortie Internet limitée
+# Sortie Internet limitée — le pendant FORWARD dans cluster.fw est indispensable
 FORWARD ACCEPT -source +sdn/vsrv-all -p tcp -dport 80 -log nolog
 FORWARD ACCEPT -source +sdn/vsrv-all -p tcp -dport 443 -log nolog
 FORWARD ACCEPT -source +sdn/vsrv-all -p udp -dport 53 -log nolog

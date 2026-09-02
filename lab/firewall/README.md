@@ -15,6 +15,13 @@
 ```bash
 N=3   # votre numéro d'élève
 
+# 0. Le back-end iptables DOIT être nft, pas legacy
+#    Sinon le SNAT du SDN part dans les tables legacy, invisible depuis
+#    « nft list ruleset », et le NAT du TCP cesse de fonctionner.
+iptables -V                                    # → (nf_tables), PAS (legacy)
+update-alternatives --set iptables  /usr/sbin/iptables-nft
+update-alternatives --set ip6tables /usr/sbin/ip6tables-nft
+
 # 1. nftables — SANS LUI, LES RÈGLES VNET SONT IGNORÉES
 apt install -y proxmox-firewall
 cp host.fw.example /etc/pve/nodes/$(hostname)/host.fw
@@ -30,15 +37,24 @@ sed -e "s/10\.3\./10.$N./g" \
 
 grep -E '^(pc_eleve|srv_pbs)' /etc/pve/firewall/cluster.fw   # ⭐ relire avant d'activer
 
-# 3. VNets
+# 3. VNets — ⚠ NE COPIEZ QUE LES VNets QUI EXISTENT DÉJÀ.
+#    vsrv n'est créé qu'au TP 12 : poser vsrv.fw avant, ou laisser les règles
+#    « +sdn/vsrv-all » dans vint.fw / vdmz.fw, fait SILENCIEUSEMENT ignorer ces
+#    règles par proxmox-firewall (voir « Les six pièges », n°5).
 mkdir -p /etc/pve/sdn/firewall
-for v in vint vdmz vsrv; do
+for v in vint vdmz; do          # ajoutez vsrv APRÈS le TP 12
   [ -f "$v.fw.example" ] && cp "$v.fw.example" "/etc/pve/sdn/firewall/$v.fw"
 done
+grep -l 'vsrv' /etc/pve/sdn/firewall/*.fw   # → retirez ces lignes avant le TP 12
 
 # 4. Appliquer et redémarrer les guests
+#    ⭐ Le redémarrage n'est PAS cosmétique : tant qu'un guest tourne derrière son
+#    bridge fwbrXXXiY (topologie de l'ancien pve-firewall), sa zone conntrack
+#    diverge et le SNAT ne traduit plus le TCP. Ping et DNS passent, curl non.
 pvesh set /cluster/sdn
 systemctl restart proxmox-firewall
+for id in $(qm list | awk 'NR>1{print $1}'); do qm reboot $id; done
+for id in $(pct list | awk 'NR>1{print $1}'); do pct reboot $id; done
 ```
 
 ## Vérifier
@@ -47,21 +63,54 @@ systemctl restart proxmox-firewall
 pve-firewall compile | head -30
 nft list ruleset | grep -c .
 tail -f /var/log/pve-firewall.log
+
+# ⭐ Les trois contrôles qui évitent 90 % des « ça ne marche pas »
+iptables -V                                                     # → (nf_tables)
+ip -br link | grep fwbr                                         # → doit être VIDE
+journalctl -u proxmox-firewall -n 50 | grep "could not find ipset"   # → VIDE
+
+# Où meurt exactement un paquet ? (remplacez l'IP source)
+nft add table inet dbg
+nft add chain inet dbg pre '{ type filter hook prerouting priority -300; }'
+nft add rule  inet dbg pre ip saddr 10.3.20.101 meta nftrace set 1
+nft monitor trace          # … puis générez le trafic depuis la VM
+nft delete table inet dbg  # ⚠ ne pas oublier
 bash ../scripts/test-firewall.sh --eleve 3 --int 10.3.10.101 --dmz 10.3.20.101
 #   … et en zone EVPN (TP 17), ajoutez --mtu 1450
 ```
 
-## Les quatre pièges
+## Les six pièges
 
-1. **`nftables: 1` manquant** → les règles VNet sont ignorées, sans aucun message.
-2. **Les alias `pc_eleve` et `srv_pbs` laissés tels quels** → ils portent des IP
+1. **Croire que les `.fw` de VNet suffisent** → ils ne filtrent que l'**intra-VNet**
+   et le **VNet ↔ hôte**. Tout ce qui sort d'un VNet (autre VNet, Internet) est
+   **routé** par l'hôte et n'est filtré que par les règles `FORWARD` de
+   `cluster.fw` / `host.fw`. Avec `policy_forward: DROP` et aucune règle `FORWARD`
+   au Datacenter, plus rien ne sort — quoi que disent vos fichiers de VNet.
+   👉 C'est le piège n°1, et de loin. Voir TP 09 §5.4.
+2. **`nftables: 1` manquant** → les règles VNet sont ignorées, sans aucun message.
+   Et **`nftables: 1` sans redémarrer les guests** → ils restent derrière leurs
+   bridges `fwbr*`, la zone conntrack diverge, et le **SNAT ne traduit plus le
+   TCP** (`ping` et DNS passent, `curl` non).
+3. **Le back-end `iptables`** → s'il pointe sur `iptables-legacy`, le SNAT du SDN
+   est écrit dans des tables invisibles depuis `nft list ruleset`. Diagnostic
+   classique et faux : « le NAT a disparu ».
+4. **Le DHCP oublié** → dès qu'un VNet passe en `policy_forward: DROP`, le
+   `DHCPDISCOVER` (source `0.0.0.0`) et l'`OFFER` tombent sur le `drop` final.
+   La panne est **différée** : elle n'apparaît qu'au redémarrage suivant du guest.
+5. **Une règle qui référence un IPSet inexistant** (`+sdn/vsrv-all` avant le
+   TP 12) → `proxmox-firewall` la **saute silencieusement**. Rien à l'écran :
+   `journalctl -u proxmox-firewall | grep "could not find ipset"`.
+6. **Les alias `pc_eleve` et `srv_pbs` laissés tels quels** → ils portent des IP
    d'exemple. Une règle qui autorise la mauvaise adresse est pire qu'une règle
    absente : elle donne l'illusion du contrôle.
-3. **L'ordre des règles** → première correspondance gagnante. Une règle
-   « ACCEPT vers Internet » sans `-dest` attrape tout, y compris les flux
-   inter-zones. Les DROP explicites doivent la précéder.
-4. **La règle Corosync (5405-5412)** → l'oublier casse le cluster à la seconde où
-   vous activez le firewall.
+
+Et les deux classiques, toujours valables :
+
+- **L'ordre des règles** → première correspondance gagnante. Une règle
+  « ACCEPT vers Internet » sans `-dest` attrape tout, y compris les flux
+  inter-zones. Les DROP explicites doivent la précéder.
+- **La règle Corosync (5405-5412)** → l'oublier casse le cluster à la seconde où
+  vous activez le firewall.
 
 ## Désactivation d'urgence
 

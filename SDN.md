@@ -447,15 +447,40 @@ la trouvera vide et conclura à tort que sa configuration est cassée. C'est sur
 Depuis les versions récentes, on peut poser des règles **directement sur un VNet**,
 sans toucher aux VM. Fichier : `/etc/pve/sdn/firewall/<vnet>.fw`.
 
-**Trois choses à savoir :**
+**Quatre choses à savoir :**
 
-1. Seule la direction **`FORWARD`** existe (un VNet n'a pas d'« entrant » ni de
+1. 🚨 **Ce n'est PAS là que se fait la segmentation inter-zones.** La portée d'un
+   `.fw` de VNet est plus étroite que son nom ne le laisse croire. La doc officielle
+   définit la zone `VNet` comme *« Traffic passing through a SDN VNet, either from
+   guest to guest or from host to guest and vice-versa »* — donc :
+
+   | Flux | Filtré par |
+   |---|---|
+   | VM ↔ VM **dans le même VNet** | ✅ le `.fw` du VNet |
+   | VM ↔ **gateway / hôte** (DNS, DHCP, ping de la gw) | ✅ le `.fw` du VNet (+ les règles `IN` du Datacenter) |
+   | VM → **autre VNet** (routé) | ❌ → règles **`FORWARD`** de `cluster.fw` / `host.fw` |
+   | VM → **Internet** (routé + SNAT) | ❌ → règles **`FORWARD`** de `cluster.fw` / `host.fw` |
+
+   Dès qu'un paquet **sort** de son VNet, il est routé par l'hôte : il ne traverse
+   plus la chaîne du VNet mais le hook `forward`, où seule la zone *Host* décide.
+   Poser `policy_forward: DROP` au Datacenter en croyant « rouvrir » depuis les
+   fichiers de VNet coupe donc tout Internet et tout l'inter-zones. Le VNet reste
+   irremplaçable pour la **micro-segmentation** (deux VM d'une même DMZ ne passent
+   jamais par le routeur, donc jamais par `forward`) — mais c'est un complément, pas
+   un substitut.
+2. Seule la direction **`FORWARD`** existe (un VNet n'a pas d'« entrant » ni de
    « sortant » : c'est du trafic qui traverse). Le trafic est bidirectionnel : il faut
    **deux règles** pour autoriser un aller-retour… sauf que le suivi de connexion
    gère le retour, donc en pratique une règle par sens de *connexion*.
-2. Ça ne fonctionne **qu'avec le firewall nftables** (`proxmox-firewall`).
+3. Ça ne fonctionne **qu'avec le firewall nftables** (`proxmox-firewall`).
    Le vieux `pve-firewall` iptables **ignore silencieusement** ces règles. 🪤
-3. Proxmox génère automatiquement des **IPSets** utilisables dans les règles :
+   Deux corollaires du même piège : une règle qui référence un **IPSet inexistant**
+   est sautée sans message (`journalctl -u proxmox-firewall | grep "could not find
+   ipset"`), et tant que les guests n'ont pas été **redémarrés** après l'activation
+   de nftables, ils restent derrière leurs bridges `fwbr*` — zone conntrack
+   divergente, et le SNAT cesse de traduire le TCP.
+4. Proxmox génère automatiquement des **IPSets** utilisables dans les règles
+   (y compris depuis `cluster.fw` : ils vivent dans la table nftables globale) :
 
 | IPSet | Contenu |
 |---|---|
@@ -483,11 +508,26 @@ FORWARD ACCEPT -source +sdn/vprod-gateway -dest +sdn/vprod-all -log nolog
    ├─ Nœud        host.fw             IN / OUT / FORWARD  + nftables, protections
    │
    ├─ VNet        sdn/firewall/x.fw   FORWARD uniquement   ← nftables requis
+   │                                  portée : intra-VNet + VNet ↔ hôte
    │
    └─ VM / CT     <vmid>.fw           IN / OUT
 ```
 
-Un paquet doit être accepté à **tous** les niveaux traversés. Le plus restrictif gagne.
+Un paquet doit être accepté à **tous** les niveaux qu'il traverse — et la nuance est
+dans le « qu'il traverse » : un flux routé d'un VNet vers Internet **ne traverse pas**
+la chaîne du VNet. Le plus restrictif des niveaux réellement traversés gagne.
+
+🪤 **Le DHCP est le premier à tomber.** Dès qu'un VNet passe en `policy_forward: DROP`,
+sa chaîne se termine par un `drop` ; or un `DHCPDISCOVER` part de `0.0.0.0` et aucun
+IPSet SDN ne peut le matcher, tandis que l'`OFFER` de dnsmasq repart de la gateway.
+Il faut donc une ligne explicite dans chaque `.fw` de VNet :
+
+```ini
+FORWARD ACCEPT -p udp -dport 67:68 -log nolog
+```
+
+La panne est **différée** : elle n'apparaît qu'au redémarrage suivant du guest, quand
+son bail expire.
 
 ---
 
@@ -637,6 +677,9 @@ Pour être honnête et éviter les mauvaises surprises :
 - **Pas de QoS / shaping par VNet** (le shaping reste au niveau de la carte VM).
 - **IPAM en tech preview** sur certains aspects : à sauvegarder avec le reste de `/etc/pve`.
 - **Le firewall VNet exige nftables** — pensez à migrer, sinon vos règles sont ignorées.
+- **Le firewall VNet ne filtre pas le trafic routé** (inter-VNet, sortie Internet) :
+  celui-ci relève des règles `FORWARD` du Datacenter ou du nœud. Il n'existe donc pas
+  aujourd'hui de « politique de sécurité par VNet » complète et autoportante. (§8)
 - **Pas de NAT entrant (DNAT) managé** : la publication d'un service depuis Internet se
   fait à la main sur l'exit node, ou via un reverse-proxy dans une VM. (TP 09 bonus.)
 
