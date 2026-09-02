@@ -360,7 +360,7 @@ mkdir -p ~/.config/pve && chmod 700 ~/.config/pve
 cat > ~/.config/pve/token.env <<'EOF'
 export PVE_HOST="172.30.30.153"
 export PVE_NODE="pve3"
-export PVE_ENDPOINT="https://172.30.30.153:8006/"
+export PVE_ENDPOINT="https://172.30.30.153:8006"
 export PVE_API_TOKEN="terraform@pve!tf=12345678-90ab-cdef-1234-567890abcdef"
 export PVE_ANSIBLE_TOKEN_ID="ansible@pve!inv"
 export PVE_ANSIBLE_TOKEN_SECRET="abcdef00-1111-2222-3333-444455556666"
