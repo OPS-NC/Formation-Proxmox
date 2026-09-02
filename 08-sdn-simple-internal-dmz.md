@@ -71,9 +71,9 @@ iptables -t nat -L POSTROUTING -n | grep 10\\.        # → aucune sortie
 
 ---
 
-## 3. Activer l'IPAM 📇
+## 3. Voir l'IPAM 📇
 
-🌐 `Datacenter → SDN → IPAM`
+🌐 `Datacenter → SDN → Options`
 
 Un IPAM `pve` existe déjà par défaut. C'est la base interne de Proxmox
 (`/etc/pve/priv/ipam.db`). On l'utilise tel quel.
