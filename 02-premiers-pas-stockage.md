@@ -118,10 +118,10 @@ pvesm status --content snippets
 
 ## 5. Créer un stockage supplémentaire 🆕
 
-🧠 **Notre choix pour toute la formation** : on reste sur les deux stockages créés par
-l'installateur — `local` (type `dir`) et **`local-lvm` (type `lvmthin`)**. Pas de ZFS :
-voir [TP 01 §3.1](01-installation-proxmox.md). Le stockage partagé arrivera au jour 3
-(NFS depuis votre poste) et au jour 4 (**Ceph**).
+🧠 Pour toute la formation, on reste sur les deux stockages créés par l'installateur :
+`local` (type `dir`) et **`local-lvm` (type `lvmthin`)**. Pas de ZFS
+([TP 01 §3.1](01-installation-proxmox.md)). Le partagé arrive au jour 3 (NFS depuis
+votre poste) et au jour 4 (**Ceph**).
 
 ### Cas A — vous avez un second disque physique 🎁
 
@@ -165,10 +165,9 @@ vgs -o vg_name,vg_size,vg_free
 Au-delà de 95 %, les volumes passent en lecture seule et **vos VM se corrompent**.
 Surveillez-la comme vous surveillez `df -h`.
 
-🧠 Notez aussi `vg_free` : c'est l'espace non alloué du groupe de volumes. S'il est à
-zéro, le TP 18 (Ceph) demandera de détruire et recréer le pool thin — **un thin pool ne
-peut pas être réduit**. Si vous voyez de l'espace libre ici, c'est que vous avez bien
-réglé `maxvz` à l'installation. 👏
+🧠 `vg_free` est l'espace non alloué du groupe de volumes. S'il est à zéro, le TP 18
+(Ceph) demandera de détruire et recréer le pool thin — **un thin pool ne peut pas être
+réduit**. De l'espace libre ici : `maxvz` a été réglé à l'installation.
 
 ---
 
@@ -256,7 +255,7 @@ automatiquement.
 
 ## 8. Explorer l'API et la CLI 🔍
 
-Trois façons de faire la même chose. Sachez basculer entre les trois.
+Trois façons de faire la même chose.
 
 ```bash
 # Navigation interactive dans l'API, comme un système de fichiers
@@ -272,9 +271,9 @@ pveperf               # petit benchmark (I/O, CPU)
 ```
 
 🧠 **Tout ce que fait l'interface web passe par l'API.** Ouvrez les outils de
-développement de votre navigateur (F12 → Réseau) pendant que vous cliquez : vous
-verrez les appels `POST /api2/extjs/...`. C'est *le* réflexe pour découvrir comment
-automatiser une action que vous ne savez faire qu'en clic.
+développement du navigateur (F12 → Réseau) pendant que vous cliquez : vous verrez les
+appels `POST /api2/extjs/...`. Le réflexe pour automatiser une action qu'on ne sait
+faire qu'en clic.
 
 ---
 
@@ -316,6 +315,6 @@ scp root@$PVE:/root/pve-config-*.tgz ~/ProxmoxFormation/backup-conf/
 2. `pvesm alloc local-lvm 9999 vm-9999-disk-0 1G` puis `lvs` — observez le volume créé,
    et supprimez-le avec `pvesm free local-lvm:vm-9999-disk-0`.
 3. Lisez `/etc/pve/.version`, `/etc/pve/.members`, `/etc/pve/.vmlist` : trois fichiers
-   virtuels générés par pmxcfs. Ils vont devenir très parlants au jour 4.
+   virtuels générés par pmxcfs. Ils prennent leur sens au jour 4.
 
 ➡️ Suite : [TP 03 — Première VM Debian 13 via ISO netinstall](03-vm-iso-debian.md)

@@ -62,17 +62,14 @@ travaille dessus **seul** pendant trois jours. Le jour 4 commence par une
 cluster. Conséquence : aux jours 1-3, **tout est identique pour tout le monde** —
 mêmes VMID, mêmes réseaux, mêmes noms de machines. Aucun risque de collision.
 
-**Contrainte structurante du lab** : les nœuds sont tous sur **un seul LAN plat**, et
-vous n'avez **aucun accès au switch ni au routeur**. Impossible de créer des VLAN en
-amont, impossible de faire du BGP avec le routeur. C'est précisément ce cas de figure —
-très courant en hébergement mutualisé, chez un provider, ou en agence — qui va nous
-imposer le choix **EVPN + exit nodes + SNAT** au jour 4.
-👉 Le raisonnement complet est dans [`SDN.md`](SDN.md).
+**Contrainte du lab** : les nœuds sont sur **un seul LAN plat**, sans **accès au switch
+ni au routeur**. Pas de VLAN en amont, pas de BGP avec le routeur. Ce cas de figure,
+courant en hébergement mutualisé ou en agence, impose le choix **EVPN + exit nodes +
+SNAT** au jour 4. Le raisonnement est dans [`SDN.md`](SDN.md).
 
-**Côté stockage**, le parti pris est aussi net : **pas de ZFS**. Les nœuds sont installés
-en `ext4 + LVM-thin`, on utilise le stockage par défaut `local-lvm` pendant trois jours,
-puis on monte du partagé — un **NFS depuis votre poste Ubuntu** (jour 3), et enfin un
-vrai **cluster Ceph** (jour 4).
+**Côté stockage** : **pas de ZFS**. Les nœuds sont installés en `ext4 + LVM-thin`, on
+reste sur `local-lvm` pendant trois jours, puis on passe au partagé — un **NFS depuis
+votre poste Ubuntu** (jour 3), puis un **cluster Ceph** (jour 4).
 
 ---
 
@@ -116,14 +113,12 @@ vrai **cluster Ceph** (jour 4).
 | 20 | [Pulse : une autre UI de supervision](20-pulse-monitoring.md) | 30 min |
 | 21 | [Challenge final 🏁](21-challenge-final.md) | 45 min |
 
-> 🧠 **Pourquoi PBS en fin de jour 3 ?** Parce que c'est l'aboutissement de
-> l'industrialisation : on sait fabriquer, déployer et configurer des machines, il
-> reste à savoir les **sauvegarder, vérifier et restaurer** — et on le fait pour de
-> vrai, en détruisant une VM pour la remonter. Le jour 4 repart d'une **réinstallation
-> complète** des nœuds (TP 16) : tout ce qui vit sur votre nœud disparaît, PBS compris.
-> Ce qui survit, c'est votre **poste Ubuntu** — le dépôt Git, Terraform, Ansible — et
-> son **export NFS** (TP 14), où vous pouvez déposer un `vzdump` de ce que vous voulez
-> garder. Le reste se reconstruit en quelques commandes : c'est tout l'intérêt du jour 3.
+> 🧠 **Pourquoi PBS en fin de jour 3 ?** On sait fabriquer, déployer et configurer des
+> machines ; reste à les **sauvegarder, vérifier et restaurer**. Le jour 4 repart d'une
+> **réinstallation complète** des nœuds (TP 16) : tout ce qui vit sur votre nœud
+> disparaît, PBS compris. Ce qui survit : votre **poste Ubuntu** (dépôt Git, Terraform,
+> Ansible) et son **export NFS** (TP 14), où déposer un `vzdump` de ce que vous voulez
+> garder. Le reste se reconstruit en quelques commandes.
 
 ---
 
@@ -190,7 +185,7 @@ Puis ouvrez [`00-prerequis-topologie.md`](00-prerequis-topologie.md).
 | 🖥️ | Commande à taper sur **le nœud Proxmox** (shell / SSH) |
 | 🌐 | Action à faire dans **l'interface web** `https://$PVE:8006` |
 | ✅ | Point de validation : ça doit marcher avant de continuer |
-| 🧠 | Explication de fond, à lire (ce n'est pas du remplissage) |
+| 🧠 | Explication de fond, à lire |
 | 🪤 | Piège classique |
 | 🎁 | Bonus si vous avez de l'avance |
 

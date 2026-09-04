@@ -1,6 +1,6 @@
 # Annexe C — Glossaire 📖
 
-Les termes de la formation, en français, avec ce qu'ils veulent **vraiment** dire.
+Les termes de la formation, en français.
 
 ---
 
@@ -35,9 +35,9 @@ Requis par Windows 11/2025 et le Secure Boot.
 **TPM** *(Trusted Platform Module)* — Puce (ici virtuelle) qui stocke des clés
 cryptographiques. Exigée par Windows 11 et Server 2025.
 
-**Agent invité (QEMU Guest Agent)** — Un petit démon dans la VM qui dialogue avec
+**Agent invité (QEMU Guest Agent)** — Un démon dans la VM qui dialogue avec
 l'hyperviseur : arrêt propre, remontée des IP, gel des systèmes de fichiers pour des
-snapshots cohérents. **À installer systématiquement.**
+snapshots cohérents. À installer systématiquement.
 
 **fsfreeze** — Le gel temporaire des systèmes de fichiers de l'invité, le temps d'un
 snapshot. C'est la différence entre une sauvegarde cohérente et une sauvegarde
@@ -64,7 +64,7 @@ branchent leur carte, l'hôte y pose son IP.
 d'une VM. Nommée `tap<vmid>i<n>`. C'est là qu'on fait ses captures.
 
 **MTU** *(Maximum Transmission Unit)* — La taille maximale d'un paquet, 1500 octets par
-défaut. Toute encapsulation la réduit. **Source d'ennuis n°1 en overlay.**
+défaut. Toute encapsulation la réduit. Source d'ennuis n°1 en overlay.
 
 **PMTU black hole** — Le paquet est trop gros, il est jeté, et l'ICMP « fragmentation
 needed » n'arrive jamais. Symptôme : le ping passe, les gros transferts gèlent.
@@ -108,7 +108,7 @@ quelconque.
 c'est le nœud lui-même.
 
 **BUM** *(Broadcast, Unknown unicast, Multicast)* — Le trafic qui doit être inondé
-partout. Un plan de contrôle comme EVPN sert précisément à en réduire le volume.
+partout. Un plan de contrôle comme EVPN en réduit le volume.
 
 **EVPN** *(Ethernet VPN)* — Une extension de BGP qui transporte les informations MAC et
 IP. Le « plan de contrôle » de VXLAN : au lieu d'inonder pour apprendre, les nœuds
@@ -122,7 +122,7 @@ Chaque zone EVPN a la sienne : deux VRF peuvent utiliser les mêmes IP sans conf
 
 **Anycast gateway** — La même IP **et la même MAC** de passerelle, présentes
 simultanément sur tous les nœuds. Une VM parle toujours à sa gateway locale, y compris
-après migration. **C'est la fonctionnalité clé d'EVPN.**
+après migration. La fonctionnalité clé d'EVPN.
 
 **Exit node** — Un nœud désigné comme porte de sortie du fabric EVPN vers le monde réel.
 Il annonce une route par défaut et réalise le SNAT.
@@ -198,9 +198,9 @@ qu'on taille le volume destiné à Ceph. Le réglage `maxvz` de l'installateur d
 combien il en restera.
 
 **ZFS** — Système de fichiers et gestionnaire de volumes : checksums de bout en bout,
-snapshots, compression, réplication `zfs send`. Excellent, mais gourmand en RAM et plus
-rigide à repartitionner. **Volontairement non utilisé dans cette formation** : on reste
-en ext4 + LVM-thin, et le stockage partagé vient de Ceph.
+snapshots, compression, réplication `zfs send`. Gourmand en RAM et plus rigide à
+repartitionner. Non utilisé dans cette formation : ext4 + LVM-thin, et Ceph pour le
+partagé.
 
 ---
 
@@ -286,7 +286,7 @@ référencé par cent sauvegardes.
 Ne libère aucun espace disque.
 
 **Garbage collection** — Supprimer les **chunks** qui ne sont plus référencés par aucun
-index. C'est **ça** qui libère l'espace.
+index. C'est ce qui libère l'espace.
 
 **Verify** — Recalculer l'empreinte de chaque chunk pour détecter la corruption
 silencieuse.

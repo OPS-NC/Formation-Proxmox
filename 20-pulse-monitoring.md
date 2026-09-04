@@ -3,7 +3,7 @@
 ⏱️ **30 min** · Jour 4
 
 Objectif : découvrir un outil de supervision tiers, complémentaire de l'interface
-Proxmox, et comprendre pourquoi on a besoin d'un regard extérieur sur son cluster.
+Proxmox, et pourquoi il faut un regard extérieur sur son cluster.
 
 🔗 Projet : <https://github.com/rcourtman/Pulse>
 
@@ -11,8 +11,7 @@ Proxmox, et comprendre pourquoi on a besoin d'un regard extérieur sur son clust
 
 ## 1. Pourquoi un outil de plus ? 🧠
 
-L'interface Proxmox est excellente pour **agir**. Elle est moins bonne pour
-**surveiller** :
+L'interface Proxmox sert à **agir**, moins à **surveiller** :
 
 | Besoin | Interface PVE | Pulse |
 |---|---|---|
@@ -23,10 +22,9 @@ L'interface Proxmox est excellente pour **agir**. Elle est moins bonne pour
 | Tourne **hors** du cluster | ❌ par définition | ✅ ⭐ |
 | Historique long | RRD limité | selon la configuration |
 
-🧠 **Le point le plus important est le dernier.** Si votre supervision tourne *dans*
-le cluster qu'elle surveille, elle meurt avec lui. Une sonde externe, même modeste,
-vaut mieux qu'un tableau de bord magnifique qui s'éteint au moment où vous en avez
-besoin.
+🧠 Une supervision qui tourne *dans* le cluster qu'elle surveille meurt avec lui. Une
+sonde externe, même modeste, vaut mieux qu'un tableau de bord qui s'éteint au moment où
+vous en avez besoin.
 
 ---
 
@@ -58,7 +56,7 @@ proxmox-backup-manager cert info | grep -i fingerprint
 
 ## 3. Installer Pulse 🚀
 
-Trois méthodes, choisissez selon votre goût.
+Trois méthodes.
 
 ### A — Conteneur LXC via le script communautaire ⭐ le plus rapide
 
@@ -67,13 +65,12 @@ Trois méthodes, choisissez selon votre goût.
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/pulse.sh)"
 ```
 
-Le script crée un CT Debian, installe Pulse et affiche l'URL finale. Choisissez les
-**options avancées** pour fixer le CT ID à `902` (celui du plan, TP 00 §5) ; en mode
-par défaut il prend le prochain libre, et c'est acceptable aussi.
+Le script crée un CT Debian, installe Pulse et affiche l'URL finale. Dans les
+**options avancées**, fixez le CT ID à `902` (plan du TP 00 §5) ; par défaut il prend le
+prochain libre, ce qui est acceptable aussi.
 
-🪤 **Lisez toujours un script avant de le passer à `bash`**, surtout en root, surtout
-depuis Internet. `curl -fsSL <url> | less` d'abord. C'est un réflexe, pas de la
-paranoïa.
+🪤 **Lisez un script avant de le passer à `bash`**, surtout en root, surtout depuis
+Internet : `curl -fsSL <url> | less` d'abord.
 
 ### B — Docker, dans une VM
 
@@ -94,9 +91,8 @@ docker logs -f pulse
 
 Suivez <https://github.com/rcourtman/Pulse/blob/main/docs/INSTALL.md>.
 
-**Où l'installer ?** Idéalement **hors du cluster** : sur votre PC Ubuntu, ou sur une
-machine dédiée. Dans ce lab, un LXC sur un nœud fera l'affaire — mais notez la
-contradiction, et sachez l'expliquer.
+**Où l'installer ?** Idéalement **hors du cluster** : sur votre PC Ubuntu ou une machine
+dédiée. Dans ce lab, un LXC sur un nœud fait l'affaire ; notez la contradiction.
 
 Adresse : **fixée par le formateur** — notez-la, c'est votre `$PULSE`. L'UI écoute
 sur le port **7655**.
@@ -117,9 +113,9 @@ Ouvrez `http://$PULSE:7655`, puis l'assistant de configuration.
 | Token Secret | *(le secret noté plus haut)* |
 | Verify SSL | ❌ (certificat auto-signé) |
 
-🧠 **Une seule adresse suffit pour le cluster entier** : l'API de n'importe quel nœud
-expose `/cluster/resources`, qui décrit tout le monde. Ajoutez tout de même un second
-nœud comme point d'entrée de secours, sinon la supervision tombe avec `pve1`.
+🧠 **Une seule adresse suffit pour le cluster** : l'API de n'importe quel nœud expose
+`/cluster/resources`. Ajoutez un second nœud en point d'entrée de secours, sinon la
+supervision tombe avec `pve1`.
 
 ### Serveur PBS
 
@@ -162,14 +158,12 @@ nœud comme point d'entrée de secours, sinon la supervision tombe avec `pve1`.
 | **Backups** | Quelles VM ne sont **pas** sauvegardées 🎯 |
 | **Alerts** | Les seuils et l'historique des déclenchements |
 
-🎯 **Regardez en priorité `local-lvm` et `vm-store` (Ceph)** dans la vue *Storage*.
-Un pool LVM-thin au-delà de 95 % corrompt les VM ; un Ceph au-delà de 95 % arrête
-toutes les écritures du cluster. Ce sont les deux chiffres qui doivent déclencher une
-alerte bien avant.
+🎯 **Regardez `local-lvm` et `vm-store` (Ceph)** dans la vue *Storage*. Un pool LVM-thin
+au-delà de 95 % corrompt les VM ; un Ceph au-delà de 95 % arrête toutes les écritures.
+Ces deux chiffres doivent alerter bien avant.
 
-🎯 **Allez tout de suite dans « Backups ».** Vous allez probablement découvrir des
-machines qui ne sont dans aucun job de sauvegarde. C'est **exactement** la valeur
-qu'apporte un outil externe : il pose la question que l'interface native ne pose pas.
+🎯 **Allez dans « Backups ».** Vous y trouverez probablement des machines dans aucun job
+de sauvegarde : la question que l'interface native ne pose pas.
 
 ---
 
@@ -187,8 +181,8 @@ qu'apporte un outil externe : il pose la question que l'interface native ne pose
 | Nœud injoignable | > 2 min | |
 
 🧠 **Le stockage plein est la cause n°1 d'incident sur un hyperviseur.** Un LVM-thin à
-100 % passe les volumes en lecture seule et corrompt les VM. Un datastore PBS plein
-fait échouer toutes les sauvegardes en silence. Alertez à 85 %, pas à 98 %.
+100 % passe les volumes en lecture seule et corrompt les VM ; un datastore PBS plein fait
+échouer les sauvegardes en silence. Alertez à 85 %, pas à 98 %.
 
 Canaux de notification : e-mail, webhook, Gotify, ntfy, Telegram, Discord.
 
@@ -202,7 +196,7 @@ curl -X POST http://$PULSE:7655/api/alerts/test
 
 ## 7. Les alternatives 🗺️
 
-Pulse est léger et spécialisé. Le panorama complet :
+Pulse est léger et spécialisé. Le panorama :
 
 | Outil | Type | Points forts | Limites |
 |---|---|---|---|
@@ -215,7 +209,7 @@ Pulse est léger et spécialisé. Le panorama complet :
 
 ### Le chemin natif : InfluxDB + Grafana
 
-Proxmox sait exporter ses métriques nativement :
+Proxmox exporte ses métriques nativement :
 
 🌐 `Datacenter → Metric Server → Add → InfluxDB`
 
@@ -228,9 +222,9 @@ pvesh create /cluster/metrics/server/influx \
 
 Puis un dashboard Grafana officiel (ID `10347` par exemple).
 
-🧠 **Pour un vrai environnement de production, c'est cette voie qu'on retiendrait** :
-Prometheus/InfluxDB + Grafana + Alertmanager. Pulse est parfait pour un homelab, une
-PME, ou comme second regard rapide à côté d'une stack plus lourde.
+🧠 En production, c'est cette voie qu'on retiendrait : Prometheus/InfluxDB + Grafana +
+Alertmanager. Pulse convient à un homelab, une PME, ou comme second regard à côté d'une
+stack plus lourde.
 
 ---
 

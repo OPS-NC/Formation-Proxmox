@@ -29,7 +29,7 @@ Deux options :
 - **Facile** : mettre le disque en `SATA` et la carte en `E1000`. Ça marche… mal.
   Perfs médiocres, pas de TRIM, pas de ballooning.
 - **Correcte** : garder VirtIO et **fournir les pilotes** via un second CD-ROM.
-  C'est ce qu'on fait ici, et c'est ce qu'on fait en production.
+  C'est ce qu'on fait ici.
 
 ---
 
@@ -84,8 +84,8 @@ ls -lh virtio-win.iso
 | Type | **Microsoft Windows** |
 | Version | **11 / 2022 / 2025** |
 
-🧠 Ce choix n'est pas cosmétique : Proxmox adapte les *hints* passés à QEMU
-(horloge Hyper-V, énumérateurs) qui améliorent nettement les performances de Windows.
+🧠 Proxmox adapte à ce choix les *hints* passés à QEMU (horloge Hyper-V,
+énumérateurs) : les performances de Windows en dépendent.
 
 ### System
 | Champ | Valeur | Pourquoi |
@@ -111,8 +111,8 @@ ls -lh virtio-win.iso
 | IO thread | ✅ |
 
 🧠 **`Write back` pour Windows** : l'installeur et les mises à jour font énormément de
-petites écritures synchrones. Le cache en écriture différée change radicalement le
-ressenti. À réserver aux hôtes sur onduleur — sinon `No cache` ou `Direct sync`.
+petites écritures synchrones, le cache en écriture différée fait une grosse différence.
+À réserver aux hôtes sur onduleur — sinon `No cache` ou `Direct sync`.
 
 ### CPU / Memory
 | Champ | Valeur |
@@ -348,7 +348,7 @@ xfreerdp3 /v:<IP-de-win01> /u:Administrateur /p:'Formation2026!' \
 > Selon la version d'Ubuntu, le binaire s'appelle `xfreerdp` ou `xfreerdp3`.
 > Alternative graphique : `sudo apt install remmina remmina-plugin-rdp`.
 
-✅ Vous obtenez un vrai bureau Windows, fluide, avec presse-papiers partagé.
+✅ Un bureau Windows complet, avec presse-papiers partagé.
 
 ### RDP vs console : quand utiliser quoi ?
 
@@ -363,9 +363,8 @@ xfreerdp3 /v:<IP-de-win01> /u:Administrateur /p:'Formation2026!' \
 ```
 
 🧠 **La console est un accès « hors-bande »** : elle passe par l'hyperviseur, pas par
-le réseau de la VM. C'est exactement l'équivalent d'un iDRAC/iLO sur du matériel
-physique. C'est ce qui vous sauvera au TP 09 quand une règle de firewall trop zélée
-vous aura coupé le RDP.
+le réseau de la VM — l'équivalent d'un iDRAC/iLO. Au TP 09, c'est elle qui reste quand
+une règle de firewall a coupé le RDP.
 
 ---
 
@@ -404,8 +403,7 @@ Install-ADDSForest -DomainName "lab.local" -DomainNetbiosName "LAB" `
                    (ConvertTo-SecureString "Formation2026!" -AsPlainText -Force)
 ```
 
-La VM redémarre en contrôleur de domaine. On ne va pas plus loin dans cette
-formation, mais vous savez maintenant où ça se branche.
+La VM redémarre en contrôleur de domaine. On ne va pas plus loin dans cette formation.
 
 ---
 
@@ -426,13 +424,12 @@ formation, mais vous savez maintenant où ça se branche.
 ## 🎁 Bonus
 
 1. **Mesurez l'écart VirtIO / SATA** : créez un second disque en `SATA`, puis lancez
-   CrystalDiskMark ou `winsat disk` sur chacun. L'écart est spectaculaire.
+   CrystalDiskMark ou `winsat disk` sur chacun.
 2. **Snapshot avant Windows Update** :
    ```bash
    qm snapshot 102 avant-wu --vmstate 1
    ```
-   Lancez les mises à jour, puis `qm rollback 102 avant-wu`. Un réflexe qui sauve
-   des week-ends entiers.
+   Lancez les mises à jour, puis `qm rollback 102 avant-wu`.
 3. **Sysprep** : généralisez l'image (`C:\Windows\System32\Sysprep\sysprep.exe`
    → *OOBE* + *Généraliser* + *Arrêter*), puis `qm template 102`. Vous avez un
    template Windows clonable. Attention : un clone non sysprepé partage le même SID.

@@ -3,8 +3,8 @@
 ⏱️ **1 h 45** · Jour 4
 
 Objectif : monter un stockage distribué à trois copies, sans point de défaillance
-unique, sur les six nœuds du cluster. Et pour cela : faire de la place sur le disque
-système en manipulant LVM à la main — parce que l'interface web ne sait pas le faire.
+unique, sur les six nœuds. Pour cela, faire de la place sur le disque système en
+manipulant LVM à la main : l'interface web ne sait pas le faire.
 
 📖 Doc : <https://pve.proxmox.com/pve-docs/chapter-pveceph.html>
 📖 Wiki : <https://pve.proxmox.com/wiki/Deploy_Hyper-Converged_Ceph_Cluster>
@@ -13,8 +13,8 @@ système en manipulant LVM à la main — parce que l'interface web ne sait pas 
 
 ## 1. Ce que Ceph résout 🧠
 
-Au TP 14, votre NFS marchait très bien… jusqu'à ce que vous coupiez le serveur.
-C'est un **point de défaillance unique**.
+Au TP 14, votre NFS marchait jusqu'à ce que vous coupiez le serveur : un **point de
+défaillance unique**.
 
 ```
    NFS (TP 14)                          CEPH (TP 18)
@@ -59,8 +59,7 @@ C'est un **point de défaillance unique**.
 🧠 **`size 3, min_size 2`**, la règle d'or : trois copies de chaque bloc, et l'écriture
 n'est acceptée que si au moins deux sont confirmées.
 
-Traduction opérationnelle, et **soyez précis** — c'est une question d'entretien
-d'embauche :
+Traduction opérationnelle :
 
 | Nœuds perdus (sur 6) | Données | Service |
 |---|---|---|
@@ -68,8 +67,8 @@ d'embauche :
 | **2** | intactes (au moins 1 copie) | ⚠️ **partiellement bloqué** |
 | **3** | ⚠️ perte possible | ❌ |
 
-🪤 **Le cas « 2 nœuds » est le plus mal compris.** On lit souvent « size 3 donc je
-survis à 2 pannes » : c'est vrai pour les *données*, faux pour le *service*.
+🪤 **Le cas « 2 nœuds » est le plus mal compris.** « size 3 donc je survis à 2 pannes »
+est vrai pour les *données*, faux pour le *service*.
 
 Un PG n'a que 3 réplicas, sur 3 hôtes tirés par CRUSH parmi les 6. Si les deux hôtes
 tombés font partie de ces 3, le PG descend à **1 copie — sous `min_size 2`** : Ceph
@@ -85,14 +84,14 @@ Avec 6 hôtes et 3 réplicas, **environ un PG sur cinq** est concerné (les comb
 qui contiennent les 2 hôtes tombés : `C(4,1) / C(6,3)` = 4/20). Le volume redevient
 pleinement disponible une fois le *backfill* terminé sur les 4 nœuds restants.
 
-👉 La formule juste : **`size` protège les données, `min_size` protège la
-cohérence — et c'est `min_size` qui décide si vous êtes encore en service.**
+👉 **`size` protège les données, `min_size` protège la cohérence, et c'est `min_size`
+qui décide si vous êtes encore en service.**
 
 ---
 
 ## 2. ⚠️ Ce lab n'est pas une architecture Ceph recommandable
 
-Soyons honnêtes tout de suite — vous devrez le dire à un client.
+À dire au client.
 
 | Recommandation officielle | Notre lab | Conséquence |
 |---|---|---|
@@ -103,12 +102,11 @@ Soyons honnêtes tout de suite — vous devrez le dire à un client.
 | ≥ 8 Gio de RAM **par OSD** | ce qu'il reste | Ceph consommera beaucoup |
 | Pas de RAID matériel, HBA direct | selon le matériel | — |
 
-🎯 **Ce qu'on apprend quand même, et qui est parfaitement transposable** : le
-déploiement, la manipulation LVM, le comportement de CRUSH, la reconstruction après
-panne, le monitoring, et surtout **le raisonnement**.
+🎯 **Ce qui reste transposable** : le déploiement, la manipulation LVM, le comportement
+de CRUSH, la reconstruction après panne, le monitoring, le raisonnement.
 
-⚠️ **Précaution obligatoire** : limitez le débit de reconstruction, sinon un
-rééquilibrage saturera le lien et fera perdre le quorum Corosync. On le fait au §7.
+⚠️ Limitez le débit de reconstruction (§7), sinon un rééquilibrage sature le lien et fait
+perdre le quorum Corosync.
 
 ---
 
@@ -117,8 +115,8 @@ rééquilibrage saturera le lien et fera perdre le quorum Corosync. On le fait a
 Un OSD a besoin d'un **périphérique bloc dédié**. Ceph accepte trois formes :
 un disque entier, une partition, ou un **volume logique LVM**.
 
-Mais l'interface web de Proxmox ne propose que les **disques entiers non utilisés**.
-Or votre disque unique est intégralement occupé :
+L'interface web ne propose que les **disques entiers non utilisés**, et votre disque
+unique est entièrement occupé :
 
 ```bash
 lsblk
@@ -158,7 +156,7 @@ vgs -o vg_name,vg_size,vg_free
 
 ### 🪤 Pourquoi ne pas simplement réduire le thin pool ?
 
-C'est la question que tout le monde pose. Essayez :
+Essayez :
 
 ```bash
 lvreduce -L -60G pve/data
@@ -168,26 +166,24 @@ lvreduce -L -60G pve/data
   Thin pool volumes pve/data_tdata cannot be reduced in size yet.
 ```
 
-**LVM ne sait pas réduire un thin pool.** Ce n'est pas un bug, c'est une limite de
-conception : les blocs d'un pool thin ne sont pas alloués linéairement. Il peut y avoir
-des données allouées tout à la fin du pool, et dm-thin ne fournit aucun mécanisme pour
-les défragmenter vers le début. Il existe des outils tiers (`thin_shrink`) qui réécrivent
-les métadonnées, mais on ne joue pas à ça sur des données réelles.
+**LVM ne sait pas réduire un thin pool.** Limite de conception, pas bug : les blocs d'un
+pool thin ne sont pas alloués linéairement, il peut y avoir des données tout à la fin,
+et dm-thin n'a aucun mécanisme pour les défragmenter vers le début. Des outils tiers
+(`thin_shrink`) réécrivent les métadonnées ; on ne joue pas à ça sur des données réelles.
 
-**La seule voie propre : sauvegarder, détruire, recréer plus petit, restaurer.**
-C'est exactement pour cette raison que le TP 15 (PBS) vient **avant** celui-ci.
+**La seule voie propre : sauvegarder, détruire, recréer plus petit, restaurer.** D'où le
+TP 15 (PBS) avant celui-ci.
 
-> 💡 Si vous avez réglé `maxvz` en réinstallant votre nœud au TP 16 (c'était la seconde
-> chance), vous êtes en **chemin A** : trois commandes. Le chemin B reste documenté,
-> parce que c'est le cas que vous rencontrerez sur une machine installée par quelqu'un
-> d'autre.
+> 💡 Si vous avez réglé `maxvz` en réinstallant votre nœud au TP 16, vous êtes en
+> **chemin A** : trois commandes. Le chemin B reste documenté : c'est le cas d'une machine
+> installée par quelqu'un d'autre.
 
 ---
 
 ## 4. Chemin A — il reste de la place dans le VG 🎉
 
-> 💡 Le script `lab/scripts/ceph-prep-lvm.sh --check` fait tout le diagnostic du §3
-> pour vous et vous indique quel chemin suivre. Lancez-le d'abord.
+> 💡 `lab/scripts/ceph-prep-lvm.sh --check` fait le diagnostic du §3 et indique le chemin
+> à suivre. Lancez-le d'abord.
 
 ```bash
 bash /root/formation/lab/scripts/ceph-prep-lvm.sh --check
@@ -216,7 +212,7 @@ Passez directement au §6.
 
 ## 5. Chemin B — recréer le thin pool plus petit ⚠️
 
-**C'est le chemin par défaut, et il est destructif.** Lisez tout avant de taper.
+**Destructif.** Lisez tout avant de taper.
 
 ```
    ① Sauvegarder tous les guests vers PBS
@@ -239,8 +235,7 @@ pvesm list pbs-lab
 
 🌐 Sur PBS : `Datastore → lab-store → lab → Verify`.
 
-🚨 **Ne passez à l'étape suivante que si la vérification est verte.** Vous êtes sur le
-point d'effacer les originaux.
+🚨 **Ne continuez que si la vérification est verte.** Vous allez effacer les originaux.
 
 ```bash
 # Notez la configuration de chaque guest — utile en cas de restauration partielle
@@ -293,9 +288,8 @@ lvs pve
 vgs -o vg_name,vg_free
 ```
 
-🪤 **Laissez toujours 5 à 10 % du VG libres.** LVM en a besoin pour les snapshots et
-les métadonnées, et un VG à 100 % vous interdit toute manœuvre future. Ne remplissez
-jamais avec `-l 100%FREE`.
+🪤 **Laissez 5 à 10 % du VG libres.** LVM en a besoin pour les snapshots et les
+métadonnées ; un VG à 100 % interdit toute manœuvre future. Pas de `-l 100%FREE`.
 
 ```bash
 # 4. Réactiver le stockage
@@ -303,13 +297,13 @@ pvesm set local-lvm --disable 0
 pvesm status
 ```
 
-> 💡 Les étapes 5.3 sont scriptées, avec tous les garde-fous :
+> 💡 Les étapes 5.3 sont scriptées, avec garde-fous :
 > ```bash
 > bash /root/formation/lab/scripts/ceph-prep-lvm.sh \
 >      --size 120G --recreate-thinpool 200G --i-know
 > ```
-> Le script refuse de continuer s'il reste une VM, un conteneur ou un volume dans le
-> pool. Lisez-le avant de l'exécuter.
+> Le script refuse s'il reste une VM, un conteneur ou un volume dans le pool. Lisez-le
+> avant de l'exécuter.
 
 ### 5.4 Restaurer les guests
 
@@ -319,8 +313,6 @@ qm restore <vmid>  pbs-lab:backup/vm/<vmid>/<timestamp> --storage local-lvm
 pct restore <ctid> pbs-lab:backup/ct/<ctid>/<timestamp> --storage local-lvm
 qm list ; pct list
 ```
-
-✅ Vous venez d'utiliser vos sauvegardes pour de vrai. C'est la seule preuve qui compte.
 
 ---
 
@@ -347,9 +339,8 @@ cat /etc/ceph/ceph.conf     # lien symbolique vers /etc/pve/ceph.conf
 ```
 
 🧠 **`--network`** définit le réseau *public* de Ceph (clients ↔ OSD).
-`--cluster-network` permettrait d'isoler la réplication OSD ↔ OSD sur un second
-réseau : **c'est ce qu'on ferait en production**, et c'est le premier réglage à
-réclamer quand on dimensionne un vrai cluster. Ici, on n'a qu'un LAN.
+`--cluster-network` isolerait la réplication OSD ↔ OSD sur un second réseau : le premier
+réglage à réclamer en production. Ici, on n'a qu'un LAN.
 
 ### 6.3 Les monitors — 3 suffisent
 
@@ -367,8 +358,7 @@ pveceph status
 ```
 
 🪤 **Toujours un nombre impair de monitors** (3 ou 5), pour la même raison que le
-quorum Corosync. Trois monitors sur six nœuds, c'est le bon choix : cinq
-consommeraient de la ressource pour rien.
+quorum Corosync. Trois sur six nœuds suffisent ; cinq consommeraient pour rien.
 
 ### 6.4 Les managers
 
@@ -385,7 +375,7 @@ ceph -s | grep -A2 services
 
 🌐 `votre nœud → Ceph → OSD → Create: OSD` : la liste déroulante **est vide**.
 L'interface ne propose que les disques entiers non utilisés, et votre volume LVM n'en
-est pas un. C'est normal, et c'est pour cela qu'on passe en CLI.
+est pas un. D'où la CLI.
 
 **Sur chaque nœud** :
 
@@ -394,8 +384,8 @@ ls -l /dev/pve/ceph-osd
 pveceph osd create /dev/pve/ceph-osd
 ```
 
-Si `pveceph` refuse le volume logique, utilisez la commande Ceph native — c'est elle
-que `pveceph` appelle en interne :
+Si `pveceph` refuse le volume logique, utilisez la commande Ceph native, celle que
+`pveceph` appelle en interne :
 
 ```bash
 # Récupérer la clé de bootstrap (ceph-volume l'exige à cet emplacement)
@@ -412,11 +402,10 @@ ceph-volume lvm activate --all
 systemctl status ceph-osd@* --no-pager | head -10
 ```
 
-🧠 **Ce que `ceph-volume` fait** : il crée un LV supplémentaire pour les métadonnées
-BlueStore, tatoue des *tags* LVM sur votre volume (`ceph.osd_id`, `ceph.osd_fsid`,
-`ceph.cluster_fsid`) et génère l'unité systemd d'activation. Ces tags sont ce qui
-permet à Ceph de retrouver ses OSD au démarrage, même si les noms de périphériques
-changent.
+🧠 **Ce que fait `ceph-volume`** : un LV supplémentaire pour les métadonnées BlueStore,
+des *tags* LVM sur votre volume (`ceph.osd_id`, `ceph.osd_fsid`, `ceph.cluster_fsid`),
+et l'unité systemd d'activation. Ces tags permettent à Ceph de retrouver ses OSD au
+démarrage, même si les noms de périphériques changent.
 
 ```bash
 lvs -o lv_name,vg_name,lv_tags pve | tr ',' '\n' | grep ceph | head
@@ -454,16 +443,15 @@ ID  CLASS  WEIGHT   TYPE NAME       STATUS
 ```
 
 🎯 **`host pve1`, `host pve2`…** : CRUSH sait que chaque OSD est sur une machine
-différente. C'est ce qui lui permet de garantir que les trois copies d'un bloc ne se
-retrouvent jamais sur le même nœud. Cette hiérarchie s'appelle la **CRUSH map**, et
-elle peut décrire des racks, des salles, des datacenters.
+différente, et garantit que les trois copies d'un bloc ne sont jamais sur le même nœud.
+Cette hiérarchie, la **CRUSH map**, peut décrire des racks, des salles, des datacenters.
 
 ---
 
 ## 7. Brider la reconstruction — à faire tout de suite ⚠️
 
-Sur un lien 1 Gb/s partagé avec Corosync, un rééquilibrage non bridé **fera perdre le
-quorum du cluster Proxmox**. Ce n'est pas théorique.
+Sur un lien 1 Gb/s partagé avec Corosync, un rééquilibrage non bridé **fait perdre le
+quorum du cluster Proxmox**.
 
 ```bash
 ceph config set osd osd_max_backfills 1
@@ -473,9 +461,8 @@ ceph config set osd osd_recovery_sleep 0.1
 ceph config dump | grep -E 'backfill|recovery'
 ```
 
-🧠 On dit à Ceph : « reconstruis lentement, la disponibilité du cluster passe avant la
-vitesse de retour à la redondance ». Sur un vrai réseau 25 Gb/s dédié, on ferait
-exactement l'inverse.
+🧠 On dit à Ceph : « reconstruis lentement, la disponibilité passe avant la vitesse de
+retour à la redondance ». Sur un réseau 25 Gb/s dédié, on ferait l'inverse.
 
 ---
 
@@ -493,22 +480,19 @@ ceph osd pool ls detail
 pvesm status
 ```
 
-🧠 **`--add_storages 1`** déclare automatiquement le stockage Proxmox correspondant —
-répliqué sur les six nœuds par pmxcfs. Une seule commande, et les six nœuds voient
-`vm-store`.
+🧠 **`--add_storages 1`** déclare le stockage Proxmox correspondant, répliqué sur les
+six nœuds par pmxcfs.
 
 ```bash
 cat /etc/pve/storage.cfg | grep -A6 rbd
 ```
 
-🧠 **`--pg_autoscale_mode on`** : Ceph ajuste seul le nombre de *placement groups* selon
-le volume de données. Historiquement il fallait calculer `pg_num` à la main — c'était
-la principale source d'erreurs de dimensionnement. Laissez l'autoscaler faire.
+🧠 **`--pg_autoscale_mode on`** : Ceph ajuste seul le nombre de *placement groups*.
+Calculer `pg_num` à la main était la principale source d'erreurs de dimensionnement.
 
 ### CephFS — pour les ISO, templates et snippets
 
-Un pool RBD ne stocke que des disques bloc. Pour des **fichiers** partagés, il faut
-CephFS.
+Un pool RBD ne stocke que des disques bloc. Pour des **fichiers** partagés : CephFS.
 
 ```bash
 # Un serveur de métadonnées sur 2 ou 3 nœuds
@@ -523,7 +507,7 @@ df -h /mnt/pve/cephfs
 ceph fs status
 ```
 
-✅ Vous avez maintenant, partagé sur les six nœuds :
+✅ Partagé sur les six nœuds :
 
 | Stockage | Type | Contenu |
 |---|---|---|
@@ -571,15 +555,14 @@ ceph df
 ceph osd df
 ```
 
-🎯 `ceph osd map` vous dit **exactement** sur quels OSD un objet est stocké. Regardez :
-trois OSD, sur trois nœuds différents. C'est CRUSH au travail.
+🎯 `ceph osd map` donne les OSD qui portent un objet : trois, sur trois nœuds différents.
 
 ---
 
 ## 10. Le test qui justifie tout : tuer un nœud 🔥
 
 **Avec l'accord du formateur.** Choisissez un nœud qui n'est ni `pve1` (exit node EVPN
-et hôte de PBS) ni un monitor si vous voulez rester simple.
+et hôte de PBS) ni un monitor.
 
 ```bash
 # Terminal 1 — surveiller Ceph
@@ -609,9 +592,8 @@ ceph osd tree
 ceph health detail
 ```
 
-🎯 **Comparez avec le TP 14** : quand vous avez coupé le NFS, tout a gelé
-immédiatement. Là, un nœud entier disparaît et le service ne s'interrompt pas une
-seconde. C'est ça, la différence entre du stockage centralisé et du stockage distribué.
+🎯 Au TP 14, couper le NFS a tout gelé. Ici un nœud entier disparaît et le service
+continue : la différence entre stockage centralisé et distribué.
 
 Rebranchez le nœud :
 
@@ -621,7 +603,7 @@ ceph osd tree
 watch -n2 'ceph -s | grep -E "recovery|degraded|misplaced"'
 ```
 
-Ceph rééquilibre tout seul. Vous n'avez rien à faire.
+Ceph rééquilibre seul.
 
 ---
 
@@ -669,7 +651,7 @@ rbd -p vm-store du
 | `SLOW_OPS` | opérations lentes | réseau ou disque saturés — notre cas |
 
 🚨 **`OSD_FULL` à 95 % arrête toutes les écritures du cluster.** Surveillez `ceph df`
-comme vous surveillez `df -h`. Un Ceph plein, c'est une production à l'arrêt.
+comme `df -h`.
 
 ---
 
@@ -691,8 +673,7 @@ comme vous surveillez `df -h`. Un Ceph plein, c'est une production à l'arrêt.
 - **1 à 2 nœuds** → local + sauvegardes. Ceph n'a aucun sens.
 - **3 nœuds et plus, budget réseau** → Ceph, sans hésiter.
 - **Une baie/NAS existant** → NFS ou iSCSI, plus simple à exploiter.
-- **Toujours, quel que soit le choix** → des sauvegardes. Ceph n'est pas une
-  sauvegarde : il réplique fidèlement vos suppressions.
+- **Dans tous les cas** → des sauvegardes. Ceph réplique fidèlement vos suppressions.
 
 ---
 
@@ -749,11 +730,11 @@ ceph-volume lvm zap /dev/pve/ceph-osd --destroy
    l'espace utile avec la réplication ×3. Pourquoi ne l'utilise-t-on pas pour des
    disques de VM ? (Indice : la pénalité en écriture aléatoire.)
 2. **La CRUSH map** : `ceph osd getcrushmap -o /tmp/cm && crushtool -d /tmp/cm`.
-   Lisez-la. Ajoutez un niveau `rack` et déplacez-y trois hosts. Vous venez de décrire
-   une tolérance à la panne d'une baie entière.
+   Lisez-la. Ajoutez un niveau `rack` et déplacez-y trois hosts : vous décrivez une
+   tolérance à la panne d'une baie entière.
 3. **Mesurer** : `rados bench -p vm-store 30 write --no-cleanup` puis `rados bench -p
-   vm-store 30 rand`. Comparez avec les débits NFS du TP 14 et avec `local-lvm`.
-   Documentez : c'est ce chiffre que votre client vous demandera.
+   vm-store 30 rand`. Comparez avec les débits NFS du TP 14 et avec `local-lvm`, et
+   documentez : c'est le chiffre que le client demandera.
 4. **Le tableau de bord Ceph** : `ceph mgr module enable dashboard`. Comparez avec
    l'interface Proxmox. Qu'apporte-t-il de plus ?
 5. **Deux nœuds en moins** : coupez-en deux d'un coup. Le pool passe en lecture seule

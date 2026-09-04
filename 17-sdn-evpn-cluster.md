@@ -1,6 +1,6 @@
 # TP 17 — SDN en cluster : EVPN/VXLAN et limites du LAN plat 🌐
 
-⏱️ **2 h** · Jour 4 · **le TP le plus dense de la formation**
+⏱️ **2 h** · Jour 4
 
 Objectif : étendre le réseau sur les six nœuds, avec une gateway présente partout, du
 routage entre réseaux, et un accès Internet — le tout sans toucher au switch ni au
@@ -14,8 +14,7 @@ routeur de la salle.
 
 ## 1. Le problème : ce qui ne marche plus 🚨
 
-Vous êtes en cluster. Testez naïvement le SDN du TP 08, cette fois à l'échelle du
-cluster.
+Vous êtes en cluster. Rejouez le SDN du TP 08 à l'échelle du cluster.
 
 ```bash
 # Sur pve1
@@ -53,9 +52,9 @@ ping 10.99.0.101      # la VM de pve2
                  sont deux îlots séparés)
 ```
 
-Une zone `Simple` crée un **bridge local, sans aucun mécanisme de transport
-inter-nœuds**. Le même nom, la même IP de gateway, mais deux réseaux qui s'ignorent.
-Pire : une VM migrée de `pve1` vers `pve2` change silencieusement de réseau.
+Une zone `Simple` crée un **bridge local, sans transport inter-nœuds**. Même nom, même
+IP de gateway, deux réseaux qui s'ignorent. Une VM migrée de `pve1` vers `pve2` change
+silencieusement de réseau.
 
 ```bash
 # On nettoie avant d'attaquer sérieusement
@@ -77,7 +76,7 @@ pvesh set /cluster/sdn
 | Zone **VXLAN** pure | ⚠️ L2 OK, mais **aucune gateway, aucune sortie Internet**. Il faudrait bricoler une VM routeur → SPOF non redondé |
 | **Zone EVPN** | ✅ L2 + L3 + gateway anycast + exit nodes + SNAT, géré par Proxmox |
 | **Fabric** (OpenFabric/OSPF/BGP) | 🔵 inutile : notre underlay est un LAN plat où tous les nœuds se voient déjà. À garder pour du multi-segment |
-| **eBGP avec le routeur amont** | ❌ on n'a pas la main dessus. **SNAT sur exit node existe précisément pour ce cas** |
+| **eBGP avec le routeur amont** | ❌ on n'a pas la main dessus. Le SNAT sur exit node est fait pour ce cas |
 
 👉 Le raisonnement complet, avec les schémas, est dans [`SDN.md` §11](SDN.md).
 
@@ -114,7 +113,7 @@ pvesh set /cluster/sdn
 
 ## 3. Prérequis sur les 6 nœuds ⚙️
 
-**Chaque stagiaire, sur son nœud.** Une seule machine mal préparée fait échouer le fabric.
+**Chaque stagiaire, sur son nœud.** Une machine mal préparée fait échouer le fabric.
 
 ```bash
 # Installés à la réinstallation (TP 16 §2.4) — on vérifie, on n'installe pas
@@ -144,9 +143,9 @@ IN ACCEPT -source lan_salle -p udp -dport 4789 -log nolog # VXLAN
 IN ACCEPT -source lan_salle -p tcp -dport 179  -log nolog # BGP
 ```
 
-🪤 **Les deux oublis fatals** : `frr-pythontools` absent (les sessions BGP ne montent
+🪤 **Les deux oublis classiques** : `frr-pythontools` absent (les sessions BGP ne montent
 jamais, sans message d'erreur clair) et le port 4789 bloqué (le BGP monte, les routes
-arrivent, mais aucun paquet de données ne passe — le symptôme le plus déroutant).
+arrivent, aucun paquet de données ne passe).
 
 ```bash
 # Test de connectivité de l'underlay depuis chaque nœud
@@ -176,10 +175,9 @@ pvesh create /cluster/sdn/controllers \
   --peers 172.30.30.151,172.30.30.152,172.30.30.153,172.30.30.154,172.30.30.155,172.30.30.156
 ```
 
-🧠 **Un seul ASN pour tout le monde ⇒ iBGP en full-mesh.** Avec 6 nœuds, cela fait 15
-sessions : parfaitement raisonnable. Au-delà d'une dizaine de nœuds, on passerait à une
-fabric BGP avec des route-reflectors, ou à de l'eBGP *unnumbered* — c'est précisément le
-rôle des **Fabrics** de PVE 9.
+🧠 **Un seul ASN pour tout le monde ⇒ iBGP en full-mesh.** Avec 6 nœuds, 15 sessions :
+raisonnable. Au-delà d'une dizaine de nœuds, on passerait à une fabric BGP avec des
+route-reflectors, ou à de l'eBGP *unnumbered* : le rôle des **Fabrics** de PVE 9.
 
 ---
 
@@ -227,9 +225,8 @@ est local à chaque nœud. Un paquet retour qui arrive sur le mauvais nœud est 
 Symptômes typiques : « le ping passe mais pas HTTPS », « ça marche une fois sur deux »,
 « ça marche depuis pve1 mais pas depuis pve4 ».
 
-Avec `exitnodes-primary pve1`, on est en **actif/passif** : tout sort par `pve1`, et
-`pve2` prend le relais s'il tombe. C'est ce que recommande la documentation Proxmox
-dès que SNAT est actif.
+Avec `exitnodes-primary pve1`, on est en **actif/passif** : tout sort par `pve1`, `pve2`
+prend le relais s'il tombe. C'est la recommandation Proxmox dès que SNAT est actif.
 
 **② Le MTU**
 
@@ -281,9 +278,8 @@ pvesh create /cluster/sdn/vnets/vdb/subnets --subnet 10.60.30.0/24 --type subnet
 ```
 
 🧠 **`vdb` sans SNAT** : les VM se parlent, joignent leur gateway, sont routées vers les
-autres VNets de la zone… mais **aucun paquet ne sort vers Internet**. C'est le
-comportement voulu pour une base de données. Un serveur qui n'a pas besoin d'Internet
-ne doit pas y avoir accès : c'est la mesure d'endiguement la plus efficace et la moins
+autres VNets de la zone, mais **aucun paquet ne sort vers Internet**. Un serveur qui n'a
+pas besoin d'Internet ne doit pas y avoir accès : c'est la mesure d'endiguement la moins
 chère qui existe.
 
 ### Appliquer
@@ -299,8 +295,7 @@ recharge FRR, crée les interfaces VXLAN et le VRF.
 
 ## 7. Vérifier le fabric 🔬
 
-**Sur chaque nœud**, dans cet ordre. Ne passez à l'étape suivante que si la précédente
-est verte.
+**Sur chaque nœud**, dans cet ordre, une étape verte à la fois.
 
 ### 7.1 Les interfaces
 
@@ -328,10 +323,9 @@ ip -br a show vprod
 ip link show vprod | grep ether
 ```
 
-🧠 **La même IP `10.60.10.1` et la même adresse MAC sur les six nœuds.** Une VM parle
-toujours à « sa » gateway, qui est en réalité le nœud sur lequel elle tourne. Après
-une migration à chaud, la VM ne s'aperçoit de rien : même IP, même MAC, aucun ARP à
-refaire, **zéro paquet perdu**.
+🧠 **La même IP `10.60.10.1` et la même MAC sur les six nœuds.** Une VM parle toujours à
+« sa » gateway, qui est le nœud sur lequel elle tourne. Après une migration à chaud :
+même IP, même MAC, aucun ARP à refaire, zéro paquet perdu.
 
 ### 7.3 Les sessions BGP
 
@@ -377,8 +371,6 @@ mais **pas** pour `10.60.30.0/24`.
 
 ### 7.6 Sur un nœud qui n'est **pas** exit node ⭐
 
-C'est le contrôle le plus instructif du TP, et celui que personne ne pense à faire.
-
 ```bash
 # Sur pve3, pve4, pve5 ou pve6 — surtout PAS sur pve1/pve2
 vtysh -c "show evpn vni detail" | head -30           # le VNI L2 + le L3VNI du VRF
@@ -396,21 +388,20 @@ default nhid 21 via 10.60.10.1 dev vrfbr_zevpn proto bgp metric 20
 10.60.20.0/24 dev vpub  proto kernel scope link src 10.60.20.1
 ```
 
-🎯 **Cette ligne `default … proto bgp` est la preuve** que votre nœud, qui n'est pas
-exit node, sait quand même router vers Internet : il a appris la route par défaut de
-`pve1` en BGP EVPN. **Vos VM sortiront**, sans être hébergées sur un exit node. C'est
-toute la raison d'être de l'option `exitnodes`.
+🎯 La ligne `default … proto bgp` montre que ce nœud, qui n'est pas exit node, route
+quand même vers Internet : il a appris la route par défaut de `pve1` en BGP EVPN. Ses
+VM sortiront sans être hébergées sur un exit node. C'est la raison d'être de
+`exitnodes`.
 
-Et maintenant le contrôle qui déroute :
+Puis :
 
 ```bash
 iptables -t nat -S POSTROUTING | grep 10.60      # → AUCUNE SORTIE
 ```
 
-🪤 **C'est normal, et ce n'est pas une panne.** Le code de Proxmox
-(`PVE/Network/SDN/Zones/EvpnPlugin.pm`) ne pose la règle SNAT **que si le nœud courant
-figure dans les exit nodes**. Sur pve4, il n'y a rien à voir : le NAT se fait sur
-`pve1`, après décapsulation du VXLAN. Beaucoup de gens perdent une heure ici.
+🪤 **C'est normal.** Proxmox (`PVE/Network/SDN/Zones/EvpnPlugin.pm`) ne pose la règle
+SNAT **que si le nœud courant figure dans les exit nodes**. Sur pve4, rien à voir : le
+NAT se fait sur `pve1`, après décapsulation du VXLAN.
 
 ```
    VM sur pve4 ──VXLAN──► pve1 ──décapsule──► sort du VRF ──SNAT──► vmbr0 ──► ☁
@@ -418,9 +409,9 @@ figure dans les exit nodes**. Sur pve4, il n'y a rien à voir : le NAT se fait s
    pas de SNAT ici    le SNAT est ICI, et seulement ici
 ```
 
-📌 **Le pendant côté hôte** : depuis le shell de pve4, `ping 10.60.10.<vm>` échoue si
-`exitnodes-local-routing` n'est pas activé — l'hôte n'a pas de route vers le VRF. Ne
-concluez pas trop vite : **testez depuis une VM, pas depuis l'hyperviseur.**
+📌 Depuis le shell de pve4, `ping 10.60.10.<vm>` échoue si `exitnodes-local-routing`
+n'est pas activé : l'hôte n'a pas de route vers le VRF. **Testez depuis une VM, pas
+depuis l'hyperviseur.**
 
 ### 7.7 Le script de diagnostic
 
@@ -428,14 +419,14 @@ concluez pas trop vite : **testez depuis une VM, pas depuis l'hyperviseur.**
 bash /root/formation/lab/scripts/evpn-diag.sh
 ```
 
-Il enchaîne tous les contrôles ci-dessus et signale ce qui cloche.
+Il enchaîne les contrôles ci-dessus et signale ce qui cloche.
 
 ---
 
 ## 8. Déployer et tester 🚀
 
 Chaque stagiaire déploie **sur son nœud**, dans les VNets partagés. Le cluster choisit
-les VMID ; le nom porte celui de votre nœud pour s'y retrouver dans la vue globale.
+les VMID ; le nom porte celui du nœud pour s'y retrouver dans la vue globale.
 
 ```bash
 # Vos templates du TP 16 §7.4
@@ -457,17 +448,16 @@ qm start $VMID_PUB
 echo "prod=$VMID_PROD pub=$VMID_PUB"      # 📌 notez-les : TP 18 et 19 les réutilisent
 ```
 
-🪤 **`--full 1` n'est pas une coquetterie ici.** Sur un template, `qm clone` fait un
-**clone lié** par défaut. Or un clone lié sur stockage local **ne peut pas migrer** :
-Proxmox refuse avec `can't migrate 'local-lvm:base-<tpl>-disk-0/vm-<id>-disk-0' as
-it's a clone of 'base-<tpl>-disk-0'` — l'image de base n'existe pas sur le nœud cible.
-Comme on va justement démontrer la migration au §9, on paie les 30 secondes de copie.
+🪤 **`--full 1` est obligatoire ici.** Sur un template, `qm clone` fait un **clone lié**
+par défaut, et un clone lié sur stockage local **ne peut pas migrer** : Proxmox refuse
+avec `can't migrate 'local-lvm:base-<tpl>-disk-0/vm-<id>-disk-0' as it's a clone of
+'base-<tpl>-disk-0'`, l'image de base n'existant pas sur le nœud cible. On démontre la
+migration au §9 : on paie les 30 secondes de copie. Le tableau du
+[TP 10 §5](10-cloudinit-cli-clonage.md) l'annonçait : *« ❌ pas de migration vers un
+autre stockage »*.
 
-Le tableau du [TP 10 §5](10-cloudinit-cli-clonage.md) le disait déjà : *« ❌ pas de
-migration vers un autre stockage »*. C'est le moment où ça se paie.
-
-⚠️ **`mtu=1` n'est pas optionnel ici.** C'est ce qui fait hériter le MTU 1450 du VNet.
-Oubliez-le et vous passerez vingt minutes à chercher pourquoi `apt` gèle.
+⚠️ **`mtu=1` n'est pas optionnel.** C'est ce qui fait hériter le MTU 1450 du VNet. Sans
+lui, `apt` gèle et vous cherchez pourquoi pendant vingt minutes.
 
 ### 8.1 L'IPAM à l'échelle du cluster
 
@@ -476,16 +466,13 @@ pvesh get /cluster/sdn/ipam/pve/status --output-format json | jq -r \
   '.[] | select(.subnet != null) | "\(.ip)\t\(.vmid // "-")\t\(.hostname // "-")"' | sort -V
 ```
 
-🧠 **Six stagiaires déploient en même temps, personne n'obtient la même IP — ni le même
-VMID.** L'IPAM est
-dans `/etc/pve`, donc clusterisé, donc atomique. C'est exactement le service qu'on
-bricolait avec un tableur il y a dix ans.
+🧠 **Six stagiaires déploient en même temps, personne n'obtient la même IP ni le même
+VMID.** L'IPAM est dans `/etc/pve`, donc clusterisé, donc atomique.
 
 ### 8.2 Les tests qui comptent
 
-Avant tout, **depuis votre PC**, une route vers les réseaux EVPN. Ils vivent dans un
-VRF que seuls les **exit nodes** relient au LAN (`exitnodes-local-routing`) : on passe
-par `pve1`.
+D'abord, **depuis votre PC**, une route vers les réseaux EVPN. Ils vivent dans un VRF que
+seuls les **exit nodes** relient au LAN (`exitnodes-local-routing`) : on passe par `pve1`.
 
 ```bash
 sudo ip route add 10.60.0.0/16 via 172.30.30.151     # pve1, exit node primaire
@@ -525,11 +512,11 @@ Depuis une VM de `vdb` :
 | `1472` | 1500 | ❌ | la limite est sous 1500 (peu informatif) |
 | `1473` | 1501 | ❌ | échouerait même sans VXLAN — **ne prouve rien** |
 
-⚠️ Le couple `1422 / 1423` est le seul qui **encadre** le MTU de la zone. `1473` est
-un test paresseux : il échoue sur n'importe quel réseau Ethernet standard.
+⚠️ Le couple `1422 / 1423` est le seul qui **encadre** le MTU de la zone. `1473` échoue
+sur n'importe quel Ethernet standard et ne prouve rien.
 
-🧠 **Les tests 5 à 8 sont les plus importants.** Le ping seul ne prouve rien : il tient
-dans 64 octets. C'est le transfert massif qui révèle un problème de MTU.
+🧠 **Les tests 5 à 8 sont les plus importants.** Le ping tient dans 64 octets ; c'est le
+transfert massif qui révèle un problème de MTU.
 
 ### 8.3 Par où sort le trafic ?
 
@@ -541,8 +528,7 @@ conntrack -L 2>/dev/null | grep 10.60 | head
 watch -n1 'iptables -t nat -L -n -v | grep -A2 10.60'
 ```
 
-Vous voyez le trafic d'une VM de `pve4` sortir par `pve1`, naté derrière
-`172.30.30.151`. **C'est la démonstration visuelle de l'exit node.**
+Le trafic d'une VM de `pve4` sort par `pve1`, naté derrière `172.30.30.151`.
 
 Et le chemin aller :
 
@@ -554,8 +540,6 @@ tcpdump -ni vmbr0 -c 10 'udp port 4789'      # le trafic VXLAN vers pve1
 ---
 
 ## 9. La migration à chaud : le moment de vérité 🎯
-
-C'est **la** démonstration qui justifie tout le TP.
 
 ```bash
 # Depuis votre PC, un ping continu vers la VM
@@ -570,7 +554,7 @@ qm migrate $VMID_PROD pve5 --online --with-local-disks    # vers un nœud autre 
 ```
 
 Observez le ping. ✅ **Zéro ou un paquet perdu.** La VM a changé de machine physique,
-et son réseau n'a pas bougé d'un millimètre.
+son réseau n'a pas bougé.
 
 ```bash
 # la VM est maintenant sur pve5 : « qm config » ne la connaît plus ici, on passe par l'API
@@ -578,9 +562,9 @@ pvesh get /nodes/pve5/qemu/$VMID_PROD/config | grep -E 'net0'
 ssh eleve@10.60.10.<ip> 'ip -br a; ip route; arp -n'
 ```
 
-L'entrée ARP de la gateway est **identique** avant et après. C'est l'anycast.
+L'entrée ARP de la gateway est identique avant et après : c'est l'anycast.
 
-Puis **rapatriez-la** : les TP 18 et 19 la cherchent sur votre nœud.
+Puis rapatriez-la : les TP 18 et 19 la cherchent sur votre nœud.
 
 ```bash
 # $(hostname) est développé sur VOTRE nœud avant l'envoi : la cible, c'est vous
@@ -588,9 +572,9 @@ ssh root@pve5 "qm migrate $VMID_PROD $(hostname) --online --with-local-disks"
 qm list | grep evpn-prod      # de retour
 ```
 
-🧠 Comparez mentalement avec la zone `Simple` du §1 : la même migration aurait fait
-atterrir la VM dans un réseau homonyme mais totalement différent, sans qu'elle s'en
-aperçoive — et sans qu'elle puisse joindre quoi que ce soit.
+🧠 Avec la zone `Simple` du §1, la même migration aurait fait atterrir la VM dans un
+réseau homonyme mais différent, sans qu'elle s'en aperçoive ni puisse joindre quoi que
+ce soit.
 
 ---
 
@@ -635,15 +619,13 @@ FORWARD ACCEPT -source +sdn/vdb-all -dest +sdn/vprod-all -p tcp -dport 22 -log i
 FORWARD DROP -source +sdn/vpub-all -dest +sdn/vdb-all -log warning
 ```
 
-🧠 **Relisez le test #10 du §8.2** (« depuis `vdb` : `ping 10.60.10.<prod>` ✅ »).
-Sans les deux lignes `-source +sdn/vdb-all`, il devient ❌ dès que vous posez ce
-fichier. C'est le piège déjà rencontré aux TP 09 et 12 : **une règle FORWARD est
-unidirectionnelle**, et le firewall du VNet **source** compte autant que celui du
-VNet destination.
+🧠 Sans les deux lignes `-source +sdn/vdb-all`, le test #10 du §8.2 (« depuis `vdb` :
+`ping 10.60.10.<prod>` ✅ ») devient ❌ dès que vous posez ce fichier. Même piège
+qu'aux TP 09 et 12 : **une règle FORWARD est unidirectionnelle**, le firewall du VNet
+**source** compte autant que celui du VNet destination.
 
-🪤 **Un VNet sans fichier `.fw` n'est pas filtré du tout.** `vprod` n'a pas de règles
-ici : tout y passe, donc rien à ajouter de son côté. Posez-vous la question à chaque
-fois — *« ce VNet est-il permissif par choix, ou par oubli ? »*
+🪤 **Un VNet sans fichier `.fw` n'est pas filtré.** `vprod` n'a pas de règles ici : tout y
+passe. Posez-vous la question à chaque fois : *permissif par choix, ou par oubli ?*
 
 `/etc/pve/sdn/firewall/vpub.fw` :
 
@@ -675,16 +657,15 @@ FORWARD ACCEPT -source +sdn/vpub-all -p udp -dport 53 -log nolog
 pvesh set /cluster/sdn
 ```
 
-🎯 **Testez depuis un nœud, puis depuis un autre.** Les règles s'appliquent partout,
-identiquement. Vous venez d'écrire une politique de sécurité pour six hyperviseurs
-dans deux fichiers texte.
+🎯 Testez depuis un nœud, puis depuis un autre : les règles s'appliquent partout,
+identiquement. Une politique de sécurité pour six hyperviseurs, dans deux fichiers
+texte.
 
 ---
 
 ## 11. Tester la bascule d'exit node 🔥
 
-Démonstration de résilience — **avec l'accord du formateur**, puisque `pve1` héberge
-PBS et Pulse, les services de la salle.
+**Avec l'accord du formateur** : `pve1` héberge PBS et Pulse.
 
 ```bash
 # Depuis une VM d'un nœud quelconque, un ping continu vers Internet
@@ -714,12 +695,10 @@ Rétablissez :
 systemctl start frr     # ou ifup vmbr0 depuis la console
 ```
 
-🧠 **Actif/passif, pas actif/actif.** Il y a une coupure. C'est le prix du SNAT
-stateful. Pour faire mieux, il faudrait de l'ECMP sans NAT — donc des subnets routables
-annoncés au routeur amont en BGP — donc l'accès à ce routeur. **Retour à la contrainte
-initiale du lab.** C'est la bonne réponse à donner en soutenance : « on a fait le
-meilleur choix possible compte tenu de la contrainte, et voici ce qu'on ferait avec le
-contrôle du réseau physique ».
+🧠 **Actif/passif, pas actif/actif.** Il y a une coupure : c'est le prix du SNAT
+stateful. Pour faire mieux, il faudrait de l'ECMP sans NAT, donc des subnets routables
+annoncés au routeur amont en BGP, donc l'accès à ce routeur. Retour à la contrainte
+initiale du lab.
 
 ---
 
@@ -734,8 +713,7 @@ contrôle du réseau physique ».
 | Pas de DNAT managé pour publier un service | absent du SDN Proxmox | HAProxy/nginx en VM, ou du DNAT sur l'exit node |
 | iBGP full-mesh | simple mais en O(n²) | Fabric BGP + route-reflectors, ou eBGP unnumbered |
 
-🧠 **Savoir énoncer les limites de son architecture vaut mieux que de prétendre qu'elle
-est parfaite.** C'est ce qui distingue un ingénieur d'un exécutant.
+🧠 Énoncer les limites de son architecture vaut mieux que de la prétendre parfaite.
 
 ---
 
@@ -794,8 +772,8 @@ journalctl -u frr -n 50
 
 1. **Comparer avec une zone VXLAN pure** : créez `zvx` (type VXLAN, peers = les 6
    nœuds), un VNet, et deux VM sur deux nœuds. Le L2 fonctionne, elles se pingent.
-   Puis essayez de joindre Internet. Constatez qu'il n'y a **pas de gateway du tout**.
-   Vous venez de comprendre ce que le « E » de EVPN apporte.
+   Puis essayez de joindre Internet : il n'y a **pas de gateway du tout**. C'est ce que
+   le « E » d'EVPN apporte.
 2. **Une fabric WireGuard** : `Datacenter → SDN → Fabrics → Add → WireGuard`. Montez un
    underlay chiffré entre deux nœuds et déplacez-y le VTEP. C'est ainsi qu'on étend un
    cluster entre deux sites via Internet.

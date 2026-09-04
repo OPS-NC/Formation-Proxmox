@@ -1,6 +1,6 @@
 # Annexe B — Dépannage 🔧
 
-Les pannes que vous **allez** rencontrer, dans l'ordre de probabilité.
+Les pannes courantes, dans l'ordre de probabilité.
 
 ---
 
@@ -92,7 +92,7 @@ lvs -o +data_percent,metadata_percent
 ```
 
 🚨 Au-delà de 95 %, les VM se corrompent. Étendez le pool ou supprimez des snapshots
-**immédiatement**. Surveillez ce chiffre : c'est la panne n°1 en production.
+immédiatement. C'est la panne n°1 en production.
 
 ### `lvreduce` refuse de réduire le thin pool 🪤
 
@@ -100,9 +100,8 @@ lvs -o +data_percent,metadata_percent
 Thin pool volumes pve/data_tdata cannot be reduced in size yet.
 ```
 
-**Ce n'est pas contournable proprement.** LVM ne sait pas réduire un thin pool : les
-blocs ne sont pas alloués linéairement, et dm-thin n'offre aucun mécanisme de
-défragmentation. La seule voie :
+LVM ne sait pas réduire un thin pool : les blocs ne sont pas alloués linéairement, et
+dm-thin n'offre aucun mécanisme de défragmentation. La seule voie :
 
 ```bash
 # 1. sauvegarder vers PBS et VÉRIFIER   2. détruire les guests
@@ -192,7 +191,7 @@ iptables -t nat -L POSTROUTING -n -v     # la règle existe ? les compteurs mont
 
 ### Le VNet n'apparaît pas dans `ip -br a`
 
-**L'Apply a été oublié** — c'est la cause dans 8 cas sur 10.
+**L'Apply a été oublié**, dans 8 cas sur 10.
 
 ```bash
 diff /etc/pve/sdn/zones.cfg /etc/pve/sdn/zones.running.cfg
@@ -268,8 +267,6 @@ IN ACCEPT -source lan_salle -p udp -dport 4789 -log nolog
 
 ### ③ Ping OK, SSH gèle, `apt` bloqué → **MTU** 🎯
 
-La panne la plus fréquente et la plus déroutante.
-
 ```bash
 # depuis la VM
 ping -M do -s 1422 -c2 1.1.1.1      # ✅ doit passer      (1422 + 28 = 1450)
@@ -342,8 +339,8 @@ Ajoutez temporairement `-log info` sur les règles suspectes.
 
 ### Le trafic retour est bloqué
 
-Non : le suivi de connexion (conntrack) l'autorise automatiquement. **Une seule règle
-par sens de connexion suffit.** Si ça ne marche pas, le problème est ailleurs.
+Non : le suivi de connexion (conntrack) l'autorise automatiquement. Une règle par sens
+de connexion suffit. Le problème est ailleurs.
 
 ---
 
@@ -464,7 +461,7 @@ ceph osd set-nearfull-ratio 0.87
 
 ### Le cluster Proxmox devient instable quand Ceph reconstruit
 
-C'est **LA** limite d'un réseau partagé. Bridez, tout de suite :
+La limite d'un réseau partagé. Bridez :
 
 ```bash
 ceph config set osd osd_max_backfills 1
@@ -474,8 +471,7 @@ ceph config set osd osd_recovery_sleep 0.1
 ceph osd set noout             # pendant une intervention
 ```
 
-En production : **un réseau dédié pour Ceph**, un autre pour Corosync. Ce n'est pas
-négociable.
+En production : **un réseau dédié pour Ceph**, un autre pour Corosync.
 
 ### Repartir de zéro
 
@@ -580,12 +576,11 @@ systemctl restart pvedaemon pveproxy pvestatd pve-cluster corosync
 
 ## 📞 Où chercher de l'aide
 
-1. **La documentation locale** : bouton *Documentation* dans l'interface — hors ligne,
-   toujours à jour avec votre version.
+1. **La documentation locale** : bouton *Documentation* dans l'interface, hors ligne,
+   à jour avec votre version.
 2. **Le log de la tâche** : `Datacenter → Tasks → double-clic`.
 3. **`journalctl -u <service> -n 100 --no-pager`**.
-4. **Le forum Proxmox** : <https://forum.proxmox.com/> — très actif, les développeurs
-   y répondent.
+4. **Le forum Proxmox** : <https://forum.proxmox.com/>, les développeurs y répondent.
 5. **Le bug tracker** : <https://bugzilla.proxmox.com/>.
 6. **La liste pve-devel** : <https://lore.proxmox.com/> — pour comprendre *pourquoi*
    une fonctionnalité est comme elle est.

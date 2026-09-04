@@ -5,7 +5,7 @@ Support des **TP 13** et **14**.
 ## L'idée en une phrase
 
 Un **tag** posé sur une VM dans Proxmox devient un **groupe** Ansible, qui
-déclenche un **rôle**. Aucun inventaire à maintenir à la main.
+déclenche un **rôle**. Pas d'inventaire à maintenir.
 
 ```
   Terraform            Proxmox              Ansible              Résultat
@@ -14,8 +14,8 @@ déclenche un **rôle**. Aucun inventaire à maintenir à la main.
   tags = ["db"]   ──►  tag « db »   ──►  groupe proxmox_db   ──►  rôle db
 ```
 
-Et le rôle `nfs` s'applique à votre **poste de travail** (TP 14), via un inventaire
-statique — même rôle, autre cible.
+Le rôle `nfs` s'applique à votre **poste de travail** (TP 14), via un inventaire
+statique.
 
 ## Installation
 
@@ -75,8 +75,8 @@ sudo ip route add 10.10.0.0/16 via $PVE
 ssh eleve@10.10.20.<ip-web01> hostname     # doit répondre
 ```
 
-Pas de bastion ni de `ProxyCommand` : Ansible parle aux VM comme à n'importe quel
-serveur. Le firewall du nœud doit laisser passer le forward LAN → VNets (TP 09).
+Pas de bastion ni de `ProxyCommand`. Le firewall du nœud doit laisser passer le
+forward LAN → VNets (TP 09).
 
 ## Le critère de qualité 🎯
 
@@ -85,10 +85,9 @@ ansible-playbook site.yml     # premier passage : des « changed »
 ansible-playbook site.yml     # second passage  : changed=0 PARTOUT
 ```
 
-Si une tâche reste en `changed` à chaque exécution, elle est mal écrite
-(typiquement un `command` sans `creates:` ni `changed_when:`). Corrigez-la : un
-playbook qui ment sur ce qu'il change devient inutilisable pour détecter les
-dérives de configuration.
+Une tâche qui reste en `changed` à chaque exécution est mal écrite (typiquement un
+`command` sans `creates:` ni `changed_when:`). Corrigez-la : un playbook qui ment sur
+ce qu'il change ne détecte plus les dérives.
 
 ## Structure
 
@@ -119,9 +118,8 @@ ansible/
 ansible-playbook -i inventory/local.yml nfs-local.yml --ask-become-pass
 ```
 
-`nfs_manage_disk: false` saute les tâches de partitionnement : on expose simplement un
-répertoire existant. Avec `true` et un `nfs_device`, le même rôle prépare un disque
-dédié. **Un rôle, deux contextes** — c'est le signe qu'il est bien écrit.
+`nfs_manage_disk: false` saute les tâches de partitionnement : on expose un répertoire
+existant. Avec `true` et un `nfs_device`, le même rôle prépare un disque dédié.
 
 ## Secrets
 

@@ -58,9 +58,8 @@ ssh_public_key = "ssh-ed25519 AAAA... eleve@formation"
 # pve_node = "pve"   ← valeur par défaut : le hostname des jours 1-3, rien à changer
 ```
 
-🧠 **Aucun numéro à renseigner.** Aux jours 1-3, chacun est seul sur son nœud : les
-VMID, les noms et les réseaux sont fixés par le plan du TP 00, identiques pour tout le
-monde. La seule chose qui vous distingue, c'est l'IP de votre nœud.
+🧠 Aux jours 1-3, chacun est seul sur son nœud : noms et réseaux sont ceux du plan du
+TP 00, identiques pour tous. Seule l'IP de votre nœud vous distingue.
 
 ```bash
 terraform init
@@ -85,11 +84,9 @@ terraform {
 }
 ```
 
-🪤 **Épinglez, ne minorez pas.** `>= 0.80` autoriserait Terraform à installer
-n'importe quelle version ≥ 0.80 — y compris une antérieure aux ressources SDN
-(`sdn_vnet`, `sdn_subnet`, `sdn_applier` n'existent qu'à partir de la **v0.84.0**),
-et vous obtiendriez `Invalid resource type` au TP 12. `~> 0.111` verrouille la
-version majeure.minor et n'autorise que les correctifs.
+🪤 **Épinglez.** `>= 0.80` laisserait Terraform installer une version antérieure aux
+ressources SDN (`sdn_vnet`, `sdn_subnet`, `sdn_applier` existent depuis la v0.84.0) :
+`Invalid resource type` au TP 12. `~> 0.111` n'autorise que les correctifs.
 
 ### `provider.tf` — se connecter
 
@@ -106,11 +103,10 @@ provider "proxmox" {
 }
 ```
 
-🧠 **Pourquoi un bloc `ssh` ?** L'API Proxmox ne permet pas de téléverser un
-*snippet* cloud-init. Le provider passe donc par SCP pour ces opérations.
-Sans clé SSH sur le nœud, la ressource `proxmox_virtual_environment_file`
-en `snippets` échoue. Assurez-vous que `ssh root@$PVE` fonctionne sans
-mot de passe.
+🧠 **Pourquoi un bloc `ssh` ?** L'API Proxmox ne téléverse pas les *snippets*
+cloud-init : le provider passe par SCP. Sans clé SSH sur le nœud,
+`proxmox_virtual_environment_file` en `snippets` échoue. `ssh root@$PVE` doit
+fonctionner sans mot de passe.
 
 ### `main.tf` — une VM clonée depuis le template
 
@@ -308,18 +304,17 @@ resource "proxmox_virtual_environment_vm" "parc" {
 ```
 
 🪤 **En HCL, pas de virgule entre les attributs d'un bloc.** `cpu { cores = 2, type =
-"..." }` ne compile pas : le séparateur est le **retour à la ligne**. C'est l'erreur
-n°1 quand on vient du JSON ou du Python. Le réflexe qui l'attrape en une seconde :
+"..." }` ne compile pas : le séparateur est le retour à la ligne. Erreur classique en
+venant du JSON ou du Python :
 
 ```bash
 terraform fmt          # reformate, et refuse de reformater ce qui ne parse pas
 terraform validate     # puis vérifie les types et les arguments inconnus
 ```
 
-🧠 **Les `tags` ne sont pas décoratifs.** Ils viennent de la map, ils partent dans
-Proxmox, et au **TP 13** Ansible construira ses groupes d'inventaire à partir d'eux.
-`web01` taguée `web` ⇒ elle recevra automatiquement le rôle `web`. La chaîne
-Terraform → tag Proxmox → groupe Ansible → rôle est **le** fil rouge du jour 3.
+🧠 **Les `tags` ne sont pas décoratifs.** Au TP 13, Ansible construit ses groupes
+d'inventaire à partir d'eux : `web01` taguée `web` reçoit le rôle `web`.
+Terraform → tag Proxmox → groupe Ansible → rôle.
 
 ```bash
 terraform apply
@@ -472,10 +467,9 @@ tf.plan
 crash.log
 ```
 
-🪤 **`.terraform.lock.hcl`, lui, se COMMIT.** C'est une erreur classique de le mettre
-dans le `.gitignore` : ce fichier fige la version exacte du provider **et ses sommes
-de contrôle**. Sans lui, `terraform init` peut installer une version différente sur
-chaque poste — exactement le problème que l'épinglage `~> 0.111` cherche à éviter.
+🪤 **`.terraform.lock.hcl`, lui, se commit.** Il fige la version exacte du provider
+et ses sommes de contrôle. Sans lui, `terraform init` peut installer une version
+différente sur chaque poste.
 
 ```
    versions.tf          « je veux du ~> 0.111 »        ← l'intention
@@ -483,9 +477,9 @@ chaque poste — exactement le problème que l'épinglage `~> 0.111` cherche à 
 ```
 
 🪤 **Un lock généré sur un Mac ne suffit pas à une salle sous Linux.** Le fichier
-enregistre un hash `h1:` **par plateforme** : si vous ne verrouillez que la vôtre,
-le premier `terraform init` de chaque poste modifiera le fichier — donc un `git diff`
-parasite chez tout le monde. Verrouillez explicitement les plateformes visées :
+enregistre un hash `h1:` par plateforme : sinon le premier `terraform init` de chaque
+poste le modifie, et tout le monde a un `git diff` parasite. Verrouillez les
+plateformes visées :
 
 ```bash
 terraform providers lock \
@@ -494,8 +488,7 @@ terraform providers lock \
   -platform=darwin_amd64
 ```
 
-C'est exactement ce qui a été fait dans ce dépôt : vos `init` ne toucheront pas au
-lock.
+C'est le cas dans ce dépôt : vos `init` ne toucheront pas au lock.
 
 ---
 

@@ -2,9 +2,9 @@
 
 ⏱️ **1 h 15** · Jour 3
 
-Objectif : Terraform crée les machines, **Ansible les configure**. Et il ne le fait pas
-au hasard : il interroge l'API Proxmox, lit les **tags** posés au TP 11, et applique le
-rôle correspondant. Zéro inventaire à maintenir à la main.
+Objectif : Terraform crée les machines, Ansible les configure. Il interroge l'API
+Proxmox, lit les tags posés au TP 11 et applique le rôle correspondant. Aucun
+inventaire à maintenir à la main.
 
 📖 Plugin d'inventaire : <https://docs.ansible.com/ansible/latest/collections/community/proxmox/proxmox_inventory.html>
 
@@ -33,10 +33,9 @@ rôle correspondant. Zéro inventaire à maintenir à la main.
         « day 0 »                              « day 1 → n »
 ```
 
-🧠 **La frontière** : Terraform s'arrête au moment où la machine démarre. Tout ce qui se
-passe *à l'intérieur* du système d'exploitation, c'est Ansible. On peut tout faire en
-cloud-init, mais cloud-init ne s'exécute qu'**une fois** — il ne sait pas remettre en
-conformité une machine qui a dérivé six mois plus tard. Ansible, si.
+🧠 Terraform s'arrête quand la machine démarre ; l'intérieur du système, c'est
+Ansible. cloud-init pourrait tout faire, mais il ne s'exécute qu'une fois : il ne
+remet pas en conformité une machine qui a dérivé. Ansible, si.
 
 ---
 
@@ -51,8 +50,8 @@ conformité une machine qui a dérivé six mois plus tard. Ansible, si.
    tags = ["db"]  ──► tag "db"  ──► groupe proxmox_db ──► rôle « db »
 ```
 
-**Un tag posé dans Terraform pilote un rôle Ansible.** C'est propre, traçable, et ça
-tient dans une revue de code.
+Un tag posé dans Terraform pilote un rôle Ansible. Traçable, et ça tient dans une
+revue de code.
 
 ---
 
@@ -76,12 +75,10 @@ ansible-galaxy collection list | grep -E 'community.proxmox|community.general|an
 | `python3-proxmoxer` (côté contrôleur) | `Invalid data from server` |
 | collection `community.proxmox` | inventaire **vide**, ou `Attempting to use a plugin that has been removed` |
 
-🧠 **Pourquoi `community.proxmox` alors qu'on écrivait `community.general.proxmox` ?**
-Le plugin a **déménagé**. `community.general.proxmox` n'est plus qu'une redirection,
-supprimée en `community.general` 15.0.0. C'est une situation très banale dans
-l'écosystème Ansible : les collections « fourre-tout » se scindent par domaine au fil
-du temps. Le réflexe à retenir : quand un plugin se met à râler, vérifiez d'abord
-s'il n'a pas simplement changé de collection.
+🧠 **`community.proxmox` et non `community.general.proxmox`** : le plugin a
+déménagé. `community.general.proxmox` n'est plus qu'une redirection, supprimée en
+`community.general` 15.0.0. Les collections fourre-tout se scindent par domaine :
+quand un plugin râle, vérifiez d'abord s'il n'a pas changé de collection.
 
 ---
 
@@ -123,9 +120,8 @@ lab/ansible/
 └── ping.yml                  ← test de connectivité
 ```
 
-> Les extraits de rôles cités dans ce TP sont **abrégés** pour la lecture : le code
-> complet (retries, sudoers, `nginx -t`, `flush_handlers`, `no_log`…) est dans
-> `lab/ansible/roles/`. C'est lui qui fait foi.
+> Les extraits de rôles de ce TP sont abrégés. Le code complet (retries, sudoers,
+> `nginx -t`, `flush_handlers`, `no_log`…) est dans `lab/ansible/roles/`, qui fait foi.
 
 ```bash
 cd ~/ProxmoxFormation/lab/ansible
@@ -199,18 +195,15 @@ cache_timeout: 120
 cache_connection: /tmp/ansible-pve-cache
 ```
 
-🧠 **`keyed_groups` + `proxmox_tags_parsed`** est la ligne qui fait tout le travail.
-Chaque tag Proxmox devient un groupe Ansible préfixé `proxmox_`. Ajoutez un tag dans
-l'interface → le groupe apparaît à la prochaine exécution. Aucune synchronisation à
-gérer.
+🧠 **`keyed_groups` + `proxmox_tags_parsed`** fait tout le travail : chaque tag
+Proxmox devient un groupe Ansible préfixé `proxmox_`. Un tag ajouté dans l'interface,
+un groupe à la prochaine exécution.
 
-🧠 **Pourquoi `linux` ne contient que les VM taguées `terraform` ?** Parce que ce sont
-les seules qu'Ansible peut joindre sans préparation : cloud-init y a créé le compte
-`eleve` avec votre clé. `srv01` (installée à la main, mot de passe seulement), `win01`,
-`cloud01` (120) ou la VM `pbs` (901) y remonteraient en `UNREACHABLE` et pollueraient
-chaque `PLAY RECAP`. Elles ne sont pas exclues pour autant : posez-leur un tag de rôle
-(`web`, `db`) et elles entrent dans `proxmox_web` / `proxmox_db` — c'est exactement ce
-qu'on fera au §11.
+🧠 **`linux` ne contient que les VM taguées `terraform`** : les seules qu'Ansible joint
+sans préparation, cloud-init y ayant créé le compte `eleve` avec votre clé. `srv01`
+(mot de passe seulement), `win01`, `cloud01` (120) ou `pbs` (901) remonteraient en
+`UNREACHABLE` à chaque `PLAY RECAP`. Un tag de rôle (`web`, `db`) les fait entrer dans
+`proxmox_web` / `proxmox_db` — voir §11.
 
 ### Tester l'inventaire
 
@@ -260,11 +253,10 @@ ansible-inventory -i inventory/proxmox.yml --list | jq '._meta.hostvars | keys'
 🪤 **Une VM sans agent QEMU n'aura pas d'`ansible_host`.** Vérifiez que
 `qemu-guest-agent` tourne sur vos VM (il est dans les templates du TP 10).
 
-🧠 **Et les conteneurs LXC ?** Ils n'ont **pas** d'agent QEMU — ce serait absurde,
-un conteneur partage le noyau de l'hôte. Proxmox connaît quand même leurs adresses,
-mais par un autre chemin : l'API `/nodes/<nœud>/lxc/<id>/interfaces`. Le plugin
-d'inventaire l'expose dans une variable **différente**, `proxmox_lxc_interfaces`,
-avec une **structure différente** :
+🧠 **Les conteneurs LXC** n'ont pas d'agent QEMU (ils partagent le noyau de l'hôte).
+Proxmox connaît leurs adresses par l'API `/nodes/<nœud>/lxc/<id>/interfaces`, exposée
+par le plugin dans une autre variable, `proxmox_lxc_interfaces`, avec une autre
+structure :
 
 | Type | Variable | Champ de l'IP | Format |
 |---|---|---|---|
@@ -272,8 +264,8 @@ avec une **structure différente** :
 | LXC | `proxmox_lxc_interfaces` | `inet` | `10.10.20.117/24` ⚠️ **avec le masque** |
 
 D'où le `regex_replace('/.*$', '')` qui retire le `/24`, et la concaténation des deux
-listes. Sans la branche LXC, `ansible_host` retomberait sur `proxmox_name` — le nom du
-conteneur, que rien ne résout dans le lab — et vous auriez un `UNREACHABLE` inexplicable.
+listes. Sans la branche LXC, `ansible_host` retombe sur `proxmox_name`, le nom du
+conteneur, que rien ne résout : `UNREACHABLE`.
 
 Les deux exigent `want_facts: true` **et** un guest démarré.
 
@@ -316,14 +308,13 @@ pipelining             = True
 ssh_args               = -o ControlMaster=auto -o ControlPersist=60s -o StrictHostKeyChecking=no
 ```
 
-🪤 **`stdout_callback = yaml` ne marche plus.** Ce callback vivait dans
-`community.general` et a été retiré ; si vous le copiez d'un vieux tutoriel, Ansible
-refuse de démarrer. Le rendu YAML est désormais une option du callback `default`.
+🪤 **`stdout_callback = yaml` ne marche plus** : retiré de `community.general`,
+Ansible refuse de démarrer. Le rendu YAML est une option du callback `default`.
 
 ### Joindre les VM : la route du TP 07 ⭐
 
-Vos VM sont dans les VNets `10.10.x.0/24`, dont la gateway est votre nœud. Depuis le
-TP 07, votre PC a une route pour y aller. Vérifiez qu'elle est toujours là :
+Vos VM sont dans les VNets `10.10.x.0/24`, derrière votre nœud. La route posée au
+TP 07 doit être encore là :
 
 ```bash
 PVE=172.30.30.___          # ⚠ l'IP de VOTRE nœud
@@ -331,9 +322,8 @@ ip route | grep 10.10.0.0 || sudo ip route add 10.10.0.0/16 via $PVE
 ssh eleve@10.10.20.<ip-web01> hostname      # ✅ direct
 ```
 
-Le PC joint les VM **directement** : Ansible leur parle comme à n'importe quel serveur,
-sans bastion ni `ProxyCommand`. `group_vars/all.yml` ne porte que les options SSH
-communes :
+Le PC joint les VM directement, sans bastion ni `ProxyCommand`. `group_vars/all.yml`
+ne porte que les options SSH communes :
 
 ```yaml
 ---
@@ -459,9 +449,8 @@ common_packages:
 ```
 
 🧠 **Le rôle est multi-OS.** `ansible.builtin.package` s'adapte à `apt` ou `dnf`,
-et les conditions `ansible_os_family` gèrent les différences Debian/RedHat. C'est
-tout l'intérêt d'avoir mis du Rocky dans le parc : ça oblige à écrire du code
-portable au lieu d'empiler des `apt install`.
+`ansible_os_family` gère les différences Debian/RedHat. Le Rocky du parc est là pour
+ça : du code portable, pas des `apt install` empilés.
 
 ---
 
@@ -621,7 +610,7 @@ db_hba_path: >-
      else '/var/lib/pgsql/data/pg_hba.conf' }}
 ```
 
-🪤 **Le mot de passe en clair, c'est non.** Faites-le proprement :
+🪤 **Pas de mot de passe en clair** :
 
 ```bash
 ansible-vault encrypt_string 'Formation2026!' --name 'db_password' \
@@ -657,13 +646,10 @@ ansible-playbook site.yml --ask-vault-pass
     - db
 ```
 
-🪤 **Et les conteneurs LXC Alpine ?** Ils ne sont **pas** dans `site.yml`, et c'est
-volontaire : Alpine n'embarque **pas de Python**, or Ansible en a besoin sur la cible.
-S'ajoutent trois différences : pas de `bash`, pas de `sudo`, et Terraform pose la clé
-SSH sur `root` et non sur `eleve`.
-
-On les amorce donc avec un playbook dédié, `alpine.yml`, qui utilise le module
-**`raw`** — le seul qui n'exige aucun interpréteur :
+🪤 **Les LXC Alpine ne sont pas dans `site.yml`** : Alpine n'embarque pas de Python,
+dont Ansible a besoin sur la cible. Ni `bash`, ni `sudo`, et Terraform pose la clé SSH
+sur `root`, pas sur `eleve`. Un playbook dédié, `alpine.yml`, les amorce avec le
+module `raw`, le seul sans interpréteur :
 
 ```yaml
 - name: Installer Python, bash et sudo (module raw — aucun Python requis)
@@ -677,9 +663,8 @@ ansible-playbook alpine.yml     # amorce + socle sur les LXC
 ansible-playbook site.yml       # les VM
 ```
 
-🧠 **C'est exactement le problème de l'œuf et de la poule du provisioning**, et
-`raw` est la réponse standard. Vous rencontrerez le même besoin sur un switch, un
-routeur, ou une image *distroless*.
+🧠 Même besoin sur un switch, un routeur ou une image *distroless* : `raw` est la
+réponse standard.
 
 ### Dérouler
 
@@ -715,10 +700,10 @@ app01     : ok=11  changed=0  unreachable=0  failed=0
 db01      : ok=16  changed=0  unreachable=0  failed=0
 ```
 
-🧠 **`changed=0` au second passage : c'est LE critère de qualité d'un playbook.**
-Si une tâche reste en `changed` à chaque exécution, elle est mal écrite (typiquement
-un `command` sans `creates:` ni `changed_when:`). Corrigez-la : un playbook qui ment
-sur ce qu'il change devient inutilisable pour détecter les dérives.
+🧠 **`changed=0` au second passage : le critère de qualité d'un playbook.** Une tâche
+qui reste en `changed` est mal écrite (typiquement un `command` sans `creates:` ni
+`changed_when:`). Un playbook qui ment sur ce qu'il change ne sert plus à détecter les
+dérives.
 
 🪤 **Le piège le plus courant : l'horodatage dans un template.**
 
@@ -726,19 +711,13 @@ sur ce qu'il change devient inutilisable pour détecter les dérives.
 Déployé le {{ ansible_date_time.iso8601 }}     ← ❌ jamais
 ```
 
-Le contenu rendu change à chaque seconde : la tâche `template` voit une différence,
-écrit le fichier, remonte `changed`. Votre playbook affiche `changed=3` pour
-l'éternité, et vous ne savez plus distinguer « quelque chose a dérivé » de « c'est
-juste l'horloge ».
+Le contenu change à chaque seconde : `template` réécrit le fichier et remonte
+`changed` à chaque passage. Impossible alors de distinguer une dérive de l'horloge.
 
-Les variantes à repérer dans une revue de code : `ansible_date_time`, `now()`,
-`lookup('pipe', 'date')`, un mot de passe généré par `lookup('password')` sans
-fichier de stockage, un UUID aléatoire. **Un fichier géré doit être une fonction
-pure de son état désiré** — même entrée, même sortie.
-
-👉 Si vous voulez vraiment tracer les déploiements, écrivez-les dans un journal
-(`/var/log/`) avec un `lineinfile`, pas dans un fichier de configuration. Et pour
-signer un fichier généré, `{{ ansible_managed }}` suffit : il est stable.
+Mêmes effets avec `now()`, `lookup('pipe', 'date')`, un `lookup('password')` sans
+fichier de stockage, un UUID aléatoire. Un fichier géré est une fonction pure de son
+état désiré. Pour tracer un déploiement, un `lineinfile` dans `/var/log/` ; pour
+signer un fichier généré, `{{ ansible_managed }}` est stable.
 
 ### Vérifier le résultat
 
@@ -758,8 +737,8 @@ ssh eleve@10.10.10.<ip-app01>
 
 ## 11. Le test qui boucle la boucle 🔁
 
-Ajoutez le tag `web` à une machine qui ne l'avait pas — et qui n'est même pas dans le
-groupe `linux` : `cloud01`, la VM cloud-init clonée à la main au TP 10 (VMID `120`).
+Ajoutez le tag `web` à une machine hors du groupe `linux` : `cloud01`, clonée à la
+main au TP 10 (VMID `120`).
 
 ```bash
 PVE=172.30.30.___          # ⚠ l'IP de VOTRE nœud
@@ -774,18 +753,15 @@ ansible-inventory -i inventory/proxmox.yml --graph | grep -A4 proxmox_web
 ansible-playbook site.yml --limit proxmox_web
 ```
 
-✅ `cloud01` apparaît dans `proxmox_web` et reçoit nginx : le play « Serveurs web »
-s'applique à **tout** le groupe, qu'il vienne de Terraform ou pas. Elle n'est pas
-dans `linux`, donc le rôle `common` ne l'a pas touchée — c'est le tag, et lui seul, qui
-a déclenché le rôle `web`.
+✅ `cloud01` apparaît dans `proxmox_web` et reçoit nginx. Elle n'est pas dans `linux`,
+donc `common` ne l'a pas touchée : seul le tag a déclenché le rôle `web`.
 
 ```bash
 ssh eleve@10.10.10.50 'curl -s localhost | grep h1'     # la page générée sur cloud01
 ```
 
-🧠 **Vous venez de faire de la configuration pilotée par étiquette.** C'est le modèle
-utilisé par Kubernetes (labels/selectors), par AWS (tags/ASG), par tous les
-orchestrateurs modernes. Vous l'avez implémenté sur Proxmox en trente lignes de YAML.
+🧠 Configuration pilotée par étiquette : le modèle de Kubernetes (labels/selectors)
+et d'AWS (tags/ASG), en trente lignes de YAML sur Proxmox.
 
 ---
 
@@ -811,8 +787,7 @@ resource "terraform_data" "ansible" {
 }
 ```
 
-`terraform apply` crée les VM **et** les configure. Une seule commande, de zéro à
-« en production ».
+`terraform apply` crée les VM et les configure, en une commande.
 
 🪤 Le `sleep 45` est un pis-aller. En vrai, on fait attendre Ansible :
 
@@ -844,17 +819,17 @@ resource "terraform_data" "ansible" {
 
 1. **Un troisième rôle** : `monitoring`, qui déploie Prometheus sur la machine taguée
    `services` et génère automatiquement sa configuration de scrape depuis l'inventaire
-   (`{% for h in groups['linux'] %}`). C'est là qu'Ansible devient magique.
+   (`{% for h in groups['linux'] %}`).
 2. **`ansible-vault`** : chiffrez `group_vars/proxmox_db.yml` en entier
    (`ansible-vault encrypt`) et jouez avec `--vault-password-file`.
-3. **`ansible-lint`** : `pipx install ansible-lint && ansible-lint`. Corrigez tout.
-   C'est formateur et ça se met dans une CI.
+3. **`ansible-lint`** : `pipx install ansible-lint && ansible-lint`. Corrigez tout ;
+   ça se met dans une CI.
 4. **Molecule** : testez le rôle `common` dans un conteneur, hors de votre lab.
 5. **Inventaire multi-nœuds** : au **jour 4**, une fois le cluster monté, un seul
    fichier `proxmox.yml` couvrira les six nœuds. Anticipez : que faudra-t-il changer ?
-   (Réponse : rien, sinon l'URL. C'est tout l'intérêt d'une API clusterisée.)
-6. **Le rôle `nfs` sur votre poste** : c'est exactement ce qu'on fait au TP 14 — le même
-   rôle, joué sur `localhost`. Regardez `roles/nfs/tasks/main.yml` et repérez ce que la
-   variable `nfs_manage_disk` permet de sauter.
+   (Réponse : rien, sinon l'URL.)
+6. **Le rôle `nfs` sur votre poste** : le même rôle, joué sur `localhost` au TP 14.
+   Regardez `roles/nfs/tasks/main.yml` et repérez ce que la variable `nfs_manage_disk`
+   permet de sauter.
 
 ➡️ Suite : [TP 14 — Un serveur NFS sur votre poste Ubuntu](14-nfs-poste-ubuntu.md)

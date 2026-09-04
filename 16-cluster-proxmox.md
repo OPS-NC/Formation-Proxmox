@@ -61,22 +61,17 @@ Solution : un **QDevice** (§8) — une petite machine tierce qui apporte un vot
 
 ### 2.1 Pourquoi on réinstalle 🧠
 
-Pendant trois jours, les six nœuds ont été **rigoureusement identiques** : même
-hostname `pve`, mêmes VMID (`101`, `102`, `111`…), mêmes subnets `10.10.x.0/24`, même
-pool `lab`. C'était voulu — chacun était seul chez lui, aucune convention de
-numérotation à retenir.
-
-Un cluster, lui, exige des **hostnames uniques** et des **VMID uniques** sur les six
-machines. Et de toute façon :
+Pendant trois jours, les six nœuds ont été identiques : même hostname `pve`, mêmes
+VMID (`101`, `102`, `111`…), mêmes subnets `10.10.x.0/24`, même pool `lab`. Un cluster
+exige des **hostnames uniques** et des **VMID uniques**. Et de toute façon :
 
 - un nœud ne peut rejoindre un cluster que s'il **n'héberge aucun guest** ;
 - rejoindre un cluster **écrase `/etc/pve`** — SDN, firewall, stockages, utilisateurs.
 
 Renommer un nœud Proxmox à chaud est possible mais piégeux (répertoires dans
-`/etc/pve/nodes/`, certificats, configs de VM à déplacer). Détruire tous les guests
-puis rebaptiser six machines, c'est plus long et plus risqué qu'une **réinstallation
-propre de 15 minutes** — qui, en prime, vous donne une seconde chance sur `maxvz`.
-C'est la voie la plus rapide et la plus honnête.
+`/etc/pve/nodes/`, certificats, configs de VM à déplacer). Détruire les guests puis
+rebaptiser six machines est plus long et plus risqué qu'une **réinstallation de
+15 minutes**, qui donne en prime une seconde chance sur `maxvz`.
 
 ### 2.2 Sauvegarder ce qui doit survivre 💾
 
@@ -103,14 +98,13 @@ ls -lh /mnt/pve/nfs-pc/conf/
 > (`vzdump 901 --storage nfs-pc --mode stop`) : c'est elle qui servira de PBS à toute
 > la salle au §7.2, à moins de préférer la réinstaller (10 minutes).
 
-🧠 Pas besoin de `scp` : l'export NFS **est** votre PC. Tout ce que vous venez de
-déposer est déjà dans `/srv/nfs/conf/` et `/srv/nfs/dump/` sur votre poste — il est
-dehors, lui.
+🧠 Pas besoin de `scp` : l'export NFS **est** votre PC. Ce que vous venez de déposer est
+déjà dans `/srv/nfs/conf/` et `/srv/nfs/dump/` sur votre poste.
 
 🧠 **Ce qui n'a pas besoin d'être sauvegardé** : les templates, les VM Terraform, les
-snippets cloud-init, le code Ansible. Tout cela se reconstruit en quelques commandes —
-c'est **le retour sur investissement du jour 3**. Dans une vraie exploitation,
-`/etc/pve` part dans une sauvegarde de configuration séparée, versionnée dans Git.
+snippets cloud-init, le code Ansible — tout se reconstruit en quelques commandes. En
+exploitation, `/etc/pve` part dans une sauvegarde de configuration séparée, versionnée
+dans Git.
 
 ### 2.3 Le tableau de la salle 🗺️
 
@@ -137,9 +131,8 @@ différences :
 | IP | `$PVE/24` | `$PVE/24` — inchangée |
 | `maxvz` | … | ⭐ **réduisez-le** (TP 01 §3.1 bis) : 80 Go libres dans le VG |
 
-🎯 **`maxvz` : votre seconde chance.** Si vous l'aviez laissé par défaut au jour 1,
-c'est le moment de le régler : le TP 18 (Ceph) se fera alors en trois commandes
-(« chemin A ») au lieu d'une chirurgie LVM.
+🎯 **`maxvz`** : si vous l'aviez laissé par défaut au jour 1, réglez-le maintenant. Le
+TP 18 (Ceph) se fera en trois commandes (« chemin A ») au lieu d'une chirurgie LVM.
 
 Puis rejouez le [TP 01 §5 et §6](01-installation-proxmox.md) : dépôts
 `no-subscription`, `apt full-upgrade`, paquets, `dnsmasq` désactivé, fuseau horaire.
@@ -151,9 +144,9 @@ systemctl disable --now dnsmasq
 timedatectl set-timezone Pacific/Noumea    # ou Europe/Paris
 ```
 
-🪤 **`proxmox-firewall` n'est pas dans l'installation de base.** C'est lui qui donne
-un sens à `nftables: 1` dans `host.fw` (TP 09 §2). Sans lui, les règles VNet du TP 17
-sont ignorées **en silence** — le piège n°1 du TP 09, à ne pas retrouver au jour 4.
+🪤 **`proxmox-firewall` n'est pas dans l'installation de base.** Sans lui, `nftables: 1`
+dans `host.fw` (TP 09 §2) n'a aucun effet et les règles VNet du TP 17 sont ignorées
+en silence.
 
 Et depuis votre PC, la clé SSH :
 
@@ -242,9 +235,8 @@ cat /etc/pve/corosync.conf
 
 🧠 **`--link0`** définit le réseau utilisé par Corosync. En production, on lui dédie un
 VLAN ou une carte, séparés du trafic de stockage et de migration : quelques
-millisecondes de latence supplémentaires suffisent à provoquer des faux positifs de
-panne. Ici, avec un seul LAN, on n'a pas le choix — et c'est une limite du lab à
-mentionner en soutenance.
+millisecondes de latence en plus suffisent à provoquer des faux positifs de panne. Ici,
+avec un seul LAN, on n'a pas le choix.
 
 ---
 
@@ -333,10 +325,9 @@ Sur `pve5`, instantanément :
 cat /etc/pve/salut.txt
 ```
 
-🧠 **C'est ça, pmxcfs.** Un fichier écrit sur un nœud existe sur les six en quelques
-millisecondes. C'est pourquoi le SDN, le firewall et les configs de VM sont
-automatiquement cohérents partout — et pourquoi le TP 17 va pouvoir déployer un réseau
-sur six nœuds en une seule opération.
+🧠 Un fichier écrit sur un nœud existe sur les six en quelques millisecondes. Le SDN, le
+firewall et les configs de VM sont donc cohérents partout, et le TP 17 déploiera un
+réseau sur six nœuds en une seule opération.
 
 ```bash
 rm /etc/pve/salut.txt
@@ -371,10 +362,9 @@ touch /etc/pve/test-quorum
 # → touch: cannot touch '/etc/pve/test-quorum': Permission denied
 ```
 
-🧠 **`/etc/pve` est passé en lecture seule.** Vous ne pouvez plus créer, modifier ni
-démarrer de VM. Les VM **déjà démarrées continuent de tourner** — Proxmox ne les tue
-pas. C'est un choix délibéré : préserver le service existant, empêcher toute nouvelle
-décision potentiellement conflictuelle.
+🧠 **`/etc/pve` est passé en lecture seule.** Plus de création, modification ni
+démarrage de VM. Les VM **déjà démarrées continuent de tourner** : on préserve le
+service existant, on interdit toute nouvelle décision potentiellement conflictuelle.
 
 Remise en service :
 
@@ -389,10 +379,10 @@ pvecm status                      # Quorate: Yes
 pvecm expected 3      # abaisse temporairement le quorum attendu
 ```
 
-🚨 **Danger absolu** : si l'autre moitié du cluster est vivante et fait la même chose,
-vous obtenez deux clusters qui se croient légitimes. Deux instances de la même VM
-écrivant sur le même disque partagé = corruption garantie. À réserver aux
-récupérations de sinistre, quand on est **certain** que l'autre moitié est morte.
+🚨 Si l'autre moitié du cluster est vivante et fait la même chose, vous obtenez deux
+clusters qui se croient légitimes : deux instances de la même VM sur le même disque
+partagé, corruption garantie. À réserver aux sinistres, quand on est **certain** que
+l'autre moitié est morte.
 
 ---
 
@@ -433,8 +423,8 @@ EOF
 
 ### 7.2 Re-déclarer les stockages 💾
 
-`/etc/pve/storage.cfg` est **commun aux six nœuds**, et il ne contient plus que `local`
-et `local-lvm` : les nœuds sont neufs. On redéclare — et cette fois, une seule déclaration suffit pour tout le cluster.
+`/etc/pve/storage.cfg` est **commun aux six nœuds** et ne contient plus que `local` et
+`local-lvm`. On redéclare, une seule fois pour tout le cluster.
 
 **PBS** — la VM PBS de la salle vit sur **`pve1`**. Le stagiaire de `pve1` (ou le
 formateur) la recrée, au choix :
@@ -462,7 +452,7 @@ pvesm add pbs pbs-lab \
 pvesm status
 ```
 
-Vérifiez depuis un autre nœud : `pbs-lab` y apparaît tout seul. 🎩
+Vérifiez depuis un autre nœud : `pbs-lab` y apparaît.
 
 **Le NFS de chaque poste** — chacun sur son nœud :
 
@@ -489,8 +479,8 @@ en erreur toutes les 30 secondes dans l'interface de **tout le monde**.
 
 ### 7.3 Restaurer depuis votre NFS — ce qui a survécu 🔄
 
-Facultatif, mais instructif : la sauvegarde déposée au §2.2 est là, sur un nœud
-réinstallé, dans un cluster qui n'existait pas quand elle a été faite.
+Facultatif : la sauvegarde déposée au §2.2 se restaure sur un nœud réinstallé, dans un
+cluster qui n'existait pas quand elle a été faite.
 
 ```bash
 ls /mnt/pve/nfs-$(hostname)/dump/
@@ -501,23 +491,21 @@ qm list
 ```
 
 🪤 **`--delete cicustom`** : si `cloud01` a gardé le `--cicustom vendor=nfs-pc:snippets/…`
-du TP 14, la VM restaurée refuse de démarrer (`storage 'nfs-pc' does not exist`). Le
-stockage s'appelle désormais `nfs-<nœud>` — le TP 14 retirait déjà ce réglage en fin
-de TP, ceci est le filet de sécurité.
+du TP 14, la VM restaurée refuse de démarrer (`storage 'nfs-pc' does not exist`) : le
+stockage s'appelle désormais `nfs-<nœud>`. Le TP 14 retirait ce réglage en fin de TP ;
+ceci est le filet de sécurité.
 
-🧠 **En cluster, le VMID est unique pour les six nœuds.** Ne choisissez plus vos numéros
-à la main : `pvesh get /cluster/nextid` rend le prochain VMID libre du cluster, et
-l'interface web le propose d'elle-même. C'est ce qu'on fera pour toutes les machines du
-jour 4.
+🧠 **En cluster, le VMID est unique pour les six nœuds.** `pvesh get /cluster/nextid`
+rend le prochain libre, l'interface web le propose d'elle-même. On fait ainsi pour
+toutes les machines du jour 4.
 
 🪤 Deux stagiaires qui lancent `nextid` à la même seconde obtiennent le même numéro :
-le second `qm create` échoue avec `VM already exists`. Relancez, c'est tout.
+le second `qm create` échoue avec `VM already exists`. Relancez.
 
 ### 7.4 Reconstruire les templates
 
-Un template n'existe que sur son nœud (stockage local). Chacun refait les siens — en
-cinq minutes, parce qu'on les a industrialisés au TP 10. Le nœud est neuf : commencez
-par y recloner le dépôt.
+Un template n'existe que sur son nœud (stockage local). Chacun refait les siens avec le
+script du TP 10. Le nœud est neuf : commencez par y recloner le dépôt.
 
 ```bash
 [ -d /root/formation ] || git clone <url-du-depot> /root/formation
@@ -528,16 +516,16 @@ cd /root/formation
 qm list | grep tpl-          # notez VOS trois VMID, les TP 17 et 18 s'en servent
 ```
 
-🧠 **C'est le retour sur investissement du jour 3.** Sans les scripts, Terraform et
-Ansible, reconstruire l'environnement après la mise en cluster prendrait la matinée.
-Là, il suffit de rejouer `terraform apply` puis `ansible-playbook site.yml`.
+🧠 Sans les scripts, Terraform et Ansible, reconstruire l'environnement après la mise en
+cluster prendrait la matinée. Là, il suffit de rejouer `terraform apply` puis
+`ansible-playbook site.yml`.
 
-🌐 Dans `Datacenter → Search`, vous voyez maintenant les templates de tout le monde :
-six `tpl-debian13`, avec six VMID différents. Filtrez sur votre nœud.
+🌐 `Datacenter → Search` montre les templates de tout le monde : six `tpl-debian13`,
+six VMID. Filtrez sur votre nœud.
 
 ### 7.5 Recréer le pool
 
-Un seul pool, partagé, comme aux jours 1-3 — une seule personne le crée :
+Un seul pool, partagé. Une seule personne le crée :
 
 ```bash
 pvesh create /pools --poolid lab --comment "Ressources de la formation"
@@ -567,7 +555,7 @@ pveum user token add ansible@pve inv --privsep 0         # 📌 notez le secret
 > La liste des privilèges est celle du TP 06 §7.1.
 
 Puis **chacun, sur son PC**, met à jour ses deux fichiers : le nœud ne s'appelle plus
-`pve`, et les tokens ont changé.
+`pve` et les tokens ont changé.
 
 ```bash
 # ~/.config/pve/token.env
@@ -628,9 +616,8 @@ pvecm status                       # Qdevice apparaît avec 1 vote
 corosync-qdevice-tool -s
 ```
 
-🧠 Avec 6 nœuds, le QDevice est inutile (le nombre est pair mais on tolère déjà 2
-pannes). Il devient **indispensable** sur les clusters de 2 ou 4 nœuds, très courants
-en PME.
+🧠 Avec 6 nœuds, le QDevice est inutile (on tolère déjà 2 pannes). Il est
+**indispensable** sur les clusters de 2 ou 4 nœuds, courants en PME.
 
 ---
 
@@ -644,9 +631,9 @@ pvecm delnode pve6
 pvecm status
 ```
 
-🪤 **Un nœud retiré ne doit JAMAIS être rallumé sur le même réseau.** Il a encore les
-clés Corosync et va tenter de rejoindre le cluster, semant la pagaille. Pour le
-réutiliser : réinstallation complète de Proxmox.
+🪤 **Un nœud retiré ne doit jamais être rallumé sur le même réseau.** Il a encore les
+clés Corosync et tentera de rejoindre le cluster. Pour le réutiliser : réinstallation
+complète.
 
 Nettoyage des reliquats sur les nœuds restants :
 

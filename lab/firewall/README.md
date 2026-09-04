@@ -49,16 +49,15 @@ ssh eleve@10.10.10.50 hostname
 
 À partir du TP 12, `cluster.fw` est **géré par Terraform** :
 `lab/terraform/03-sdn-troisieme-lan/cluster-fw.tf` porte les mêmes options, alias,
-IPSet, groupes et règles, en ressources natives du provider. Le fichier d'exemple
-ci-dessus reste la référence lisible — et ce qu'on repose à la main si l'on détruit la
-stack.
+IPSet, groupes et règles, en ressources natives. Le fichier d'exemple reste la référence
+lisible, et ce qu'on repose à la main après un `destroy`.
 
 ## Les quatre pièges
 
 1. **`nftables: 1` manquant** → les règles VNet sont ignorées, sans aucun message.
-2. **Un alias qui ne correspond plus à la réalité** (un réseau renuméroté, une IP
-   d'exemple laissée telle quelle) → une règle qui autorise la mauvaise adresse est
-   pire qu'une règle absente : elle donne l'illusion du contrôle. Relisez `[ALIASES]`.
+2. **Un alias qui ne correspond plus à la réalité** (réseau renuméroté, IP d'exemple
+   laissée telle quelle) → une règle qui autorise la mauvaise adresse est pire qu'une
+   règle absente. Relisez `[ALIASES]`.
 3. **L'ordre des règles** → première correspondance gagnante. Une règle
    « ACCEPT vers Internet » sans `-dest` attrape tout, y compris les flux
    inter-zones. Les DROP explicites doivent la précéder.

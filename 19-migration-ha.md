@@ -2,9 +2,8 @@
 
 ⏱️ **1 h** · Jour 4
 
-Objectif : exploiter le cluster maintenant que Ceph est en place. Migrer des machines
-sans interruption, mettre en place la HA, et provoquer une panne pour voir le système
-réagir tout seul.
+Objectif : migrer des machines sans interruption, mettre en place la HA, et provoquer
+une panne pour voir le cluster réagir seul.
 
 📖 Doc : <https://pve.proxmox.com/pve-docs/chapter-ha-manager.html>
 
@@ -27,9 +26,9 @@ réagir tout seul.
                                                    (~2-3 min)
 ```
 
-🧠 **La HA n'est pas de la magie.** Elle *redémarre* une VM ailleurs — la VM subit
-l'équivalent d'une coupure de courant. Ce qui doit être sans coupure (une base de
-données critique), c'est à l'application de le gérer, en cluster applicatif.
+🧠 La HA *redémarre* une VM ailleurs : la VM subit l'équivalent d'une coupure de courant.
+Ce qui doit être sans coupure (une base critique) relève de l'application, en cluster
+applicatif.
 
 ---
 
@@ -58,8 +57,8 @@ données critique), c'est à l'application de le gérer, en cluster applicatif.
 | Pas de matériel passthrough | pas de PCI, pas d'USB attaché |
 | Le cluster est *quorate* | `pvecm status` |
 
-🪤 **`cpu: host` interdit la migration** entre nœuds au CPU différent. Si vous avez
-gardé `host` sur une VM du jour 1, corrigez :
+🪤 **`cpu: host` interdit la migration** entre nœuds au CPU différent. Si une VM du jour 1
+a gardé `host` :
 
 ```bash
 qm set <vmid> --cpu x86-64-v2-AES    # nécessite un arrêt/démarrage
@@ -80,8 +79,8 @@ Observez la tâche : Proxmox copie le disque **puis** la RAM. Sur 20 Go, comptez
 plusieurs minutes.
 
 🪤 **Si la commande refuse** avec `can't migrate ... as it's a clone of ...`, votre VM
-est un **clone lié** : son disque n'est qu'une couche copy-on-write au-dessus de
-l'image du template, laquelle n'existe pas sur le nœud cible. Deux sorties :
+est un **clone lié** : son disque est une couche copy-on-write au-dessus de l'image du
+template, absente du nœud cible. Deux sorties :
 
 ```bash
 # A. la convertir en clone complet, sur place
@@ -91,9 +90,9 @@ qm move-disk $VMID scsi0 local-lvm --delete 1
 qm move-disk $VMID scsi0 vm-store --delete 1
 ```
 
-🧠 **`qm move-disk` casse le lien vers l'image de base** : il écrit un disque complet
-et indépendant. C'est la manœuvre à connaître pour « détacher » un clone lié — et
-c'est aussi ce qui explique pourquoi le TP 17 clone en `--full 1`.
+🧠 **`qm move-disk` casse le lien vers l'image de base** : il écrit un disque complet et
+indépendant. C'est la manœuvre pour « détacher » un clone lié, et la raison du
+`--full 1` du TP 17.
 
 ### Avec Ceph
 
@@ -107,8 +106,8 @@ time qm migrate $VMID pve2 --online                 # un autre nœud que le vôt
 ```
 
 🎯 **Comparez les deux chronos.** Avec un stockage partagé, seule la RAM transite :
-quelques secondes au lieu de plusieurs minutes. Le disque, lui, ne bouge pas d'un
-octet — il n'a jamais appartenu à un nœud en particulier.
+quelques secondes au lieu de plusieurs minutes. Le disque ne bouge pas : il n'a jamais
+appartenu à un nœud en particulier.
 
 ```bash
 # La preuve : l'image RBD est inchangée, seule la VM a changé de nœud
@@ -148,7 +147,7 @@ done
 
 ## 4. Régler le réseau de migration 🔧
 
-Par défaut la migration passe par le réseau de management — donc en concurrence avec
+Par défaut la migration passe par le réseau de management, en concurrence avec
 Corosync. En production, on lui dédie un lien.
 
 🌐 `Datacenter → Options → Migration Settings`
@@ -163,15 +162,15 @@ cat /etc/pve/datacenter.cfg
 # migration: network=172.30.30.0/24,type=secure
 ```
 
-🧠 `insecure` n'est pas « non sécurisé au hasard » : cela veut dire « transfert en clair,
-parce que le réseau est physiquement isolé ». Sur un lien dédié, cela double
-facilement le débit. Sur un réseau partagé, gardez `secure`.
+🧠 `insecure` veut dire « transfert en clair, parce que le réseau est physiquement
+isolé ». Sur un lien dédié, cela double facilement le débit. Sur un réseau partagé,
+gardez `secure`.
 
 ---
 
 ## 5. Et si on n'avait pas Ceph ? 🔁
 
-Question légitime : que fait-on sur un cluster **sans** stockage partagé ?
+Que fait-on sur un cluster **sans** stockage partagé ?
 
 | Approche | Ce que ça donne | Limite |
 |---|---|---|
@@ -180,23 +179,21 @@ Question légitime : que fait-on sur un cluster **sans** stockage partagé ?
 | Stockage partagé (NFS, iSCSI) | rapide, HA possible | un point de défaillance unique |
 | **Ceph** | rapide, HA, sans SPOF | 3 nœuds minimum, réseau exigeant |
 
-🧠 **La réplication de stockage de Proxmox (`pvesr`) ne fonctionne qu'avec ZFS**, car
-elle repose sur `zfs send/receive` — l'envoi des seuls blocs modifiés depuis le dernier
-snapshot. Nous avons délibérément installé nos nœuds en **ext4 + LVM-thin** : plus
-simple, moins gourmand en RAM, et suffisant puisque Ceph nous donne du vrai stockage
-partagé. Sachez que `pvesr` existe, et pourquoi vous ne pouvez pas l'utiliser ici.
+🧠 **La réplication de stockage de Proxmox (`pvesr`) ne fonctionne qu'avec ZFS** : elle
+repose sur `zfs send/receive`, l'envoi des seuls blocs modifiés depuis le dernier
+snapshot. Nos nœuds sont en **ext4 + LVM-thin** : plus simple, moins gourmand en RAM,
+et suffisant puisque Ceph fournit le stockage partagé.
 
 ```bash
 pvesr status          # vide : aucun job possible sans ZFS
 ```
 
-🧠 **RPO (Recovery Point Objective)** : avec de la réplication toutes les 15 minutes, on
-perd au maximum 15 minutes de données à la panne. Avec Ceph, le RPO est **nul** : les
-trois copies sont synchrones. C'est la différence entre « je perds un quart d'heure »
-et « je ne perds rien ».
+🧠 **RPO (Recovery Point Objective)** : avec une réplication toutes les 15 minutes, on
+perd au plus 15 minutes de données à la panne. Avec Ceph, le RPO est **nul** : les trois
+copies sont synchrones.
 
 ⚠️ **Ni la réplication ni Ceph ne sont des sauvegardes.** Une donnée supprimée est
-répliquée… supprimée. La sauvegarde, c'était le TP 15.
+répliquée supprimée. La sauvegarde, c'est le TP 15.
 
 ---
 
@@ -227,10 +224,10 @@ répliquée… supprimée. La sauvegarde, c'était le TP 15.
 ```
 
 🧠 **Le fencing est le cœur du système.** Avant de démarrer une VM ailleurs, le cluster
-doit être *certain* qu'elle ne tourne plus sur le nœud disparu — sinon deux instances
-écrivent sur le même disque partagé et le corrompent en quelques secondes. Proxmox
-utilise un **watchdog** (matériel ou `softdog`) : un nœud qui perd le quorum ne peut
-plus caresser son watchdog, qui le redémarre de force.
+doit être *certain* qu'elle ne tourne plus sur le nœud disparu, sinon deux instances
+écrivent sur le même disque partagé et le corrompent. Proxmox utilise un **watchdog**
+(matériel ou `softdog`) : un nœud qui perd le quorum ne peut plus le réarmer, et le
+watchdog le redémarre de force.
 
 ### Prérequis
 
@@ -241,9 +238,8 @@ plus caresser son watchdog, qui le redémarre de force.
 | Watchdog actif | `cat /proc/devices \| grep watchdog` | ✅ `softdog` par défaut |
 | VNet disponible partout | sinon la VM redémarre sans réseau | ✅ EVPN, TP 17 |
 
-🚨 **Le disque de la VM déclarée en HA doit être sur `vm-store` (Ceph)**, pas sur
-`local-lvm`. Sinon la HA échouera à la première panne : le disque n'existe nulle part
-ailleurs.
+🚨 **Le disque de la VM en HA doit être sur `vm-store` (Ceph)**, pas sur `local-lvm`.
+Sinon la HA échoue à la première panne : le disque n'existe nulle part ailleurs.
 
 ```bash
 VMID=$(qm list | awk '/evpn-prod/{print $1}')   # votre VM du TP 17 (sur son nœud actuel)
@@ -273,7 +269,7 @@ Les chiffres sont des **priorités** : la valeur la plus élevée gagne.
 
 ⚠️ Le groupe est `restricted` : si votre VM tourne ailleurs que sur `pve2`, `pve3` ou
 `pve4` (vous êtes sur `pve5`/`pve6`, ou elle n'est pas rentrée du TP 17 §9), le CRM la
-**migre** dès la déclaration de la ressource. C'est attendu — regardez-le faire.
+**migre** dès la déclaration de la ressource. C'est attendu.
 
 **② Déclarer la ressource**
 
@@ -301,7 +297,7 @@ systemctl status pve-ha-crm pve-ha-lrm --no-pager | head -12
 ## 7. Provoquer la panne 🔥
 
 **Expérience collective, avec l'accord du formateur.** Choisissez un nœud qui n'est ni
-`pve1` (exit node EVPN primaire et hôte de PBS) ni un monitor Ceph, pour rester simple.
+`pve1` (exit node EVPN primaire et hôte de PBS) ni un monitor Ceph.
 
 ```bash
 # Terminal 1 — sur un nœud survivant
@@ -334,10 +330,10 @@ qm list        # la VM tourne maintenant ailleurs
 
 Rebranchez le nœud. Avec `nofailback: 0`, la VM revient d'elle-même sur `pve2`.
 
-🧠 **Deux minutes d'interruption.** C'est le vrai chiffre à annoncer à un client, pas
-« la HA, c'est du zéro downtime ». Si le zéro downtime est exigé, il faut du clustering
-applicatif (PostgreSQL en streaming replication + Patroni, un load-balancer devant
-plusieurs frontaux, etc.) — l'infrastructure seule ne peut pas y arriver.
+🧠 **Deux minutes d'interruption.** C'est le chiffre à annoncer au client, pas « zéro
+downtime ». Si le zéro downtime est exigé, il faut du clustering applicatif (PostgreSQL
+en streaming replication + Patroni, un load-balancer devant plusieurs frontaux) ;
+l'infrastructure seule n'y arrive pas.
 
 ---
 
@@ -353,9 +349,8 @@ PVE 9 a introduit des règles pour contraindre le placement des ressources HA.
 
 🌐 `Datacenter → HA → Rules`
 
-🧠 **Cas d'école** : deux frontaux web derrière un load-balancer. S'ils atterrissent sur
-le même nœud et que ce nœud tombe, la redondance n'a servi à rien. Une règle
-d'anti-affinité l'empêche.
+🧠 **Cas d'école** : deux frontaux web derrière un load-balancer. Sur le même nœud, la
+redondance ne sert à rien si ce nœud tombe. Une règle d'anti-affinité l'empêche.
 
 ---
 
@@ -371,12 +366,9 @@ d'anti-affinité l'empêche.
 | Zéro perte de données | Stockage synchrone : **Ceph** (TP 18) |
 | Perte de données limitée, sans Ceph | Réplication ZFS — nécessite du ZFS |
 
-🪤 **La HA ne protège de rien d'autre qu'une panne de nœud.** Elle ne vous sauve ni d'un
-`rm -rf`, ni d'un ransomware, ni d'une mise à jour ratée, ni d'un incendie. Ces
-scénarios-là relèvent de la sauvegarde — le TP 15, et c'est le plus important des deux.
-
-Ceph non plus, d'ailleurs : il réplique fidèlement vos suppressions, en trois
-exemplaires et à la vitesse du réseau.
+🪤 **La HA ne protège que d'une panne de nœud.** Ni d'un `rm -rf`, ni d'un ransomware,
+ni d'une mise à jour ratée, ni d'un incendie : ces scénarios relèvent de la sauvegarde
+(TP 15). Ceph non plus : il réplique vos suppressions, en trois exemplaires.
 
 ---
 

@@ -11,10 +11,8 @@ Proxmox, et comprendre ce que le stockage réseau apporte — et ce qu'il coûte
 
 ## 1. Pourquoi votre PC, et pas une VM ? 🧠
 
-Un serveur NFS hébergé dans une VM **sur le nœud qu'il doit servir**, c'est un serpent
-qui se mord la queue : si le nœud tombe, le stockage tombe avec lui. Votre PC Ubuntu,
-lui, est une machine **extérieure à l'hyperviseur**. C'est exactement la position d'un
-NAS ou d'une baie de stockage.
+Un serveur NFS dans une VM du nœud qu'il sert tombe avec lui. Votre PC Ubuntu est
+extérieur à l'hyperviseur : la position d'un NAS ou d'une baie.
 
 ```
    ┌──────────────────────────────────────────────────────────────┐
@@ -34,14 +32,10 @@ NAS ou d'une baie de stockage.
    └──────────────────────────────────────────────────────────────┘
 ```
 
-🧠 **Ce n'est pas une architecture de production** — un poste de travail n'a ni
-redondance, ni onduleur, ni disques d'entreprise, et vous allez l'éteindre ce soir.
-Mais ce sont **exactement les mêmes mécanismes** qu'une vraie baie NFS : exports,
-options de montage, `no_root_squash`, gestion du disque plein, comportement quand le
-serveur disparaît. Tout ce que vous apprenez ici se transpose tel quel.
-
-Le vrai stockage partagé du lab, redondé et sans point de défaillance unique, ce sera
-**Ceph** au TP 18.
+🧠 Un poste de travail n'a ni redondance, ni onduleur, ni disques d'entreprise, et
+vous l'éteindrez ce soir. Mais les mécanismes sont ceux d'une baie NFS : exports,
+options de montage, `no_root_squash`, disque plein, serveur qui disparaît. Le stockage
+partagé redondé, ce sera Ceph au TP 18.
 
 ---
 
@@ -57,9 +51,8 @@ Le vrai stockage partagé du lab, redondé et sans point de défaillance unique,
 | ISO et templates | à dupliquer par nœud | ⭐ **une seule copie** |
 | Point de défaillance unique | non | **oui** |
 
-👉 L'usage le plus rentable du NFS dans ce lab : **les ISO, les templates LXC, les
-snippets cloud-init et les sauvegardes**. Pour les disques de VM, on s'en servira le
-temps de la démonstration, puis Ceph prendra le relais.
+👉 Usage rentable dans ce lab : ISO, templates LXC, snippets cloud-init et
+sauvegardes. Les disques de VM, le temps de la démonstration ; Ceph prendra le relais.
 
 ---
 
@@ -89,15 +82,12 @@ ls -lR /srv/nfs | head -20
 | `template/cache/` | templates LXC | `vztmpl` |
 | `snippets/` | user-data / vendor-data cloud-init | `snippets` |
 
-🧠 **Proxmox créerait ces dossiers tout seul** au premier usage. On les pré-crée pour
-deux raisons : fixer les droits (`nobody:nogroup`, `0777`) une bonne fois — sinon le
-premier écrit les crée en `root:root` — et **voir la structure d'un stockage Proxmox**,
-identique sur `dir`, `nfs` et `cifs`. C'est aussi ce qui vous permettra, au TP 15, de
-comprendre où PBS range quoi.
+🧠 Proxmox créerait ces dossiers au premier usage, en `root:root`. On les pré-crée
+pour fixer les droits (`nobody:nogroup`, `0777`) et voir la structure d'un stockage
+Proxmox, identique sur `dir`, `nfs` et `cifs`.
 
-🪤 Ne cherchez pas de dossier `iso/` ou `backup/` : ils s'appellent `template/iso/`
-et `dump/`. Une erreur de nommage ici donne un stockage qui « apparaît vide » dans
-l'interface, sans le moindre message d'erreur.
+🪤 Pas de dossier `iso/` ni `backup/` : c'est `template/iso/` et `dump/`. Une erreur de
+nommage donne un stockage vide dans l'interface, sans message d'erreur.
 
 ### Déclarer l'export
 
@@ -122,19 +112,17 @@ Sortie attendue (ici avec `.151` en exemple) :
                 secure,no_root_squash,no_all_squash)
 ```
 
-🪤 Un fichier d'export ne connaît pas vos variables shell : c'est le heredoc (sans
-quotes autour de `EOF`) qui a substitué `$PVE`. Si vous voyez `$PVE` en toutes lettres
-dans le fichier, la variable n'était pas définie — corrigez avant `exportfs`.
+🪤 C'est le heredoc (sans quotes autour de `EOF`) qui a substitué `$PVE`. Si `$PVE`
+apparaît en toutes lettres dans le fichier, la variable n'était pas définie : corrigez
+avant `exportfs`.
 
-🪤 **`no_root_squash` est un compromis assumé.** Par défaut, NFS transforme le `root`
-du client en `nobody` — mais Proxmox a besoin d'écrire en root pour créer les disques.
-On désactive donc le squash, **et en compensation on restreint l'export à une seule
-adresse IP**. Sur une infrastructure réelle, ce partage aurait son propre VLAN de
-stockage, isolé de tout le reste.
+🪤 **`no_root_squash` est un compromis.** NFS transforme par défaut le `root` du client
+en `nobody`, mais Proxmox écrit en root pour créer les disques. On désactive le squash
+et, en compensation, on restreint l'export à une seule IP. En production, ce partage
+aurait son VLAN de stockage.
 
-> 💡 Pour partager avec tous les nœuds (utile au jour 4) : remplacez `$PVE`
-> par `172.30.30.0/24`. Mesurez la différence de posture de sécurité — vous venez
-> d'ouvrir un accès root en écriture à tout le réseau.
+> 💡 Pour partager avec tous les nœuds (jour 4) : `172.30.30.0/24` à la place de
+> `$PVE`. C'est un accès root en écriture ouvert à tout le réseau.
 
 ### Forcer NFSv4 uniquement
 
@@ -150,9 +138,8 @@ sudo systemctl restart nfs-server
 cat /proc/fs/nfsd/versions
 ```
 
-🧠 **Pourquoi NFSv4 seulement ?** La v4 n'utilise qu'**un seul port, 2049/tcp**.
-La v3 a besoin de `rpcbind`, `mountd` et `statd` sur des ports variables : un
-cauchemar à filtrer. Forcez toujours la v4.
+🧠 **NFSv4 seulement** : un seul port, 2049/tcp. La v3 a besoin de `rpcbind`,
+`mountd` et `statd` sur des ports variables, pénibles à filtrer.
 
 ### Le pare-feu de votre PC
 
@@ -190,9 +177,8 @@ cd ~/ProxmoxFormation/lab/ansible
 ansible-playbook -i inventory/local.yml nfs-local.yml --ask-become-pass
 ```
 
-🧠 **Le rôle est le même**, seule la cible change. C'est tout l'intérêt d'un rôle bien
-écrit : il ne suppose rien sur *où* il tourne. La variable `nfs_manage_disk: false`
-saute les tâches de partitionnement, inutiles ici.
+🧠 Même rôle, autre cible : un rôle bien écrit ne suppose rien sur où il tourne.
+`nfs_manage_disk: false` saute les tâches de partitionnement.
 
 ---
 
@@ -218,7 +204,7 @@ Export list for 172.30.30.35:
 /srv/nfs 172.30.30.151
 ```
 
-Test manuel **avant** de déclarer le stockage — toujours :
+Test manuel avant de déclarer le stockage :
 
 ```bash
 PC=172.30.30.___                  # ⚠ l'IP de votre poste
@@ -277,16 +263,14 @@ df -h | grep nfs
 mount | grep nfs
 ```
 
-🧠 **Pas de `--nodes` aujourd'hui, mais retenez l'option.** Un stockage est déclaré
-au niveau *Datacenter* ; aux jours 1-3 il n'y a qu'un nœud, la restriction est inutile.
-Au TP 16, en cluster, elle deviendra **indispensable** (`--nodes $(hostname)`) :
-sans elle, les six nœuds tenteraient de monter votre partage — qui n'autorise que
-votre IP — et le signaleraient en erreur toutes les 30 secondes dans l'interface de
-tout le monde.
+🧠 **Pas de `--nodes` aujourd'hui.** Un stockage est déclaré au niveau Datacenter ;
+avec un seul nœud, la restriction est inutile. En cluster (TP 16), elle devient
+indispensable (`--nodes $(hostname)`) : sinon les six nœuds tentent de monter votre
+partage, qui n'autorise que votre IP, et le signalent en erreur toutes les 30 secondes.
 
-🧠 **Ce stockage est le seul qui survivra à la réinstallation du TP 16.** Il vit sur
-votre PC, pas sur le nœud : les ISO, les snippets et les `vzdump` que vous y déposez
-seront encore là au jour 4. Tout ce qui est sur `local` et `local-lvm` disparaîtra.
+🧠 **Ce stockage est le seul qui survit à la réinstallation du TP 16.** Il vit sur
+votre PC : ISO, snippets et `vzdump` déposés ici seront là au jour 4, contrairement à
+`local` et `local-lvm`.
 
 ---
 
@@ -300,10 +284,9 @@ qm config 120 | grep scsi0
 ls -lh /mnt/pve/nfs-pc/images/120/
 ```
 
-🧠 Observez le format : sur un stockage `nfs` ou `dir`, le disque est un **fichier
-`.qcow2`** dans `images/<vmid>/`. Sur `local-lvm`, c'était un volume bloc
-(`/dev/pve/vm-120-disk-0`). C'est cette différence qui permet les snapshots qcow2 sur
-NFS — et qui explique la légère perte de performance.
+🧠 Sur `nfs` ou `dir`, le disque est un fichier `.qcow2` dans `images/<vmid>/` ; sur
+`local-lvm`, un volume bloc (`/dev/pve/vm-120-disk-0`). D'où les snapshots qcow2 sur
+NFS, et la légère perte de performance.
 
 ### Comparer les débits
 
@@ -319,12 +302,10 @@ ssh eleve@10.10.10.50 \
   'dd if=/dev/zero of=/tmp/t bs=1M count=512 oflag=direct conv=fsync; rm /tmp/t'
 ```
 
-Sur un lien 1 Gb/s, attendez-vous à plafonner autour de **110 Mo/s** en NFS, contre
-plusieurs centaines de Mo/s en local. C'est la limite du réseau, pas du protocole.
+Sur un lien 1 Gb/s, comptez ~110 Mo/s en NFS contre plusieurs centaines en local : la
+limite du réseau, pas du protocole.
 
 ### Y mettre les ISO, templates et snippets
-
-C'est l'usage le plus utile.
 
 ```bash
 # Déplacer l'ISO Debian vers le NFS
@@ -348,15 +329,14 @@ vzdump 120 --storage nfs-pc --mode snapshot --compress zstd
 ls -lh /mnt/pve/nfs-pc/dump/
 ```
 
-🧠 Cette archive est sur votre PC : c'est **le** moyen de faire passer une machine
-au-delà de la réinstallation du TP 16 (`qmrestore` depuis `nfs-pc`, une fois le
-cluster monté).
+🧠 Cette archive est sur votre PC : c'est ce qui fera passer une machine au-delà de
+la réinstallation du TP 16 (`qmrestore` une fois le cluster monté).
 
 ---
 
 ## 8. Le test le plus instructif : débrancher le stockage 🔥
 
-**À faire, vraiment.** C'est l'incident que vous vivrez en production.
+C'est l'incident que vous vivrez en production.
 
 ```bash
 # 1. Une VM tourne, son disque est sur le NFS (il y est déjà depuis le §7)
@@ -378,21 +358,20 @@ dmesg -T | tail -20            # « nfs: server ... not responding, still trying
 pvesm status                   # nfs-pc en « inactive »
 ```
 
-La VM ne plante pas : ses I/O sont **bloquées en attente**. C'est le comportement du
-montage `hard` (le défaut), et c'est le bon : les écritures ne sont pas perdues, elles
-patientent.
+La VM ne plante pas : ses I/O attendent. C'est le montage `hard` (le défaut) : les
+écritures ne sont pas perdues.
 
 ```bash
 # 3. Rétablir
 sudo systemctl start nfs-server
 ```
 
-Le nœud reprend tout seul, et la VM continue comme si rien ne s'était passé.
+Le nœud reprend seul, la VM continue.
 
-🪤 **Ne mettez jamais l'option `soft` sur un montage qui porte des disques de VM.**
-Avec `soft`, les I/O échouent après un délai au lieu d'attendre — le système de
-fichiers de l'invité reçoit des erreurs d'écriture et se corrompt. `soft` est
-acceptable pour un partage de fichiers en lecture, jamais pour du stockage bloc.
+🪤 **Jamais `soft` sur un montage qui porte des disques de VM.** Les I/O échouent
+après un délai au lieu d'attendre : le système de fichiers de l'invité reçoit des
+erreurs d'écriture et se corrompt. `soft` convient à un partage de fichiers en
+lecture, pas à du stockage bloc.
 
 ---
 
@@ -406,9 +385,8 @@ acceptable pour un partage de fichiers en lecture, jamais pour du stockage bloc.
 | Haute disponibilité | impossible | possible, **avec un SPOF** | ✅ sans SPOF |
 | Tolérance de panne | — | ❌ le serveur tombe, tout tombe | ✅ 3 copies |
 
-👉 Le SPOF, c'est justement ce que **Ceph** élimine au **TP 18**. Gardez la comparaison
-en tête : NFS = un serveur, simple, avec un point de défaillance unique. Ceph = trois
-copies réparties, complexe, sans point de défaillance.
+👉 NFS : un serveur, simple, un point de défaillance unique. Ceph (TP 18) : trois
+copies réparties, complexe, sans SPOF.
 
 ---
 
@@ -434,7 +412,7 @@ copies réparties, complexe, sans point de défaillance.
 
 1. **Le disque plein** : `fallocate -l 40G /srv/nfs/gros`, puis essayez d'écrire
    depuis une VM. Observez le comportement de Proxmox et les messages du noyau.
-   Nettoyez ensuite (`rm /srv/nfs/gros`). Ce genre d'incident arrive vraiment.
+   Nettoyez ensuite (`rm /srv/nfs/gros`).
 2. **CIFS/SMB** : ajoutez un second partage en Samba (`apt install samba`) et déclarez-le
    avec `pvesm add cifs`. Comparez les débits avec NFS.
 3. **Les options de montage** : passez `--options vers=4.2,rsize=1048576,wsize=1048576`

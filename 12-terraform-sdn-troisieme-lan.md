@@ -22,9 +22,8 @@ par `terraform apply`.
    un oubli = une faille silencieuse    la CI refuse le merge
 ```
 
-Un réseau est une **surface d'attaque**. Le décrire en code, c'est le rendre
-auditable, reproductible et réversible. C'est le vrai argument, bien avant le gain
-de temps.
+Un réseau est une surface d'attaque. Le décrire en code le rend auditable,
+reproductible et réversible — avant même le gain de temps.
 
 ---
 
@@ -134,7 +133,7 @@ resource "proxmox_sdn_subnet" "srv" {
 }
 ```
 
-🪤 **Deux pièges de syntaxe qui coûtent dix minutes chacun :**
+🪤 **Deux pièges de syntaxe :**
 
 | Ce qu'on écrit spontanément | Ce qu'attend le provider |
 |---|---|
@@ -142,22 +141,17 @@ resource "proxmox_sdn_subnet" "srv" {
 | `type = "subnet"` | *(rien)* — cet argument n'existe pas côté Terraform |
 | `dhcp_range { ... }` (bloc) | `dhcp_range = { ... }` (**attribut**) |
 
-🧠 **Pourquoi cet écart ?** Côté `pvesh`, on écrit bien `--subnet 10.10.30.0/24 --type
-subnet` (c'est ce qu'on a tapé au TP 08 §6). Le provider, lui, est écrit avec le
-*plugin framework* de Terraform et suit les conventions HashiCorp : un réseau
-s'appelle `cidr`, et un bloc à occurrence unique devient un attribut objet. **Un
-provider n'est pas un miroir de l'API** — c'est une traduction. Lisez toujours la
-doc du provider, jamais celle de l'API, pour écrire du HCL.
+🧠 Côté `pvesh`, on écrit `--subnet 10.10.30.0/24 --type subnet` (TP 08 §6). Le
+provider suit les conventions HashiCorp : un réseau s'appelle `cidr`, un bloc à
+occurrence unique devient un attribut objet. Un provider traduit l'API, il ne la
+reflète pas : pour écrire du HCL, lisez la doc du provider.
 
-🧠 **Les dépendances sont implicites.** Terraform lit
-`proxmox_sdn_zone_simple.srv.id` dans le VNet, en déduit l'ordre
-de création, et l'ordre inverse pour la destruction. Vous n'écrivez jamais
-« crée la zone d'abord ».
+🧠 **Les dépendances sont implicites.** Terraform lit `proxmox_sdn_zone_simple.srv.id`
+dans le VNet et en déduit l'ordre de création, puis l'ordre inverse à la destruction.
 
 ### Le point délicat : l'apply SDN
 
-Le SDN est transactionnel (cf. TP 08 §7). Le provider expose une ressource dédiée,
-`proxmox_sdn_applier`, qui appelle exactement le
+Le SDN est transactionnel (TP 08 §7). La ressource `proxmox_sdn_applier` appelle le
 `PUT /cluster/sdn` que vous tapiez à la main :
 
 ```hcl
@@ -185,32 +179,25 @@ resource "proxmox_sdn_applier" "apply" {
 }
 ```
 
-🧠 **Deux appliers, parce que la création et la destruction n'ont pas le même
-ordre.** C'est un motif Terraform classique dès qu'une API a une notion de
-« commit » : on encadre les objets par deux sentinelles, l'une en amont du graphe,
-l'autre en aval. Prenez trente secondes pour dessiner le graphe de dépendances :
-c'est le meilleur exercice de compréhension de Terraform de toute la formation.
+🧠 **Deux appliers, parce que création et destruction n'ont pas le même ordre.**
+Motif classique dès qu'une API a une notion de commit : deux sentinelles encadrent les
+objets, une en amont du graphe, une en aval. Dessinez le graphe de dépendances.
 
-⚠️ **Épinglez le provider en `~> 0.111`.** Les ressources `sdn_vnet`, `sdn_subnet`
-et `sdn_applier` n'existent **qu'à partir de la v0.84.0** de `bpg/proxmox` : un
-`>= 0.80` peut se résoudre sur une version qui les ignore, et vous obtenez
-`Invalid resource type`.
+⚠️ **Provider en `~> 0.111`** : `sdn_vnet`, `sdn_subnet` et `sdn_applier` n'existent
+qu'à partir de la v0.84.0 de `bpg/proxmox`, sinon `Invalid resource type`.
 
-📌 **Pourquoi `proxmox_sdn_vnet` et pas `proxmox_virtual_environment_sdn_vnet` ?**
-Parce que la famille longue est **dépréciée** : elle fonctionne encore, mais
-`terraform validate` affiche un avertissement par ressource, et elle disparaîtra en
-v1.0 du provider. Les noms courts ont **exactement le même schéma** — la migration
-est un simple renommage.
+📌 **`proxmox_sdn_vnet` et pas `proxmox_virtual_environment_sdn_vnet`** : la famille
+longue est dépréciée (avertissement à chaque `validate`, suppression en v1.0). Même
+schéma, simple renommage.
 
-⚠️ **Attention, seul le SDN a été renommé.** Les VM et les conteneurs gardent leur
-nom long :
+⚠️ Seul le SDN a été renommé :
 
 | Objet | Nom de ressource |
 |---|---|
 | Zone, VNet, subnet, applier SDN | `proxmox_sdn_*` ✅ |
 | VM, conteneur, fichier, pool… | `proxmox_virtual_environment_*` (non déprécié) |
 
-🧠 **Vérifiez-le vous-même** plutôt que de me croire — c'est le réflexe utile :
+Vérifiez-le :
 
 ```bash
 terraform providers schema -json | jq -r '
@@ -300,18 +287,14 @@ resource "terraform_data" "push_fw" {
 }
 ```
 
-🧠 **Pourquoi un `local-exec` ici et pas au §4 ?** Parce qu'au §4 une ressource
-native existait. Le `local-exec` est le **dernier recours**, pas le réflexe : dès
-qu'une ressource couvre le besoin, elle gagne (état suivi, plan lisible,
-destruction gérée). Ici le provider ne couvre pas `/etc/pve/sdn/firewall/*.fw`, et
-on l'assume — avec un trigger explicite pour rester idempotent.
+🧠 **Pourquoi un `local-exec` ici et pas au §4 ?** Au §4 une ressource native
+existait. Dès qu'une ressource couvre le besoin, elle gagne (état suivi, plan lisible,
+destruction gérée). Le provider ne couvre pas `/etc/pve/sdn/firewall/*.fw` : on passe
+par SSH, avec un trigger explicite (`content_md5`) pour rester idempotent.
 
-**Tant que c'est idempotent et déclenché par un trigger explicite** (`content_md5`),
-c'est une pratique courante et acceptable.
-
-Alternative plus élégante si vous voulez du 100 % API : le provider
+Alternative 100 % API : le provider
 [`Mastercard/restapi`](https://registry.terraform.io/providers/Mastercard/restapi/latest/docs)
-permet d'appeler n'importe quel endpoint Proxmox en ressource Terraform.
+appelle n'importe quel endpoint Proxmox en ressource Terraform.
 
 ### ⚠️ Ce que `vsrv.fw` ne peut pas faire tout seul
 
@@ -343,27 +326,23 @@ FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vdmz-all -p tcp -dport 9100 -log
 FORWARD DROP -source +sdn/vdmz-all -dest +sdn/vsrv-all -log warning   # la DMZ n'approche pas SERVICES
 ```
 
-🧠 **C'est le piège annoncé au [TP 09 §5.2](09-firewall-inter-zones.md).** Une règle
-FORWARD est **unidirectionnelle**, et le firewall du VNet **destination** compte
-autant que celui du VNet source. Le conntrack gère le paquet *retour* d'une
-connexion acceptée — il ne gère pas le *sens initial*.
-
-Le réflexe à acquérir : **pour chaque flux de votre matrice, deux fichiers à
-modifier.** Une matrice de flux se lit toujours deux fois : une fois en colonnes
-(qui sort ?), une fois en lignes (qui entre ?).
+🧠 Le piège du [TP 09 §5.2](09-firewall-inter-zones.md) : une règle FORWARD est
+unidirectionnelle, et le firewall du VNet destination compte autant que celui du VNet
+source. Le conntrack gère le retour d'une connexion acceptée, pas le sens initial.
+Pour chaque flux de la matrice, deux fichiers à modifier.
 
 > 🎁 **Exercice** : faites générer `vint.fw` et `vdmz.fw` par Terraform, comme
-> `vsrv.fw` (un template chacun, un `local_file`, un `scp`). Vous découvrirez que trois
-> VNets ⇒ six blocs de règles à garder cohérents — et pourquoi on modularise.
+> `vsrv.fw` (un template chacun, un `local_file`, un `scp`). Trois VNets, six blocs de
+> règles à garder cohérents : c'est là qu'on modularise.
 
 ---
 
 ### `cluster-fw.tf` — le firewall Datacenter, lui, a ses ressources natives 🏛️
 
-Contraste instructif : pour le **VNet**, pas de ressource, donc `local-exec`. Pour le
-**Datacenter** (`/etc/pve/firewall/cluster.fw`, écrit à la main au TP 09), le provider
-couvre tout : options, alias, IPSet, groupes de sécurité, règles. `cluster-fw.tf` reprend
-donc l'intégralité du fichier du TP 09, en code.
+Pour le VNet, pas de ressource, donc `local-exec`. Pour le Datacenter
+(`/etc/pve/firewall/cluster.fw`, écrit à la main au TP 09), le provider couvre tout :
+options, alias, IPSet, groupes de sécurité, règles. `cluster-fw.tf` reprend le fichier
+du TP 09 en code.
 
 ```hcl
 resource "proxmox_virtual_environment_firewall_alias" "nets" {
@@ -407,24 +386,21 @@ resource "proxmox_virtual_environment_cluster_firewall" "options" {
 }
 ```
 
-🧠 **Ce que gagne la version Terraform** : ajouter un réseau (`net_services` aujourd'hui,
-`net_evpn` au jour 4) ou un flux (un port de plus) se fait en **une ligne dans un
-`local`**, et les 16 règles FORWARD se régénèrent. À la main, c'est 4 lignes à recopier
-sans faute par réseau — et un oubli est silencieux.
+🧠 Ajouter un réseau (`net_services`, `net_evpn`) ou un flux se fait en une ligne dans
+un `local` : les 16 règles FORWARD se régénèrent. À la main, c'est 4 lignes par réseau,
+et un oubli est silencieux.
 
 #### ⚠️ Reprise en main : Terraform ne cohabite pas avec le fichier du TP 09
 
-La ressource `firewall_rules` gère les règles **par position**. Si des règles écrites à
-la main existent déjà, le plan et la réalité divergent à chaque `apply`. On lui laisse
-donc la place, **avant le premier `apply`** :
+La ressource `firewall_rules` gère les règles par position : des règles écrites à la
+main font diverger plan et réalité à chaque `apply`. Avant le premier `apply` :
 
 ```bash
 ssh root@$PVE 'cp /etc/pve/firewall/cluster.fw /root/cluster.fw.tp09 && rm /etc/pve/firewall/cluster.fw'
 ```
 
-Les deux à trois secondes sans `cluster.fw` ne coupent rien : sans fichier, le firewall
-Datacenter est simplement désactivé, et le `host.fw` reste en place. L'`apply` recrée
-alias, IPSet, groupes, règles, **puis** les options en `DROP`.
+Sans fichier, le firewall Datacenter est désactivé et `host.fw` reste en place : rien
+ne coupe. L'`apply` recrée alias, IPSet, groupes, règles, puis les options en `DROP`.
 
 Vérification, une fois l'`apply` passé :
 
@@ -529,10 +505,9 @@ le bridge `vsrv` n'existe réellement sur le nœud (la ressource SDN est « cré
 que le fichier de config est écrit, pas quand l'apply est passé). Erreur typique :
 `bridge 'vsrv' does not exist`.
 
-⚠️ **Attention à la virgule.** En HCL, les attributs d'un bloc se séparent par des
-**retours à la ligne**, jamais par des virgules — `cpu { cores = 2, type = "..." }`
-ne compile pas. `terraform fmt` vous le dira tout de suite ; prenez l'habitude de le
-lancer avant `validate`.
+⚠️ En HCL, les attributs d'un bloc se séparent par des retours à la ligne, pas par
+des virgules : `cpu { cores = 2, type = "..." }` ne compile pas. `terraform fmt` le
+signale.
 
 ---
 
@@ -547,7 +522,7 @@ terraform plan -out=tf.plan
 Lisez le plan, et classez ce qu'il annonce en quatre familles : le **SDN** (zone,
 VNet, subnet, deux appliers), le **firewall VNet** (un fichier local, un
 `terraform_data`), le **firewall Datacenter** (alias, IPSet, groupes, règles, options)
-et les **2 guests**. Rien de ce qui est listé ne doit vous surprendre.
+et les **2 guests**.
 
 ```bash
 terraform apply tf.plan
@@ -604,8 +579,8 @@ INTERNAL ».
    ```
 4. `git commit -m "feat(fw): ouvre 9093 Alertmanager depuis INTERNAL — ticket INFRA-512"`
 
-**Trente secondes, tracé dans Git, revu en pull request.** Comparez avec cinq minutes de
-clics dans une interface et zéro trace.
+Trente secondes, tracé dans Git, revu en pull request. Contre cinq minutes de clics et
+zéro trace.
 
 ### Et le retour arrière ?
 
@@ -623,13 +598,11 @@ terraform plan -destroy
 terraform destroy
 ```
 
-Observez l'ordre : VM → firewall → subnet → VNet → zone. L'inverse exact de la
-création. C'est le graphe de dépendances qui travaille.
+Observez l'ordre : VM → firewall → subnet → VNet → zone, l'inverse de la création.
 
-⚠️ Le firewall **Datacenter** part aussi (`cluster-fw.tf`) : options, alias, règles.
-Reposez le fichier de référence **tout de suite** : d'une part le nœud reste sans
-firewall Datacenter, d'autre part `vint.fw` et `vdmz.fw` référencent l'alias
-`lan_salle`, qui vient d'être supprimé.
+⚠️ Le firewall Datacenter part aussi (`cluster-fw.tf`) : options, alias, règles.
+Reposez le fichier de référence tout de suite : le nœud est sans firewall Datacenter,
+et `vint.fw` / `vdmz.fw` référencent l'alias `lan_salle`, qui n'existe plus.
 
 ```bash
 ssh root@$PVE 'cp /root/formation/lab/firewall/cluster.fw.example /etc/pve/firewall/cluster.fw'
@@ -665,9 +638,9 @@ l'UI bloque le `destroy`.
 
 1. **Modulariser** : créez `modules/sdn-zone/` prenant en entrée `nom`, `subnet`,
    `regles` (une liste d'objets), et instanciez-le trois fois pour recréer `zint`,
-   `zdmz` et `zsrv` intégralement en code. C'est l'exercice le plus formateur du TP.
+   `zdmz` et `zsrv` intégralement en code.
 2. **Générer la matrice de flux** : un `output` qui produit un tableau markdown à partir
-   de la liste de règles. Livrable parfait pour un audit.
+   de la liste de règles.
 3. **CI** : un workflow GitHub Actions qui lance `terraform fmt -check`,
    `terraform validate` et `tflint` sur chaque pull request.
 4. **Détecter la dérive** : modifiez `vsrv.fw` à la main sur le nœud, puis

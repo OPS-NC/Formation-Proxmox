@@ -123,8 +123,7 @@ pct config $CTID
 pct exec $CTID -- ip -4 -br a show eth0      # l'adresse obtenue en DHCP
 ```
 
-📌 **Notez l'IP du conteneur** : on va la réutiliser depuis le PC. Pour la mettre dans
-une variable sur le nœud :
+📌 Notez l'IP du conteneur, elle sert depuis le PC. Dans une variable sur le nœud :
 
 ```bash
 IP=$(pct exec $CTID -- ip -4 -o a show eth0 | awk '{print $4}' | cut -d/ -f1)
@@ -145,7 +144,7 @@ cat /etc/pve/lxc/$CTID.conf
 pct enter $CTID
 ```
 
-Vous voilà dans Alpine. Comparez avec Debian :
+Comparez avec Debian :
 
 ```sh
 cat /etc/os-release
@@ -168,9 +167,8 @@ curl http://<IP-de-ct-alpine>/
 ```
 
 🧠 Alpine utilise **OpenRC** (pas systemd), **apk** (pas apt), **musl libc**
-(pas glibc) et **busybox**. Résultat : ~5 Mo d'image de base, un démarrage
-quasi instantané, et parfois des surprises quand un binaire compilé pour glibc
-refuse de tourner. Un excellent choix pour des services d'infra simples.
+(pas glibc) et **busybox**. Résultat : ~5 Mo d'image de base, un démarrage quasi
+instantané, et parfois un binaire compilé pour glibc qui refuse de tourner.
 
 ### Exécuter sans entrer
 
@@ -184,7 +182,7 @@ pct exec $CTID -- rc-status
 ## 6. Le second conteneur : Rocky Linux 🪨
 
 Alpine, c'est le minimalisme. Rocky Linux, c'est l'inverse : la famille RHEL, avec
-`dnf`, `systemd`, SELinux et `firewalld`. Deux philosophies dans le même hyperviseur.
+`dnf`, `systemd`, SELinux et `firewalld`.
 
 ```bash
 CTID2=112
@@ -221,7 +219,7 @@ IP2=$(pct exec $CTID2 -- ip -4 -o a show eth0 | awk '{print $4}' | cut -d/ -f1)
 curl -s http://$IP2/
 ```
 
-Et depuis votre PC, comme pour Alpine :
+Depuis votre PC :
 
 ```bash
 curl http://<IP-de-ct-rocky>/
@@ -245,19 +243,18 @@ done
 pct list
 ```
 
-Vous devriez constater un ordre de grandeur d'écart :
+Un ordre de grandeur d'écart :
 
 ```
    Alpine  →  ~ 60 Mo de disque,   ~ 10 Mo de RAM,  démarrage < 1 s
    Rocky   →  ~ 900 Mo de disque,  ~ 90 Mo de RAM,  démarrage ~ 4 s
 ```
 
-🧠 **Ce n'est pas « Alpine est mieux ».** Rocky vous apporte un écosystème RHEL complet,
-des paquets signés, un cycle de vie de 10 ans, et la compatibilité avec les logiciels
-d'entreprise. Alpine vous apporte de la densité. Le bon choix dépend de ce que vous
-hébergez, pas d'un classement.
+🧠 Rocky apporte l'écosystème RHEL : paquets signés, cycle de vie de 10 ans,
+compatibilité avec les logiciels d'entreprise. Alpine apporte la densité. Le choix
+dépend de ce que vous hébergez.
 
-Côté hôte, observez la densité globale :
+Côté hôte :
 
 ```bash
 top -bn1 | head -12

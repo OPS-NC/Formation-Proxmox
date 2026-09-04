@@ -27,10 +27,10 @@ la brancher sur `vmbr0` (le LAN de la salle).
              172.30.30.2 ──→ ☁
 ```
 
-> La VM est branchée **directement sur le LAN de la salle** et prend son adresse **en
-> DHCP**, comme votre PC. On la relèvera dans le Summary de la VM une fois l'agent
-> installé (§5). Si la salle n'a pas de DHCP, le formateur vous attribue une adresse
-> statique dans la plage `.200`–`.250` — voir [TP 00 §4](00-prerequis-topologie.md).
+> La VM est branchée **sur le LAN de la salle** et prend son adresse **en DHCP**. On la
+> relève dans le Summary de la VM une fois l'agent installé (§5). Sans DHCP dans la
+> salle, le formateur attribue une adresse statique dans `.200`–`.250`
+> ([TP 00 §4](00-prerequis-topologie.md)).
 
 ---
 
@@ -94,9 +94,9 @@ grossit indéfiniment.
 | Type | `host` |
 
 🧠 **`host` vs `x86-64-v2-AES`** : `host` expose toutes les instructions du CPU physique
-(AES-NI, AVX…) → meilleures performances. Mais la migration à chaud vers un nœud au CPU
+(AES-NI, AVX…) → meilleures performances, mais la migration à chaud vers un nœud au CPU
 différent devient impossible. Au **jour 4**, en cluster hétérogène, on repassera en
-`x86-64-v2-AES`. Retenez ce compromis, c'est une question d'entretien d'embauche.
+`x86-64-v2-AES`.
 
 ### Onglet **Memory**
 
@@ -124,7 +124,7 @@ quand il en manque. Utile en lab surchargé, à éviter pour les bases de donné
 
 ## 3. La même chose en CLI 🖥️
 
-Parce que c'est ce que vous ferez en vrai, et parce que c'est reproductible.
+Reproductible, et c'est ce que vous ferez en production.
 
 ```bash
 VMID=101
@@ -286,9 +286,9 @@ vzdump $VMID --storage local --mode snapshot --compress zstd --notes-template '{
 ls -lh /var/lib/vz/dump/
 ```
 
-🧠 Gardez ce réflexe : au **jour 4**, les nœuds sont réinstallés avant la mise en
-cluster. Une archive `vzdump` déposée sur un stockage **externe** au nœud (le NFS de
-votre poste, TP 14) est ce qui permet de retrouver une VM de l'autre côté.
+🧠 Au **jour 4**, les nœuds sont réinstallés avant la mise en cluster. Une archive
+`vzdump` sur un stockage **externe** au nœud (le NFS de votre poste, TP 14) est ce qui
+permet de retrouver une VM de l'autre côté.
 
 ### Cloner
 
@@ -319,7 +319,7 @@ bridge link show | grep "tap$VMID"
 ```
 
 🧠 **`tap101i0`** = interface TAP de la VM `101`, carte `net0`, branchée sur `vmbr0`.
-Cette nomenclature vous sauvera au TP 08 quand il faudra tracer un paquet.
+Utile au TP 08 pour tracer un paquet.
 
 ```bash
 # Capturer le trafic de cette VM en direct

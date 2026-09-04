@@ -87,8 +87,8 @@ nœud** (`<nœud>` = `pve3` → `front-pve3`) pour vous y retrouver dans la vue 
 >
 > C'est un choix courant et défendable : une base de données a ses propres mécanismes
 > de réplication, et beaucoup d'équipes préfèrent un disque local rapide + une
-> réplication applicative plutôt qu'un stockage distribué sous la base. Ce qui n'est
-> **pas** défendable, c'est de ne pas le savoir.
+> réplication applicative plutôt qu'un stockage distribué sous la base. Ce qui ne se
+> défend pas, c'est de l'ignorer.
 >
 > **Le formateur vous demandera** : « quel est votre RPO et votre RTO sur `data` ? »
 > La bonne réponse cite la fréquence du job de sauvegarde et le temps de restauration
@@ -111,7 +111,7 @@ nœud** (`<nœud>` = `pve3` → `front-pve3`) pour vous y retrouver dans la vue 
 
 ## 🧪 Les épreuves de recette
 
-Le formateur passera sur chaque poste et exécutera ces tests. **Préparez-les.**
+Le formateur exécutera ces tests sur chaque poste. Préparez-les.
 
 ### Épreuve 1 — Chaîne applicative ✅
 
@@ -160,10 +160,10 @@ Le formateur coupe l'alimentation d'un nœud hébergeant `front` ou `app`.
 → `ceph -s` passe en `HEALTH_WARN` puis se reconstruit seul jusqu'à `HEALTH_OK`.
 → Aucune donnée perdue.
 
-**Question piège du formateur** : « et si j'avais coupé le nœud de `data` ? »
-Réponse attendue : elle ne redémarre pas ailleurs — son disque est sur `local-lvm`,
-donc local à ce nœud. On la restaure depuis PBS (épreuve 6), et on assume le RPO
-correspondant. Répondre « elle bascule aussi » est **la** faute à ne pas commettre.
+**Question du formateur** : « et si j'avais coupé le nœud de `data` ? »
+Réponse attendue : elle ne redémarre pas ailleurs, son disque est sur `local-lvm`. On la
+restaure depuis PBS (épreuve 6) et on assume le RPO correspondant. « Elle bascule aussi »
+est la faute à éviter.
 
 ```bash
 ceph -s
@@ -284,23 +284,21 @@ grep -rniE 'password|secret|token|BEGIN .*PRIVATE KEY' $R/ \
 > ⚠️ **Avant tout : `ceph -s` doit être vert.** Si Ceph est dégradé, la HA ne servira à
 > rien et vous perdrez des points sur deux épreuves.
 
-1. **Commencez par le schéma et la matrice de flux.** Écrire les règles avant d'avoir
-   décidé de la politique, c'est se condamner à bricoler.
+1. **Commencez par le schéma et la matrice de flux.** Écrire les règles avant la
+   politique, c'est bricoler.
 2. **Faites tourner l'ensemble avant d'optimiser.** Un truc moche qui marche vaut mieux
    qu'un truc élégant à moitié fini.
-3. **`git commit` souvent.** Vous allez casser quelque chose. C'est certain.
-4. **Testez le firewall en dernier**, une fois que tout fonctionne. Sinon vous
-   passerez votre temps à vous demander si le problème vient du réseau ou des règles.
-5. **La documentation, ce n'est pas la dernière tâche** : écrivez-la au fur et à mesure,
-   sinon vous n'aurez plus le temps.
-6. **Bloquez 10 minutes pour l'épreuve de restauration.** C'est 15 points, et c'est
-   la seule preuve qui compte vraiment.
+3. **`git commit` souvent.** Vous allez casser quelque chose.
+4. **Testez le firewall en dernier**, une fois que tout fonctionne. Sinon vous ne saurez
+   jamais si le problème vient du réseau ou des règles.
+5. **Écrivez la documentation au fur et à mesure**, sinon vous n'aurez plus le temps.
+6. **Bloquez 10 minutes pour l'épreuve de restauration.** C'est 15 points.
 
 ---
 
 ## 🎓 Ce que vous emportez
 
-En quatre jours, vous êtes passés d'une machine nue à :
+En quatre jours, d'une machine nue à :
 
 ```
    ┌───────────────────────────────────────────────────────────────┐
@@ -314,19 +312,17 @@ En quatre jours, vous êtes passés d'une machine nue à :
    └───────────────────────────────────────────────────────────────┘
 ```
 
-Mais surtout, vous avez acquis quelques réflexes qui valent plus que les commandes :
+Et quelques réflexes qui valent plus que les commandes :
 
 - 🧠 **Lire un message d'erreur en entier** avant de chercher sur Internet.
 - 🧠 **Faire un schéma avant de configurer.** Toujours.
 - 🧠 **Une sauvegarde non restaurée n'existe pas.**
 - 🧠 **Fermer par défaut**, ouvrir par exception, documenter chaque exception.
-- 🧠 **Savoir énoncer les limites de son architecture** vaut mieux que de prétendre
-  qu'elle est parfaite.
+- 🧠 **Énoncer les limites de son architecture** plutôt que la prétendre parfaite.
 - 🧠 **Si vous l'avez fait deux fois à la main, scriptez-le.**
-- 🧠 **Anticipez le partitionnement.** Cinq secondes sur `maxvz` à l'installation ont
-  économisé quarante minutes de chirurgie LVM au jour 4.
-- 🧠 **Réplication ≠ sauvegarde.** Ceph copie fidèlement vos suppressions, en trois
-  exemplaires.
+- 🧠 **Anticipez le partitionnement.** Cinq secondes sur `maxvz` à l'installation,
+  quarante minutes de chirurgie LVM économisées au jour 4.
+- 🧠 **Réplication ≠ sauvegarde.** Ceph copie vos suppressions, en trois exemplaires.
 
 ---
 
@@ -343,12 +339,11 @@ Mais surtout, vous avez acquis quelques réflexes qui valent plus que les comman
 
 ---
 
-**Bravo, et merci pour ces quatre jours. 🎉**
+**Merci pour ces quatre jours. 🎉**
 
-Une dernière chose : la documentation officielle est excellente, complète, et
-disponible **hors ligne dans votre interface** (bouton *Documentation*). La grande
-majorité des questions que vous vous poserez y ont déjà une réponse. Prenez le réflexe
-d'y aller en premier.
+La documentation officielle est complète et disponible **hors ligne dans votre
+interface** (bouton *Documentation*). La plupart de vos questions y ont déjà une réponse :
+allez-y en premier.
 
 📖 <https://pve.proxmox.com/pve-docs/>
 

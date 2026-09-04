@@ -1,9 +1,8 @@
 # SDN Proxmox VE 9 — la référence complète 🌐
 
-> Ce document n'est pas un TP. C'est **la carte du territoire** : tout ce que le SDN
-> de Proxmox VE 9 sait faire aujourd'hui, ce que chaque brique apporte réellement,
-> et — dernière partie — **pourquoi notre lab utilise EVPN** et pas autre chose.
-> À lire une fois avant le jour 2, à relire avant le jour 4.
+> Ce document n'est pas un TP. Il décrit ce que le SDN de Proxmox VE 9 sait faire,
+> ce que chaque brique apporte, et **pourquoi ce lab utilise EVPN** (§11).
+> À lire avant le jour 2, à relire avant le jour 4.
 >
 > 📖 Doc officielle : <https://pve.proxmox.com/pve-docs/chapter-pvesdn.html>
 
@@ -11,10 +10,9 @@
 
 ## 1. À quoi sert le SDN, concrètement ?
 
-Avant le SDN, configurer le réseau d'un cluster Proxmox voulait dire :
-éditer `/etc/network/interfaces` **sur chaque nœud**, à la main, en espérant ne pas
-avoir fait de faute de frappe sur le nœud 5. Un VLAN oublié = une VM injoignable
-après migration.
+Sans SDN, le réseau d'un cluster Proxmox se configure dans `/etc/network/interfaces`,
+**sur chaque nœud**, à la main. Un VLAN oublié sur un nœud = une VM injoignable après
+migration.
 
 Le SDN apporte trois choses :
 
@@ -61,8 +59,7 @@ le subnet c'est l'étiquette qu'on colle dessus.*
 ### 2.1 Zone `Simple` — le bac à sable local 🪣
 
 Crée un bridge Linux **local au nœud**, isolé du réseau physique. Proxmox peut y
-poser une gateway et faire du **SNAT** vers l'extérieur : c'est le « routeur maison »
-intégré.
+poser une gateway et faire du **SNAT** vers l'extérieur.
 
 ```
      VM ──┐
@@ -140,30 +137,30 @@ que des paquets IP entre nœuds ; il ignore totalement les VLAN des VM.
 
 | Apporte | Limite |
 |---|---|
-| L2 étendu **sans toucher au switch** ✨ | **MTU −50** : il faut baisser le MTU des VM à 1450 (ou monter l'underlay à 1550+) |
+| L2 étendu **sans toucher au switch** | **MTU −50** : il faut baisser le MTU des VM à 1450 (ou monter l'underlay à 1550+) |
 | Fonctionne au-dessus de n'importe quel réseau IP | Pas de plan de contrôle : le *flooding* BUM se fait vers tous les peers |
 | Jusqu'à 16 M de VNI | **Pas de routage** : pas de gateway, pas de sortie Internet native |
 
-🧠 VXLAN seul = un gros switch virtuel distribué. Utile, mais vos VM n'ont
-toujours pas de passerelle. Pour cela → EVPN.
+🧠 VXLAN seul = un switch virtuel distribué. Les VM n'ont toujours pas de passerelle :
+pour cela, EVPN.
 
 ---
 
 ### 2.5 Zone `EVPN` — l'overlay L3 routé 👑
 
-VXLAN pour le transport + **BGP EVPN** pour le plan de contrôle + un **VRF** par zone
-pour le routage. C'est le modèle des datacenters modernes, et Proxmox l'embarque via
+VXLAN pour le transport, **BGP EVPN** pour le plan de contrôle, un **VRF** par zone
+pour le routage. Le modèle des datacenters actuels, embarqué dans Proxmox via
 **FRRouting**.
 
-Ce que ça change tout :
+Ce que ça change :
 
 - **Anycast gateway** : la même IP de gateway (`10.60.10.1`) et la **même MAC**
   existent simultanément sur *tous* les nœuds. Une VM parle toujours à sa gateway
-  locale, même après migration à chaud. Aucune interruption.
+  locale, même après migration à chaud.
 - **Routage inter-VNet** : deux VNets de la même zone EVPN se routent entre eux
   automatiquement, dans le VRF de la zone.
 - **Exit nodes** : un ou plusieurs nœuds désignés annoncent une **route par défaut**
-  dans le fabric EVPN. C'est la porte de sortie vers le monde réel.
+  dans le fabric EVPN : la porte de sortie.
 - **SNAT sur exit node** : les paquets sortants sont natés derrière l'IP du nœud
   de sortie → Internet fonctionne sans que le routeur amont connaisse vos subnets.
 
@@ -222,8 +219,8 @@ Ce que ça change tout :
 
 ## 3. Les Fabrics (nouveauté PVE 9) 🕸️
 
-Une **fabric** construit l'**underlay routé** entre les nœuds — c'est-à-dire le
-réseau IP qui transporte les tunnels VXLAN — sans que vous écriviez une ligne de FRR.
+Une **fabric** construit l'**underlay routé** entre les nœuds (le réseau IP qui
+transporte les tunnels VXLAN) sans écrire une ligne de FRR.
 
 | Fabric | Protocole | Quand l'utiliser |
 |---|---|---|
@@ -232,17 +229,16 @@ réseau IP qui transporte les tunnels VXLAN — sans que vous écriviez une lign
 | **BGP** | eBGP *unnumbered*, un ASN par nœud, BFD | Fabric BGP-to-the-host, la référence en DC moderne |
 | **WireGuard** | tunnels chiffrés + routage dynamique par-dessus | Nœuds répartis sur plusieurs sites / Internet |
 
-Chaque nœud reçoit une **IP de loopback** (`dummy` interface) qui sert de VTEP.
-Avantage : le tunnel VXLAN ne dépend plus d'une interface physique précise — s'il y a
-deux chemins, l'ECMP les utilise.
+Chaque nœud reçoit une **IP de loopback** (interface `dummy`) qui sert de VTEP : le
+tunnel VXLAN ne dépend plus d'une interface physique, et l'ECMP utilise les chemins
+multiples.
 
-En PVE 9.1, les fabrics sont visibles dans l'arbre des ressources de l'interface web,
-avec routes, voisins et interfaces — le debug devient nettement plus agréable.
+En PVE 9.1, les fabrics apparaissent dans l'arbre des ressources de l'interface web,
+avec routes, voisins et interfaces.
 
-🧠 **Dans notre lab** : les 6 nœuds sont sur **un seul segment L2 plat**. L'underlay
-est donc déjà trivialement fonctionnel (tout le monde se ping en direct). Une fabric
-n'apporterait rien de plus, sinon de la complexité. On la présente, on ne la déploie
-pas — sauf en bonus (TP 17) pour voir la mécanique WireGuard.
+🧠 **Dans ce lab** : les 6 nœuds sont sur **un seul segment L2 plat**. L'underlay
+fonctionne déjà (tout le monde se ping en direct), une fabric n'ajouterait que de la
+complexité. On la présente sans la déployer, sauf en bonus (TP 17) pour WireGuard.
 
 ---
 
@@ -262,9 +258,8 @@ evpn: evpnctl
 	peers 172.30.30.151,172.30.30.152,172.30.30.153,172.30.30.154,172.30.30.155,172.30.30.156
 ```
 
-Un seul ASN pour tout le monde ⇒ **iBGP full-mesh**. Avec 6 nœuds c'est parfaitement
-raisonnable (15 sessions). Au-delà de ~10 nœuds, on passe à une fabric BGP avec
-des route-reflectors ou de l'eBGP unnumbered.
+Un seul ASN pour tout le monde ⇒ **iBGP full-mesh** : 15 sessions pour 6 nœuds,
+raisonnable. Au-delà de ~10 nœuds, fabric BGP avec route-reflectors ou eBGP unnumbered.
 
 ---
 
@@ -272,7 +267,7 @@ des route-reflectors ou de l'eBGP unnumbered.
 
 | Plugin | Usage |
 |---|---|
-| **PVE (interne)** | Base intégrée dans `/etc/pve/priv/ipam.db`. Zéro dépendance. C'est notre choix. |
+| **PVE (interne)** | Base intégrée dans `/etc/pve/priv/ipam.db`. Zéro dépendance. Le choix du lab. |
 | **NetBox** | Source de vérité externe (URL + token API). Proxmox y réserve les IP. |
 | **phpIPAM** | Idem avec phpIPAM. |
 
@@ -306,18 +301,16 @@ désactivé** (`systemctl disable --now dnsmasq`), sinon conflit de ports.
 ### DNS
 On déclare un serveur DNS (plugin **PowerDNS** aujourd'hui) au niveau de la zone,
 plus un `dnszone`. Chaque IP allouée crée un enregistrement A (et un PTR si
-`reversedns` est configuré). Pratique, mais optionnel : dans ce lab, on s'en passe
-pour ne pas ajouter un PowerDNS à maintenir.
+`reversedns` est configuré). Optionnel : ce lab s'en passe pour ne pas maintenir un
+PowerDNS.
 
 ---
 
 ## 7. SNAT et sortie Internet — le point qui coince 🔥
 
-C'est **le** sujet qui fait perdre des heures. Décortiquons.
-
 ### Cas zone `Simple`
-SNAT est réalisé **localement** sur le nœud, vers son interface de sortie. Simple,
-efficace, aucun piège. La gateway du subnet est portée par le bridge local.
+SNAT est réalisé **localement** sur le nœud, vers son interface de sortie. La gateway
+du subnet est portée par le bridge local. Aucun piège.
 
 ### Cas zone `EVPN`
 SNAT est réalisé **sur les exit nodes**. Le chemin est :
@@ -337,9 +330,8 @@ SNAT est réalisé **sur les exit nodes**. Le chemin est :
    routeur 172.30.30.2 ──→ ☁
 ```
 
-Et au retour, le routeur renvoie à `172.30.30.151`, qui dé-nate et réinjecte dans le
-VXLAN. **Tout repose sur le fait que le paquet retour arrive sur le même nœud qui a
-naté.**
+Au retour, le routeur renvoie à `172.30.30.151`, qui dé-nate et réinjecte dans le
+VXLAN. **Le paquet retour doit arriver sur le nœud qui a naté.**
 
 ### 🪤 Le piège n°1 : plusieurs exit nodes sans exit node primaire
 
@@ -349,16 +341,15 @@ Mais le SNAT est **stateful** (conntrack, local à chaque nœud). Un paquet reto
 tombe sur le mauvais nœud est jeté. Symptôme : « ça marche une fois sur deux »,
 « le ping passe mais pas le HTTPS ».
 
-✅ **Solution** : `exitnodes-primary pve1`. On passe en **actif/passif** : tout sort
-par pve1 ; si pve1 tombe, pve2 reprend. C'est exactement ce que la doc Proxmox
-recommande dès qu'on active SNAT.
+✅ **Solution** : `exitnodes-primary pve1`. **Actif/passif** : tout sort par pve1 ;
+si pve1 tombe, pve2 reprend. C'est ce que recommande la doc Proxmox dès que SNAT est
+actif.
 
 ### 🪤 Le piège n°2 : le MTU
 
 Underlay 1500 − 50 octets d'entête VXLAN = **1450 utilisables**. Si la VM émet à 1500
 avec le bit DF, le paquet est jeté et l'ICMP « fragmentation needed » se perd souvent.
-Symptôme signature : **le ping passe, SSH se connecte, puis gèle**, `apt update` reste
-bloqué à 0 %.
+Symptôme : **le ping passe, SSH se connecte puis gèle**, `apt update` reste à 0 %.
 
 ✅ Trois options, par ordre de préférence :
 1. Laisser la zone à MTU 1450 et donner `mtu=1` à la carte virtio de la VM
@@ -374,19 +365,17 @@ Par défaut, l'hôte Proxmox n'a pas de route vers le VRF. Si vous voulez que le
 joindre les VM via `pve1` (route statique `10.60.0.0/16 → 172.30.30.151`, TP 17 §8.2).
 
 ### 🪤 Le piège n°4 : FRR absent
-Une zone EVPN sans `frr` + `frr-pythontools` sur **tous** les nœuds ne montera jamais
-ses sessions BGP. `pvesh set /cluster/sdn` passera sans erreur visible. Vérifiez avec
+Sans `frr` + `frr-pythontools` sur **tous** les nœuds, les sessions BGP ne montent
+jamais, et `pvesh set /cluster/sdn` passe sans erreur visible. Vérifiez avec
 `vtysh -c "show bgp l2vpn evpn summary"`.
 
 ---
 
 ### ✅ Récapitulatif : ce qu'une VM peut faire, et depuis quel nœud
 
-C'est **la** question que tout le monde se pose au TP 17, et à laquelle les §2.5 et §7
-répondent séparément sans jamais l'affirmer. Voici la synthèse.
-
-Prenons une VM de `vprod` (`10.60.10.42`) hébergée sur **pve4**, qui n'est **pas** un
-exit node (les exit nodes sont `pve1` et `pve2`, primaire `pve1`) :
+Synthèse des §2.5 et §7, pour le TP 17. Une VM de `vprod` (`10.60.10.42`) hébergée
+sur **pve4**, qui n'est **pas** un exit node (exit nodes : `pve1` et `pve2`, primaire
+`pve1`) :
 
 | Elle veut joindre… | Verdict | Par quel mécanisme |
 |---|:---:|---|
@@ -396,7 +385,7 @@ exit node (les exit nodes sont `pve1` et `pve2`, primaire `pve1`) :
 | une VM de `vdb` | ✅ | routage inter-VNet, **si** `vdb.fw` autorise le sens (cf. §8) |
 | Internet **depuis `vdb`** | ❌ | `snat` non coché sur le subnet — voulu |
 
-Et dans l'autre sens — c'est là que ça surprend :
+Dans l'autre sens :
 
 | Qui veut joindre la VM | Verdict | Pourquoi |
 |---|:---:|---|
@@ -404,18 +393,17 @@ Et dans l'autre sens — c'est là que ça surprend :
 | le **shell de pve4** lui-même | ❌ **sans `exitnodes-local-routing`** | l'hôte n'a pas de route vers le VRF (cf. piège n°3) |
 | un poste du LAN de la salle | ✅ **via une route statique vers un exit node** | `ip route add 10.60.0.0/16 via 172.30.30.151` sur le poste, `exitnodes-local-routing` sur la zone (TP 17 §8.2). Pour une *publication* Internet, en revanche : DNAT ou reverse-proxy (cf. §12) |
 
-🪤 **Le piège de démonstration** : le formateur teste depuis le shell de son nœud,
-`ping 10.60.10.42` échoue, et tout le monde conclut que l'EVPN est cassé — alors que
-la VM sort très bien sur Internet. Testez **depuis une autre VM**, pas depuis l'hôte.
+🪤 Tester depuis le shell d'un nœud non-exit : `ping 10.60.10.42` échoue et on conclut
+que l'EVPN est cassé, alors que la VM sort très bien sur Internet. Testez **depuis une
+autre VM**, pas depuis l'hôte.
 
-🎯 **Les deux réponses courtes**, à savoir donner sans hésiter :
+Deux réponses courtes :
 
-1. **Oui**, deux VM du même VNet sur deux nœuds différents se parlent. C'est
-   exactement ce que la zone `VXLAN` pure apportait déjà — la zone `Simple`, elle,
-   ne le fait **pas** (deux îlots homonymes).
-2. **Oui**, une VM sort sur Internet **sans être hébergée sur un exit node**. C'est
-   la définition même d'un exit node : *« The configured nodes will announce a
-   default route in the EVPN network. »* Aucune VM n'a besoin d'y être.
+1. **Oui**, deux VM du même VNet sur deux nœuds différents se parlent. La zone `VXLAN`
+   pure le fait aussi ; la zone `Simple` ne le fait **pas** (deux îlots homonymes).
+2. **Oui**, une VM sort sur Internet **sans être hébergée sur un exit node**. C'est la
+   définition d'un exit node : *« The configured nodes will announce a default route
+   in the EVPN network. »*
 
 ### La preuve, sur un nœud qui n'est PAS exit node
 
@@ -428,35 +416,30 @@ ip -4 route show vrf vrf_zevpn                       # ⭐ doit contenir « defa
 bridge fdb show | grep vxlan                         # les VTEP distants
 ```
 
-Si `ip -4 route show vrf vrf_zevpn` affiche une `default` en `proto bgp` sur un nœud
-qui n'est pas exit node, la question n°2 est **prouvée sur pièce**.
+Une `default` en `proto bgp` dans `ip -4 route show vrf vrf_zevpn` sur un nœud non-exit
+répond à la question n°2.
 
 ```bash
 iptables -t nat -S POSTROUTING | grep 10.60          # → VIDE, et c'est NORMAL
 ```
 
-🪤 **Ne cherchez pas de règle SNAT sur un nœud non-exit : il n'y en a pas.** Le code
-de `pve-network` (`EvpnPlugin.pm`) ne pose la règle **que si le nœud courant fait
-partie des gateway nodes**. Un stagiaire qui lance cette commande sur son propre nœud
-la trouvera vide et conclura à tort que sa configuration est cassée. C'est sur
-**l'exit node primaire** qu'il faut regarder.
+🪤 **Pas de règle SNAT sur un nœud non-exit, et c'est normal.** `pve-network`
+(`EvpnPlugin.pm`) ne pose la règle **que sur les gateway nodes**. Regardez sur
+**l'exit node primaire**.
 
 ---
 
 ## 8. Firewall au niveau VNet 🛡️
 
-Depuis les versions récentes, on peut poser des règles **directement sur un VNet**,
-sans toucher aux VM. Fichier : `/etc/pve/sdn/firewall/<vnet>.fw`.
+Des règles **directement sur un VNet**, sans toucher aux VM. Fichier :
+`/etc/pve/sdn/firewall/<vnet>.fw`.
 
-**Trois choses à savoir :**
-
-1. Seule la direction **`FORWARD`** existe (un VNet n'a pas d'« entrant » ni de
-   « sortant » : c'est du trafic qui traverse). Le trafic est bidirectionnel : il faut
-   **deux règles** pour autoriser un aller-retour… sauf que le suivi de connexion
-   gère le retour, donc en pratique une règle par sens de *connexion*.
+1. Seule la direction **`FORWARD`** existe : un VNet n'a ni entrant ni sortant, c'est
+   du trafic qui traverse. Le suivi de connexion gère le retour : une règle par sens
+   de *connexion* suffit.
 2. Ça ne fonctionne **qu'avec le firewall nftables** (`proxmox-firewall`).
-   Le vieux `pve-firewall` iptables **ignore silencieusement** ces règles. 🪤
-3. Proxmox génère automatiquement des **IPSets** utilisables dans les règles :
+   `pve-firewall` (iptables) **ignore silencieusement** ces règles. 🪤
+3. Proxmox génère des **IPSets** utilisables dans les règles :
 
 | IPSet | Contenu |
 |---|---|
@@ -488,7 +471,7 @@ FORWARD ACCEPT -source +sdn/vprod-gateway -dest +sdn/vprod-all -log nolog
    └─ VM / CT     <vmid>.fw           IN / OUT
 ```
 
-Un paquet doit être accepté à **tous** les niveaux traversés. Le plus restrictif gagne.
+Un paquet doit être accepté à **tous** les niveaux traversés.
 
 ---
 
@@ -619,7 +602,7 @@ Contraintes :
    └──────────────────────────────────────────────────────────────┘
 ```
 
-**Les 5 réglages qui font que ça marche** (et dont l'oubli explique 95 % des échecs) :
+**Les 5 réglages qui font que ça marche :**
 
 1. `frr` + `frr-pythontools` installés sur **tous** les nœuds
 2. `exitnodes-primary` défini dès que `snat` est actif
@@ -631,13 +614,11 @@ Contraintes :
 
 ## 12. Ce que le SDN Proxmox ne fait pas (encore) 🚧
 
-Pour être honnête et éviter les mauvaises surprises :
-
 - **Pas de load-balancer** ni d'IP flottante managée (à faire avec keepalived dans une VM).
-- **Pas d'ECMP avec SNAT** : c'est actif/passif, point.
+- **Pas d'ECMP avec SNAT** : actif/passif.
 - **Pas de QoS / shaping par VNet** (le shaping reste au niveau de la carte VM).
 - **IPAM en tech preview** sur certains aspects : à sauvegarder avec le reste de `/etc/pve`.
-- **Le firewall VNet exige nftables** — pensez à migrer, sinon vos règles sont ignorées.
+- **Le firewall VNet exige nftables**, sinon les règles sont ignorées.
 - **Pas de NAT entrant (DNAT) managé** : la publication d'un service depuis Internet se
   fait à la main sur l'exit node, ou via un reverse-proxy dans une VM. (TP 09 bonus.)
 

@@ -2,10 +2,8 @@
 
 ⏱️ **1 h 15** · Jour 2
 
-Objectif : arrêter de chercher « où est ce réglage ». Faire le tour complet de
-l'interface, comprendre la logique **Datacenter / Nœud / Guest**, et maîtriser les
-outils d'organisation (pools, tags, permissions, tokens) dont on va dépendre pendant
-trois jours.
+Objectif : faire le tour de l'interface, comprendre la logique **Datacenter / Nœud /
+Guest**, et prendre en main pools, tags, permissions et tokens.
 
 📖 Doc : <https://pve.proxmox.com/pve-docs/chapter-pveum.html>
 
@@ -13,8 +11,7 @@ trois jours.
 
 ## 1. La logique des trois niveaux 🧠
 
-Toute l'interface tient dans une question : **« à quel périmètre s'applique ce
-réglage ? »**
+Une seule question : **à quel périmètre s'applique ce réglage ?**
 
 ```
    ┌─ DATACENTER ──────────────────────────────────────────────────────┐
@@ -52,8 +49,8 @@ Si c'est spécifique à une machine → guest.
 | **Pool View** | par pool — ⭐ celle qu'on utilisera en cluster |
 | **Tag View** | par tag — regroupe par étiquette |
 
-🌐 **Testez les quatre maintenant.** Dans le cluster à six nœuds du jour 4, la *Pool
-View* et la *Tag View* seront les seules qui permettent de s'y retrouver.
+🌐 Testez les quatre. Au jour 4, en cluster, la *Pool View* et la *Tag View* seront
+les plus utiles.
 
 ### La barre du haut
 
@@ -66,15 +63,15 @@ View* et la *Tag View* seront les seules qui permettent de s'y retrouver.
 
 ### Le bandeau du bas : les tâches ⭐
 
-C'est le panneau le plus utile et le plus ignoré.
+Le panneau le plus utile en dépannage, et le plus ignoré.
 
 | Onglet | Contenu |
 |---|---|
 | **Tasks** | Toutes les opérations, en cours et passées, avec leur log |
 | **Cluster log** | Les événements du cluster |
 
-🌐 **Double-cliquez sur une tâche** → vous obtenez sa sortie complète. C'est **là** que
-se trouve la vraie erreur quand une action échoue avec un message vague.
+🌐 Double-cliquez sur une tâche pour lire sa sortie complète : c'est là qu'est la vraie
+erreur quand l'UI affiche un message vague.
 
 ```bash
 # La même chose en CLI
@@ -119,12 +116,11 @@ pvesh get /cluster/tasks
 | Tag Style Override | Couleur des tags ⬇ | ⭐ |
 | U2F / WebAuthn | Second facteur | bonus |
 
-🧠 **Regardez *Next Free VMID Range*** sans le modifier. C'est cette option qui
-alimente le VMID proposé par défaut dans *Create VM*, et l'API `pvesh get
-/cluster/nextid`. Aux jours 1-3, on suit le plan de VMID du TP 00 pour les machines
-créées à la main (Terraform, lui, prend déjà le prochain libre) ; au jour 4,
-dans le cluster partagé, c'est **ce mécanisme** qui évitera que deux personnes créent la
-VM 105 en même temps : on laissera Proxmox choisir.
+🧠 *Next Free VMID Range* alimente le VMID proposé par *Create VM* et
+`pvesh get /cluster/nextid`. Aux jours 1-3, les machines créées à la main suivent le plan
+du TP 00 (Terraform prend déjà le prochain libre). Au jour 4, en cluster partagé, on
+laissera Proxmox choisir : c'est ce qui évite que deux personnes créent la VM 105 en
+même temps.
 
 ### 3.2 Notifications
 
@@ -144,8 +140,8 @@ Depuis PVE 8.1, les notifications passent par un système de **cibles** (targets
    └──────────┘                            └──────────────┘
 ```
 
-Créez une cible **Gotify** ou **SMTP** si le formateur en fournit une, sinon
-observez simplement la cible `mail-to-root` par défaut et son matcher.
+Créez une cible **Gotify** ou **SMTP** si le formateur en fournit une, sinon observez
+la cible `mail-to-root` par défaut et son matcher.
 
 ```bash
 pvesh get /cluster/notifications/endpoints/sendmail
@@ -176,10 +172,9 @@ pvesh get /pools/lab
 
 🌐 Basculez en **Pool View**. Vos machines sont regroupées.
 
-🧠 **La vraie force du pool** : `pveum aclmod /pool/lab --users stagiaire@pve --roles
-PVEVMUser` donne à un utilisateur le droit d'utiliser *exactement* ces machines, et rien
-d'autre. Pas besoin de lister VM par VM, et les nouvelles VM ajoutées au pool héritent
-automatiquement des droits.
+🧠 `pveum aclmod /pool/lab --users stagiaire@pve --roles PVEVMUser` donne à un
+utilisateur le droit d'utiliser ces machines et rien d'autre. Les VM ajoutées au pool
+héritent des droits.
 
 ---
 
@@ -208,17 +203,16 @@ fera la différence au TP 13, où Ansible ne cible par défaut que les VM `terra
 prod:CC2222:FFFFFF;dmz:EE7700:000000;interne:2277CC:FFFFFF;services:22AA55:FFFFFF;web:44AA22:FFFFFF;db:8844CC:FFFFFF;terraform:7B42BC:FFFFFF;windows:0078D4:FFFFFF;alpine:0D597F:FFFFFF;rocky:10B981:FFFFFF
 ```
 
-(C'est la palette de référence de l'[annexe E](annexes/E-plan-adressage.md).)
+Palette de référence : [annexe E](annexes/E-plan-adressage.md).
 
 Format : `tag:couleurFond:couleurTexte;` séparés par `;`.
 
 Réglez aussi `Tag Style Override → Ordering: Alphabetical` et
 `Case-sensitive: no` pour éviter `Prod` et `prod` en double.
 
-🧠 **Pourquoi les tags nous intéressent tant ?** Parce qu'au **TP 13**, Ansible va
-construire son inventaire **à partir de ces tags** : le groupe `web` sera peuplé
-automatiquement par toutes les machines taguées `web`. Un tag posé ici = un rôle
-Ansible appliqué là-bas. Soignez-les.
+🧠 Au **TP 13**, Ansible construit son inventaire à partir de ces tags : le groupe
+`web` contient toutes les machines taguées `web`. Un tag posé ici = un rôle Ansible
+appliqué là-bas.
 
 ```bash
 # Tous les guests portant un tag donné
@@ -293,8 +287,8 @@ Testez : déconnectez-vous, reconnectez-vous en `stagiaire@pve` (realm
 - L'onglet **Hardware** est en lecture seule,
 - `Datacenter → Permissions` est inaccessible.
 
-🧠 **C'est ça, la délégation propre.** En production, on ne donne jamais `root@pam` à
-un prestataire : on crée un pool, un groupe, une ACL.
+🧠 En production, on ne donne jamais `root@pam` à un prestataire : un pool, un groupe,
+une ACL.
 
 ### 6.5 Un rôle sur mesure
 
@@ -424,7 +418,6 @@ pveum user token remove terraform@pve tf     # ne le faites PAS maintenant
 ```
 
 🧠 En production, ces notes sont ce que votre collègue lira à 3 h du matin.
-Ne les négligez pas.
 
 ---
 
@@ -453,8 +446,8 @@ qm destroy 101              # → refusé
 qm set 101 --protection 0
 ```
 
-🧠 À activer sur toute VM de production. Empêche la suppression et l'effacement du
-disque, même en `root`. Coût : zéro. Bénéfice : énorme.
+🧠 À activer sur toute VM de production : empêche la suppression et l'effacement du
+disque, même en `root`.
 
 ### Les autres options utiles
 
@@ -471,7 +464,7 @@ le suivant. Indispensable pour respecter un ordre base → application → front
 
 ## 10. Le Monitor QEMU 🔬
 
-Peu connu, très utile pour le diagnostic.
+Utile pour le diagnostic.
 
 🌐 `VM → Monitor`, puis :
 
@@ -516,9 +509,9 @@ qm monitor 101
 2. **Realm OpenID** : si le formateur fournit un Keycloak, configurez le SSO.
 3. **Explorer l'API par l'interface** : ouvrez les outils de développement (F12 →
    Réseau), cliquez sur « Start » d'une VM, et repérez l'appel
-   `POST /api2/extjs/nodes/pve/qemu/101/status/start`. Vous venez de découvrir
-   comment automatiser n'importe quelle action que vous ne savez faire qu'en cliquant.
+   `POST /api2/extjs/nodes/pve/qemu/101/status/start`. C'est ainsi qu'on trouve l'appel
+   API derrière n'importe quel clic.
 4. **Documentation embarquée** : cliquez sur le bouton *Documentation* depuis
-   `Datacenter → SDN`. Vous atterrissez directement au bon chapitre, **hors ligne**.
+   `Datacenter → SDN`. Vous arrivez au bon chapitre, hors ligne.
 
 ➡️ Suite : [TP 07 — Réseau « à l'ancienne » : vmbr1 natté](07-reseau-classique-vmbr1-nat.md)

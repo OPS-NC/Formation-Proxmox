@@ -2,8 +2,8 @@
 
 ⏱️ **2 h** · Jour 2
 
-Objectif : refaire le TP 07, en mieux — deux réseaux segmentés, avec IPAM, DHCP et NAT
-vers Internet, **sans écrire une seule règle iptables ni éditer `/etc/network/interfaces`**.
+Objectif : refaire le TP 07 avec le SDN : deux réseaux segmentés, IPAM, DHCP et NAT,
+sans règle iptables ni édition de `/etc/network/interfaces`.
 
 📖 Doc : <https://pve.proxmox.com/pve-docs/chapter-pvesdn.html>
 📖 Référence maison : [`SDN.md`](SDN.md) — lisez au moins les §1, §2.1 et §5-6
@@ -49,9 +49,8 @@ vers Internet, **sans écrire une seule règle iptables ni éditer `/etc/network
 | `vint` | `zint` | `10.10.10.0/24` | `10.10.10.1` | `.100-.200` | ✅ | Back-office, bases |
 | `vdmz` | `zdmz` | `10.10.20.0/24` | `10.10.20.1` | `.100-.200` | ✅ | Services exposés |
 
-🧠 Ces réseaux vivent **derrière le NAT de votre nœud** : ils sont identiques sur tous
-les postes de la salle sans jamais entrer en conflit, exactement comme six box Internet
-qui distribuent toutes du `192.168.1.0/24`.
+🧠 Ces réseaux sont derrière le NAT du nœud : identiques sur tous les postes sans
+conflit, comme six box qui distribuent toutes du `192.168.1.0/24`.
 
 ---
 
@@ -70,8 +69,7 @@ sysctl net.ipv4.ip_forward          # → 1
 ip -br a | grep vmbr1               # → aucune sortie
 iptables -t nat -L POSTROUTING -n | grep 10\\.        # → aucune sortie
 
-# Le dépôt de la formation, sur le nœud : c'est la première fois qu'on s'en sert ici
-# (scripts et fichiers de référence du SDN). Il restera utile aux TP 09, 10, 16…
+# Le dépôt de la formation sur le nœud (scripts et fichiers SDN ; sert aussi aux TP 09, 10, 16)
 [ -d /root/formation ] || git clone <url-du-depot> /root/formation
 ls /root/formation/lab/sdn/standalone/
 ```
@@ -115,9 +113,8 @@ pvesh create /cluster/sdn/zones --zone zdmz --type simple --ipam pve --dhcp dnsm
 pvesh get /cluster/sdn/zones
 ```
 
-🧠 Pas de `--nodes` : sans cette option, la zone s'applique à **tous** les nœuds — et
-vous n'en avez qu'un. Elle servira au jour 4, pour restreindre une zone à une partie du
-cluster.
+🧠 Sans `--nodes`, la zone s'applique à tous les nœuds ; vous n'en avez qu'un. L'option
+servira au jour 4 pour restreindre une zone à une partie du cluster.
 
 🧠 **`--dhcp dnsmasq`** est ce qui déclenche la création d'une instance dnsmasq dédiée
 par zone. Sans cette option, l'IPAM attribuera bien des IP mais rien ne les distribuera.
@@ -185,8 +182,8 @@ pvesh create /cluster/sdn/vnets/vdmz/subnets \
 
 ## 7. Appliquer ⚡
 
-C'est **l'étape que tout le monde oublie**. Tant que vous n'appliquez pas, la
-configuration reste en attente (statut *pending*, écrit en italique dans l'UI).
+L'étape qu'on oublie. Tant que vous n'appliquez pas, la configuration reste *pending*
+(en italique dans l'UI).
 
 🌐 `Datacenter → SDN → Apply`
 
@@ -230,33 +227,26 @@ Pour le NAT, vous devez voir une ligne par subnet en SNAT, du type :
 -A POSTROUTING -s 10.10.10.0/24 -o vmbr0 -m mark --mark 0x0/0x80000000 -j SNAT --to-source <IP-de-votre-nœud>
 ```
 
-🧠 **`iptables` sur Debian 13, c'est `iptables-nft`.** Depuis Debian 10, la commande
-`iptables` est une *alternative* qui pointe sur le back-end **nftables** : la règle
-ci-dessus **est** une règle nftables, exposée par la couche de compatibilité.
-Vérifiez-le :
+🧠 `iptables` est `iptables-nft` (TP 07) : cette règle est une règle nftables.
 
 ```bash
 iptables -V                # → iptables v1.8.x (nf_tables)   et non (legacy)
 nft list table ip nat      # exactement la même règle, vue côté nftables
 ```
 
-⚠️ **Ne cherchez pas ces règles dans `nft list table inet proxmox-firewall`.** Le
-SNAT du SDN et le firewall `proxmox-firewall` (TP 09) vivent dans des **tables
-distinctes**, qui ne se voient pas l'une l'autre : `iptables -t nat -S` n'affichera
-jamais les règles du firewall, et inversement. C'est la première source de confusion
-quand on débogue « je ne trouve pas ma règle ».
+⚠️ Le SNAT du SDN et `proxmox-firewall` (TP 09) vivent dans des tables distinctes :
+`iptables -t nat -S` n'affichera jamais les règles du firewall, et
+`nft list table inet proxmox-firewall` ne montrera pas le SNAT.
 
-🧠 **Prenez trente secondes pour comparer** avec le TP 07 : bridge, IP, `ip_forward`,
-MASQUERADE, dnsmasq, plage DHCP, options de routeur — tout ce que vous aviez tapé à la
-main a été généré. Et c'est décrit dans quatre fichiers de `/etc/pve`, donc versionnable,
-sauvegardable et — dès demain — **répliqué sur les six nœuds**.
+🧠 Comparez avec le TP 07 : bridge, IP, `ip_forward`, MASQUERADE, dnsmasq, plage DHCP,
+options de routeur, tout a été généré. Le tout tient dans quatre fichiers de
+`/etc/pve` : versionnable, sauvegardable, et répliqué sur les six nœuds dès le jour 4.
 
 ---
 
 ## 8. Peupler les deux réseaux 🐧🪟🏔️🪨
 
-Pas besoin de créer de nouvelles machines : **on déménage celles des TP 03 à 05.**
-C'est aussi l'occasion de voir qu'un changement de bridge est une opération banale.
+On déménage les machines des TP 03 à 05.
 
 | Machine | VMID | OS | Nouveau VNet | Rôle |
 |---|---|---|---|---|
@@ -275,16 +265,14 @@ pct set 111 --net0 name=eth0,bridge=vdmz,firewall=1,ip=dhcp
 pct set 112 --net0 name=eth0,bridge=vdmz,firewall=1,ip=dhcp
 ```
 
-🧠 **`mtu=1` sur la carte virtio** signifie « hérite du MTU du bridge ». Ici le bridge
-est à 1500, ça ne change rien — mais **au jour 4, en EVPN à 1450, ce réglage sera
-vital**. Prenez l'habitude dès maintenant.
+🧠 `mtu=1` sur la carte virtio = « hérite du MTU du bridge ». Sans effet à 1500,
+indispensable au jour 4 en EVPN à 1450 : prenez l'habitude.
 
 ### Faire reprendre un bail aux machines
 
-`srv01` et `win01` sont **déjà en DHCP** depuis leur installation (TP 03 et 04) : elles
-n'ont rien à changer à l'intérieur, il leur suffit de redemander un bail — c'est
-maintenant le `dnsmasq@zint` du SDN qui répond, plus le routeur de la salle. Un
-redémarrage fait l'affaire :
+`srv01` et `win01` sont en DHCP depuis leur installation (TP 03 et 04) : rien à changer
+dedans, elles redemandent un bail et c'est `dnsmasq@zint` qui répond. Un redémarrage
+suffit :
 
 ```bash
 pct reboot 111 ; pct reboot 112 ; qm reboot 101 ; qm reboot 102
@@ -368,16 +356,12 @@ ssh eleve@<IP-de-srv01> hostname          # ✅ direct : le nœud route, le PC e
 curl -sI http://<IP-de-ct-alpine>/ | head -1
 ```
 
-🧠 Le SNAT du subnet ne concerne que le trafic **sortant** des VM vers le LAN et
-Internet. Dans l'autre sens, le nœud route simplement — tant que son firewall le
-permet, ce qui sera l'affaire du TP 09.
+🧠 Le SNAT ne concerne que le trafic sortant des VM. Dans l'autre sens, le nœud route,
+tant que son firewall le permet (TP 09).
 
-🚨 **Constat important** : `vint` et `vdmz` sont **deux réseaux différents, mais l'hôte
-route entre les deux** — et depuis le LAN de la salle vers chacun d'eux. Rien n'est
-cloisonné. Un serveur compromis en DMZ atteint directement votre serveur Windows et son
-RDP.
-
-C'est exactement le problème que le **TP 09** va résoudre.
+🚨 `vint` et `vdmz` sont deux réseaux différents, mais l'hôte route entre les deux, et
+depuis le LAN vers chacun d'eux. Rien n'est cloisonné : un serveur compromis en DMZ
+atteint le RDP de votre serveur Windows. C'est le sujet du TP 09.
 
 ### Préparer les services pour le TP 09
 
@@ -410,7 +394,7 @@ interne sensible » au TP 09.
 
 ## 10. Sous le capot 🔬
 
-Où sont passées les commandes que vous n'avez pas tapées ?
+Ce que le SDN a généré :
 
 ```bash
 # Le bridge et son IP : générés
@@ -457,8 +441,8 @@ pvesh set /cluster/sdn                       # Apply
 diff /etc/pve/sdn/subnets.cfg /etc/pve/sdn/subnets.running.cfg && echo "✔"
 ```
 
-🧠 **Le SDN est transactionnel.** Vous pouvez préparer une refonte complète du réseau,
-la relire, et l'appliquer d'un seul coup. C'est un vrai avantage opérationnel.
+🧠 Le SDN est transactionnel : on prépare une refonte complète, on la relit, on
+l'applique d'un coup.
 
 ---
 
@@ -500,7 +484,6 @@ Script de remise à zéro complet : `/root/formation/lab/scripts/reset-sdn.sh`.
    la gateway, mais pas Internet. C'est le comportement voulu pour un réseau de
    sauvegarde ou de réplication.
 3. Sauvegardez toute la configuration SDN :
-   `tar czf /root/sdn-$(date +%F).tgz /etc/pve/sdn/` — puis lisez les fichiers, ils sont
-   parfaitement lisibles.
+   `tar czf /root/sdn-$(date +%F).tgz /etc/pve/sdn/` — puis lisez les fichiers.
 
 ➡️ Suite : [TP 09 — Firewall inter-zones](09-firewall-inter-zones.md)

@@ -2,8 +2,7 @@
 
 ⏱️ **30 min** · Jour 1
 
-Avant de toucher au premier serveur : on pose le plan. Cinq minutes de discipline ici
-vous éviteront trois heures de « pourquoi mon IP est déjà prise ? » au jour 4.
+On pose le plan avant de toucher au premier serveur.
 
 ---
 
@@ -22,12 +21,10 @@ jours. Vous disposez aussi d'un **PC Ubuntu** : c'est votre poste de pilotage
 ```
 
 🧠 **Pourquoi tout le monde a le même hostname, les mêmes VMID, les mêmes réseaux ?**
-Parce qu'aux jours 1 à 3, chaque nœud est **isolé** : ce qui se passe sur le vôtre ne
-concerne que vous. Et le jour 4 commence par une **réinstallation complète** de tous
-les nœuds (TP 16), qui reçoivent alors les noms `pve1` … `pve6` avant d'être mis en
-cluster. Aucune collision possible, donc **aucune adaptation à faire** dans les
-commandes : le plan de ce document est le même pour tout le monde. Seules quatre
-adresses varient, et ce sont des variables shell (§2).
+Aux jours 1 à 3, chaque nœud est **isolé**. Le jour 4 commence par une **réinstallation
+complète** des nœuds (TP 16), qui reçoivent alors les noms `pve1` … `pve6` avant la mise
+en cluster. Aucune collision possible, **aucune adaptation à faire** dans les commandes.
+Seules quatre adresses varient : ce sont des variables shell (§2).
 
 ---
 
@@ -86,9 +83,9 @@ progressivement.
 | `vm-store` | `rbd` (Ceph) | TP 18 | **cluster** | disques de VM répliqués ×3 |
 | `cephfs` | `cephfs` | TP 18 | **cluster** | ISO et templates partagés |
 
-🧠 **Pas de ZFS.** C'est un choix assumé : `ext4 + LVM-thin` est plus simple, plus léger
-en RAM, et se manipule bien mieux quand il faudra libérer de la place pour Ceph. On
-explique le pourquoi au [TP 01 §3.1](01-installation-proxmox.md).
+🧠 **Pas de ZFS** : `ext4 + LVM-thin` est plus simple, plus léger en RAM, et plus
+facile à manipuler quand il faudra libérer de la place pour Ceph
+([TP 01 §3.1](01-installation-proxmox.md)).
 
 ```
    JOUR 1-2          JOUR 3                    JOUR 4
@@ -131,7 +128,7 @@ pct exec 111 -- ip -4 -br a show eth0
 ### Jour 2 — nœud isolé (zones `Simple`, identiques pour tous)
 
 Ces réseaux vivent **derrière le NAT de votre nœud** : six stagiaires avec les mêmes
-`10.10.x.0/24` ne se gênent pas, exactement comme six box Internet en `192.168.1.0/24`.
+`10.10.x.0/24` ne se gênent pas, comme six box en `192.168.1.0/24`.
 
 | VNet | Zone | Subnet | Gateway | Rôle |
 |---|---|---|---|---|
@@ -154,8 +151,8 @@ au TP 07 : `sudo ip route add 10.10.0.0/16 via $PVE`. Jamais de rebond SSH par l
 Le VRF de la zone utilise le **VNI 10000**. Depuis le PC : `sudo ip route add
 10.60.0.0/16 via 172.30.30.151` (l'exit node primaire, TP 17).
 
-> Dans le cluster, l'IPAM distribue les IP automatiquement : deux stagiaires ne peuvent
-> pas obtenir la même adresse. C'est tout l'intérêt.
+> Dans le cluster, l'IPAM distribue les IP : deux stagiaires ne peuvent pas obtenir la
+> même adresse.
 
 ---
 
@@ -180,14 +177,13 @@ sur votre nœud.
 | `901` | `pbs` — la VM Proxmox Backup Server (**hors pool** : sinon elle se sauvegarderait elle-même) | 15 |
 | `902` | `pulse` — le conteneur Pulse | 20 |
 
-🧠 **Deux machines s'appellent `app01`, ce n'est pas une erreur du plan… et c'est pour
-ça que le clone manuel s'appelle `cloud01`.** `app01` est la VM Debian déployée par
-Terraform (stack 02) ; `cloud01` (120) est celle que vous clonez à la main au TP 10.
-Ansible indexe les machines par leur nom : deux homonymes, et l'un écrase l'autre.
+🧠 **`app01` et `cloud01`** : `app01` est la VM Debian déployée par Terraform (stack 02),
+`cloud01` (120) le clone fait à la main au TP 10. Ansible indexe les machines par nom :
+deux homonymes, l'un écrase l'autre.
 
-🧠 **Les machines Terraform n'ont pas de VMID dans ce plan**, et c'est voulu : le
-provider demande à Proxmox le prochain numéro libre. On retrouve une machine par son
-**nom** (`qm list`) ou dans `terraform output`, jamais par un numéro appris par cœur.
+🧠 **Les machines Terraform n'ont pas de VMID dans ce plan** : le provider demande à
+Proxmox le prochain numéro libre. On retrouve une machine par son **nom** (`qm list`) ou
+dans `terraform output`.
 
 **Jour 4 : le cluster choisit.** Six stagiaires créent des machines dans le même
 cluster, et un VMID est **unique dans tout le cluster**. On ne calcule rien : on laisse
@@ -200,12 +196,11 @@ qm clone $TPL $VMID --name evpn-prod-$(hostname) --full 1
 ```
 
 L'interface web propose d'elle-même ce numéro, et Terraform fait pareil : **aucune
-stack ne fixe de `vm_id`**, dès le jour 3. Les VM du jour 4 portent le **nom de leur nœud** en suffixe
-(`evpn-prod-pve3`) : c'est ce qui permet de s'y retrouver dans la vue globale.
+stack ne fixe de `vm_id`**, dès le jour 3. Les VM du jour 4 portent le **nom de leur
+nœud** en suffixe (`evpn-prod-pve3`) pour s'y retrouver dans la vue globale.
 
 🪤 Deux stagiaires qui lancent `pvesh get /cluster/nextid` à la même seconde peuvent
-obtenir le même numéro : le second `qm create` échoue avec `VM already exists`. On
-relance, c'est tout.
+obtenir le même numéro : le second `qm create` échoue avec `VM already exists`. Relancez.
 
 ### 📌 La convention de notation dans les TP
 
@@ -330,8 +325,7 @@ Si le compteur ci-dessus renvoie 0, direction le BIOS.
 Le disque sera partitionné en **ext4 / LVM** (pas de ZFS dans cette formation).
 Il faudra **réduire `maxvz`** pour laisser ~80 Go non alloués dans le groupe de volumes :
 Ceph en aura besoin au TP 18, et **un pool LVM-thin ne peut pas être réduit après
-coup**. Les détails sont dans [TP 01 §3.1](01-installation-proxmox.md) — ne sautez pas
-cette page.
+coup**. Détails dans [TP 01 §3.1](01-installation-proxmox.md).
 
 ---
 

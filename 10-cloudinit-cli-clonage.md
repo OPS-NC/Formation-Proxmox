@@ -3,7 +3,7 @@
 ⏱️ **1 h 15** · Jour 3
 
 Objectif : fabriquer, entièrement en ligne de commande, des templates de VM à partir de
-cloud-images, prêts à être clonés en 15 secondes. C'est la fondation de tout le jour 3.
+cloud-images, prêts à être clonés en 15 secondes.
 
 📖 Doc : <https://pve.proxmox.com/pve-docs/qm.html#qm_cloud_init>
 📖 cloud-init : <https://cloudinit.readthedocs.io/>
@@ -69,7 +69,7 @@ virt-customize -a /tmp/debian13-work.qcow2 \
   --truncate /etc/machine-id
 ```
 
-🧠 **`--truncate /etc/machine-id`** est essentiel, mais pas pour la raison qu'on croit.
+🧠 **`--truncate /etc/machine-id`** : pas pour la raison qu'on croit.
 
 Le `machine-id` **ne détermine pas l'adresse MAC** — celle-ci est tirée au sort par
 Proxmox, une par carte, à la création de la VM. Ce qu'il détermine, c'est le
@@ -86,9 +86,9 @@ le **même bail** :
    clone B   MAC aa:bb:...:02   DUID dérivé de machine-id XYZ  ─┘
 ```
 
-Symptôme déroutant : deux VM aux MAC bien distinctes obtiennent la même adresse, et
-`ip -br a` sur l'hôte n'explique rien. Un `/etc/machine-id` vide force systemd à en
-régénérer un au premier boot, donc un DUID unique par clone.
+Symptôme : deux VM aux MAC distinctes obtiennent la même adresse, et `ip -br a` sur
+l'hôte n'explique rien. Un `/etc/machine-id` vide force systemd à en régénérer un au
+premier boot : un DUID unique par clone.
 
 🎁 Le même mécanisme explique les IP dupliquées après un `dd` de VM, ou après un clone
 de conteneur : cherchez toujours `machine-id` avant de soupçonner le DHCP.
@@ -111,14 +111,13 @@ qm create $VMID \
   --numa 1
 ```
 
-🧠 Deux points importants :
+🧠 Deux choix :
 
-- **`--cpu x86-64-v2-AES`** et non `host`. Un template destiné à un cluster doit
-  produire des VM **migrables à chaud** entre nœuds au CPU différent. C'est le
-  compromis évoqué au TP 03 : on perd 2 % de perf, on gagne la migration.
+- **`--cpu x86-64-v2-AES`** et non `host` : les VM issues du template doivent rester
+  migrables à chaud entre nœuds au CPU différent (TP 03). 2 % de perf contre la
+  migration.
 - **`--serial0 socket --vga serial0`** : les cloud-images sortent leurs logs de boot
-  sur la console série. Sans ça, l'écran noVNC reste noir et vous croyez que la VM
-  est plantée alors qu'elle boote très bien.
+  sur la console série. Sans ça, l'écran noVNC reste noir alors que la VM boote.
 
 ### 2.3 Importer le disque
 
@@ -150,10 +149,9 @@ qm set $VMID \
   --ipconfig0 ip=dhcp
 ```
 
-🧠 **Pourquoi `openssl passwd -6` ?** Proxmox recopie la valeur de `--cipassword`
-telle quelle dans le champ `password:` du user-data, et cloud-init accepte **aussi
-bien un mot de passe en clair qu'un hash** — les deux fonctionnent. Passer un hash
-n'est donc pas obligatoire, c'est un **choix d'hygiène** :
+🧠 **Pourquoi `openssl passwd -6` ?** Proxmox recopie `--cipassword` tel quel dans le
+champ `password:` du user-data, et cloud-init accepte un mot de passe en clair comme un
+hash. Le hash est un choix d'hygiène :
 
 ```bash
 qm config <vmid> | grep cipassword     # en clair : visible par tout PVEAuditor
@@ -164,8 +162,8 @@ Le mot de passe en clair traîne dans `/etc/pve/qemu-server/<vmid>.conf`, donc d
 les sauvegardes de configuration, et dans le state Terraform si vous le pilotez
 depuis là. Le hash, lui, ne se rejoue pas ailleurs.
 
-🪤 En revanche, **`-6` (SHA-512) n'est pas négociable** : un hash `-1` (MD5) ou
-`-5` (SHA-256) sera accepté par certaines distributions et refusé par d'autres.
+🪤 `-6` (SHA-512) obligatoire : un hash `-1` (MD5) ou `-5` (SHA-256) passe sur
+certaines distributions et pas sur d'autres.
 
 ### 2.6 Agrandir le disque et sceller
 
@@ -206,8 +204,7 @@ qm list | grep -i tpl
 > cluster, on lui passera `--vmid $(pvesh get /cluster/nextid)` pour laisser le cluster
 > choisir le numéro.
 
-Lisez le script : il ne fait rien de plus que ce que vous venez de taper, avec la
-gestion d'erreurs en plus.
+Lisez-le : c'est ce que vous venez de taper, avec la gestion d'erreurs.
 
 ---
 
@@ -261,10 +258,10 @@ qm set 120 --tags "manuel,debian,interne,app"
 time qm start 120
 ```
 
-🧠 **`cloud01`, pas `app01`** : le TP 11 déploiera par Terraform une VM nommée `app01`.
-Deux guests du même nom ne gênent pas Proxmox (seul le VMID doit être unique), mais
-l'inventaire Ansible du TP 13 indexe **par nom** — l'un écraserait l'autre. Le tag
-`manuel` marque l'origine, comme `terraform` marquera celles du TP 11.
+🧠 **`cloud01`, pas `app01`** : le TP 11 déploie par Terraform une VM nommée `app01`.
+Proxmox tolère deux guests du même nom (seul le VMID est unique), pas l'inventaire
+Ansible du TP 13, qui indexe par nom. Le tag `manuel` marque l'origine, comme
+`terraform` au TP 11.
 
 Suivez le boot en direct sur la console série :
 
@@ -301,15 +298,15 @@ ssh eleve@10.10.10.50 'hostname; cloud-init status --long; df -h /'
 🪤 Un **linked clone** ne fonctionne que sur les stockages qui supportent le COW
 (LVM-thin, ZFS, qcow2 sur `dir`). Sur du LVM épais ou de l'iSCSI : full clone obligatoire.
 
-🚨 **Et surtout : un clone lié sur stockage local ne migre pas.** Proxmox refuse net :
+🚨 **Un clone lié sur stockage local ne migre pas.** Proxmox refuse :
 
 ```
 can't migrate 'local-lvm:base-190-disk-0/vm-120-disk-0' as it's a clone of 'base-190-disk-0'
 ```
 
-L'image de base n'existe pas sur le nœud cible, et Proxmox ne va pas la copier au
-passage. **Retenez-le pour le jour 4** : les VM des TP 17 et 19 sont clonées en
-`--full 1`, ou bien leur disque part sur Ceph (`qm move-disk`) avant toute migration.
+L'image de base n'existe pas sur le nœud cible. Au jour 4, les VM des TP 17 et 19
+sont donc clonées en `--full 1`, ou leur disque part sur Ceph (`qm move-disk`) avant
+toute migration.
 
 ---
 
@@ -340,11 +337,10 @@ ls /var/lib/cloud/instance/
 sudo cloud-init clean --logs --reboot
 ```
 
-🪤 **Le piège n°1 de cloud-init** : il ne s'exécute qu'**une fois par instance-id**.
-Vous modifiez `--ipconfig0`, vous redémarrez, rien ne change ? Normal. Il faut soit
-`cloud-init clean`, soit — plus simple côté Proxmox — que le lecteur cloud-init soit
-régénéré (`qm set` le fait automatiquement, mais la VM doit être **arrêtée puis
-démarrée**, pas juste redémarrée depuis l'intérieur).
+🪤 cloud-init ne s'exécute qu'**une fois par instance-id**. Vous modifiez
+`--ipconfig0`, vous redémarrez, rien ne change : normal. Soit `cloud-init clean`, soit
+un arrêt/démarrage côté Proxmox (`qm set` régénère le lecteur cloud-init, mais un
+reboot depuis l'invité ne le relit pas).
 
 ---
 

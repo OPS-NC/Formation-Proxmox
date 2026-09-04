@@ -11,8 +11,7 @@ accessible en HTTPS et en SSH.
 
 ## 1. Un peu de contexte avant de cliquer 🧠
 
-Proxmox VE, ce n'est pas « un OS de virtualisation » mystérieux : c'est une **Debian**
-(la 13 « Trixie » pour PVE 9) avec :
+Proxmox VE est une **Debian** (13 « Trixie » pour PVE 9) avec :
 
 - un **noyau Ubuntu** (meilleur support matériel récent),
 - **KVM/QEMU** pour les machines virtuelles complètes,
@@ -32,10 +31,10 @@ Proxmox VE, ce n'est pas « un OS de virtualisation » mystérieux : c'est une *
    └──────────────────────────────────────────────────────┘
 ```
 
-🧠 **`/etc/pve` est magique** : ce n'est pas un vrai répertoire sur disque, c'est une
-base SQLite exposée en système de fichiers et **répliquée sur tous les nœuds du
-cluster**. Tout ce qu'on y écrit apparaît instantanément partout. C'est là que vivent
-les configs de VM, le SDN, le firewall, les utilisateurs.
+🧠 **`/etc/pve`** n'est pas un vrai répertoire : c'est une base SQLite exposée en
+système de fichiers et **répliquée sur tous les nœuds du cluster**. Tout ce qu'on y écrit
+apparaît partout. C'est là que vivent les configs de VM, le SDN, le firewall, les
+utilisateurs.
 
 ---
 
@@ -69,7 +68,7 @@ Bootez sur la clé, choisissez **Install Proxmox VE (Graphical)**.
 
 L'écran « Target Harddisk » → **Filesystem : `ext4`**.
 
-C'est le choix de toute la formation, et il est délibéré :
+Le choix pour toute la formation :
 
 | | Ce que ça donne |
 |---|---|
@@ -78,11 +77,10 @@ C'est le choix de toute la formation, et il est délibéré :
 | Snapshots | ✅ via LVM-thin |
 | Manipulable | on va y faire de la chirurgie LVM au TP 18, pour Ceph |
 
-🧠 **Et ZFS ?** ZFS est excellent (checksums de bout en bout, compression, réplication
-`zfs send`), mais il réclame ~1 Go de RAM par To d'ARC, complique la manipulation du
-disque, et ne nous apporte rien ici : le stockage partagé du jour 4 sera **Ceph**, pas
-de la réplication ZFS. **On n'utilise pas ZFS dans cette formation.** Sachez qu'il
-existe, et pourquoi on ne l'a pas retenu.
+🧠 **Et ZFS ?** Checksums de bout en bout, compression, réplication `zfs send` — mais
+~1 Go de RAM par To d'ARC, une manipulation du disque plus compliquée, et rien qui nous
+serve ici : le stockage partagé du jour 4 sera **Ceph**. **On n'utilise pas ZFS dans cette
+formation.**
 
 ### 3.1 bis — ⚠️ L'option qui vous sauvera au TP 18 : `maxvz`
 
@@ -100,10 +98,8 @@ la valeur par défaut (~410). On laisse ainsi **~80 Go d'espace non alloué** da
 groupe de volumes.
 
 🎯 **Pourquoi ?** Au TP 18, Ceph aura besoin d'un volume dédié. Or **un pool LVM-thin
-ne peut pas être réduit** — c'est une limite de LVM, pas un réglage. Si le VG est plein,
-la seule voie sera de détruire le pool, le recréer plus petit, et restaurer vos VM
-depuis PBS. Cinq secondes de prévoyance ici vous économisent quarante minutes de
-chirurgie au jour 4.
+ne peut pas être réduit** — limite de LVM, pas un réglage. Si le VG est plein, il faudra
+détruire le pool, le recréer plus petit, et restaurer vos VM depuis PBS.
 
 ```
    AVEC maxvz réduit                  AVEC maxvz par défaut
@@ -142,11 +138,9 @@ E-mail : `eleve@formation.local` — il doit être syntaxiquement valide, pas r�
 | Gateway | `172.30.30.2` |
 | DNS server | `1.1.1.1` |
 
-🧠 **Tout le monde s'appelle `pve`, et c'est voulu.** Pendant trois jours, chacun est
-seul sur son nœud : le nom n'a pas besoin d'être unique, seule l'IP l'est. Ce nœud
-sera **réinstallé au TP 16**, juste avant la mise en cluster, avec cette fois un
-hostname distinct (`pve1` … `pve6`) — voilà pourquoi on ne s'embarrasse d'aucune
-convention de numérotation d'ici là.
+🧠 **Tout le monde s'appelle `pve`.** Pendant trois jours, chacun est seul sur son
+nœud : seule l'IP doit être unique. Le nœud sera **réinstallé au TP 16**, avant la mise
+en cluster, avec un hostname distinct (`pve1` … `pve6`).
 
 🪤 **Pièges classiques :**
 - Un hostname sans domaine (`pve` au lieu de `pve.lab.local`) → refusé.
@@ -252,8 +246,7 @@ EOF
 apt update && apt full-upgrade -y
 ```
 
-> 💡 Tout ceci est faisable en clic-clic : `Datacenter → pve → Updates → Repositories`.
-> On le fait en CLI pour comprendre ce qui se passe réellement.
+> 💡 Équivalent graphique : `Datacenter → pve → Updates → Repositories`.
 
 ### Retirer le bandeau d'abonnement (facultatif, lab uniquement)
 
@@ -264,8 +257,8 @@ systemctl restart pveproxy
 ```
 
 ⚠️ Ce patch est écrasé à chaque mise à jour de `proxmox-widget-toolkit`.
-En production, **achetez un abonnement** : c'est ce qui finance le projet et vous donne
-le dépôt `pve-enterprise`, testé et stable.
+En production, prenez un abonnement : il finance le projet et donne accès au dépôt
+`pve-enterprise`, testé et stable.
 
 ---
 
@@ -277,10 +270,9 @@ apt install -y vim tmux htop iftop tcpdump ethtool bridge-utils \
                frr frr-pythontools dnsmasq
 ```
 
-🧠 On installe **`frr` + `frr-pythontools`** dès maintenant : ce sont les prérequis de
-la zone EVPN du jour 4, et prendre l'habitude à froid évite un « pourquoi mon BGP ne
-monte pas » à J+2 (la réinstallation du TP 16 reprendra exactement ces étapes). Et
-**`dnsmasq`** pour le DHCP du SDN, qu'il faut désactiver en tant que service système :
+🧠 **`frr` + `frr-pythontools`** sont les prérequis de la zone EVPN du jour 4 (la
+réinstallation du TP 16 reprendra ces étapes). **`dnsmasq`** sert au DHCP du SDN et doit
+être désactivé en tant que service système :
 
 ```bash
 systemctl disable --now dnsmasq
@@ -334,8 +326,7 @@ pveum user list
 ```
 
 Reconnectez-vous en `eleve@pve` (realm **Proxmox VE authentication server**) pour
-vérifier. Notez que ce compte ne peut pas ouvrir de shell root sur le nœud : c'est le
-but.
+vérifier. Ce compte ne peut pas ouvrir de shell root sur le nœud : c'est le but.
 
 ---
 
@@ -378,7 +369,7 @@ ping -c2 1.1.1.1
    `apt install fail2ban`, puis créer un jail sur `/var/log/daemon.log` filtrant
    `pvedaemon.*authentication failure`.
 2. **Certificat Let's Encrypt** : `Datacenter → ACME`. Ne marchera pas sans DNS
-   public — mais lisez l'écran, c'est instructif.
+   public, mais l'écran vaut la lecture.
 3. **Comparez `ip -d link show vmbr0`** avec la sortie de `brctl show` et repérez
    la table d'apprentissage MAC : `bridge fdb show br vmbr0`.
 

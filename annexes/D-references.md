@@ -1,10 +1,9 @@
 # Annexe D — Références 📚
 
-La documentation officielle est excellente. Prenez le réflexe d'y aller **en premier**.
+La documentation officielle d'abord.
 
-> 💡 Elle est aussi **embarquée hors ligne** dans votre interface : bouton
-> *Documentation* en haut à droite. Il ouvre directement le chapitre correspondant à
-> l'écran affiché.
+> 💡 Elle est **embarquée hors ligne** dans l'interface : bouton *Documentation* en
+> haut à droite, qui ouvre le chapitre correspondant à l'écran affiché.
 
 ---
 
@@ -170,7 +169,7 @@ passer à `bash` en root**. `curl -fsSL <url> | less` d'abord.
 ## 📌 Les 6 liens à mettre en favori
 
 1. <https://pve.proxmox.com/pve-docs/> — la documentation
-2. <https://pve.proxmox.com/pve-docs/api-viewer/> — **l'explorateur d'API**, sous-estimé
+2. <https://pve.proxmox.com/pve-docs/api-viewer/> — **l'explorateur d'API**
 3. <https://pve.proxmox.com/pve-docs/chapter-pvesdn.html> — le SDN
 4. <https://forum.proxmox.com/> — la communauté
 5. <https://registry.terraform.io/providers/bpg/proxmox/latest/docs> — le provider

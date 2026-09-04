@@ -108,11 +108,9 @@ choix correct.
 
 ### 🧠 « Debian 13, ce n'est pas nftables ? » — si, et vous venez d'en écrire
 
-Question légitime, et la réponse est contre-intuitive : **les deux sont vrais en même
-temps.** Depuis Debian 10, la commande `iptables` est une *alternative* qui pointe sur
-**`iptables-nft`**. Elle parle donc au moteur **nftables** du noyau, via la couche de
-compatibilité `nft_compat`. La règle que vous venez de taper **est** une règle
-nftables.
+Depuis Debian 10, la commande `iptables` est une *alternative* qui pointe sur
+**`iptables-nft`** : elle parle au moteur **nftables** du noyau via la couche de
+compatibilité `nft_compat`. La règle que vous venez de taper est une règle nftables.
 
 ```bash
 iptables -V                     # → iptables v1.8.11 (nf_tables)   et non (legacy)
@@ -135,10 +133,8 @@ Trois nuances qui comptent pour la suite :
 | **Les tables ne se voient pas entre elles** | Vos règles vivent dans la table `ip nat`. Le `proxmox-firewall` du TP 09 crée les siennes dans `inet proxmox-firewall`. `iptables -t nat -S` n'affichera **jamais** les règles du firewall, et inversement. |
 | **`nftables: 1` (TP 09) ne touche pas à ce NAT** | Cette option bascule le *firewall* Proxmox, pas votre masquerade. Les deux cohabitent : hooks `nat` et `filter` sont indépendants. |
 
-👉 **Alors pourquoi enseigner `iptables` ?** Parce que c'est ce que les stagiaires
-trouveront dans 90 % des tutoriels et des scripts existants, et parce que la bascule
-vers le SDN au TP 08 n'en est que plus parlante. Mais vous savez maintenant ce qui
-tourne réellement dessous.
+👉 On garde `iptables` parce que c'est ce qu'on trouve dans la plupart des tutoriels et
+scripts existants. Vous savez maintenant ce qui tourne dessous.
 
 ### 3.3 Rendre persistant
 
@@ -171,23 +167,19 @@ nft list ruleset > /etc/nftables.conf     # persistance
 systemctl enable --now nftables
 ```
 
-🧠 **Comparez les trois options.** A et B produisent exactement le même résultat dans
-le noyau que C — seul le vocabulaire change. C est plus verbeux mais explicite : on
-voit la table, la chaîne, le hook et sa priorité. C'est cette structure que vous
-retrouverez dans `nft list ruleset` au TP 09, quand `proxmox-firewall` générera la
-sienne.
+🧠 A et B produisent le même résultat dans le noyau que C, seul le vocabulaire change.
+C est plus verbeux mais explicite : table, chaîne, hook, priorité. C'est la structure
+que vous retrouverez dans `nft list ruleset` au TP 09.
 
-🪤 **Voilà exactement le genre de bricolage que le SDN supprime.** Retenez cette
-sensation : au TP 08, cette même fonctionnalité tiendra en une case à cocher, sera
-répliquée sur tout le cluster, et survivra aux mises à jour.
+🪤 C'est ce bricolage que le SDN supprime : au TP 08, la même chose tient en une case à
+cocher, répliquée sur le cluster.
 
 ---
 
 ## 4. Un DHCP pour vmbr1 🎫
 
-Sans serveur DHCP, chaque VM doit être configurée à la main. Ajoutons dnsmasq —
-mais **attention**, on l'a désactivé au TP 01 parce que le SDN en aura besoin.
-On lance donc une instance dédiée, avec sa propre configuration.
+Sans DHCP, chaque VM se configure à la main. On lance dnsmasq avec une configuration
+dédiée : le service a été désactivé au TP 01 parce que le SDN en aura besoin.
 
 ```bash
 mkdir -p /etc/dnsmasq.d
@@ -205,14 +197,14 @@ systemctl enable --now dnsmasq
 systemctl status dnsmasq --no-pager | head -5
 ```
 
-📌 **À la fin du TP 07, on remettra dnsmasq en mode désactivé** — le TP 08 utilise les
-instances `dnsmasq@<zone>` gérées par le SDN.
+📌 En fin de TP, dnsmasq sera de nouveau désactivé : le TP 08 utilise les instances
+`dnsmasq@<zone>` du SDN.
 
 ---
 
 ## 5. Tester ✅
 
-Le plus rapide : un conteneur Alpine jetable, créé en dix secondes.
+Un conteneur Alpine jetable :
 
 ```bash
 TPL=$(pveam list local | awk '/alpine/ {print $1}' | head -1)
@@ -249,7 +241,7 @@ qm reboot 101
 # … puis remettez-la sur vmbr0 à la fin du TP
 ```
 
-Sur l'hôte, observez le NAT en action :
+Sur l'hôte :
 
 ```bash
 watch -n1 'iptables -t nat -L POSTROUTING -n -v | tail -3'
@@ -259,9 +251,9 @@ tcpdump -ni vmbr1 -c 10
 
 ### Et depuis votre PC ? 💻
 
-Le NAT fait sortir les guests ; il ne fait pas **entrer**. Votre PC ne connaît pas
-`10.10.99.0/24` : sa table de routage n'a qu'une route par défaut, vers la box. Or la
-gateway de ce réseau, c'est votre nœud — il suffit de le dire au PC :
+Le NAT fait sortir les guests, pas entrer. Votre PC ne connaît pas `10.10.99.0/24` : sa
+seule route est la route par défaut vers la box. La gateway de ce réseau est votre
+nœud, il suffit de le dire au PC :
 
 ```bash
 PVE=172.30.30.___                 # ⚠ l'IP de VOTRE nœud
@@ -270,14 +262,13 @@ ip route | grep 10.10
 ping -c2 <IP-du-CT-119>           # ✅ le PC joint le conteneur, sans passer par le nœud
 ```
 
-🧠 **Un `/16` plutôt qu'un `/24`, et une seule fois pour toute la formation** : tous
-les réseaux privés de votre nœud — `vmbr1` aujourd'hui, les VNets SDN `10.10.10/20/30`
-dès le TP 08 — sont dans `10.10.0.0/16`. Cette route restera en place jusqu'au jour 4 :
-**on ne rebondit jamais par le nœud en SSH** dans cette formation, on route.
+🧠 Un `/16`, une seule fois : tous les réseaux privés du nœud (`vmbr1` aujourd'hui, les
+VNets `10.10.10/20/30` dès le TP 08) sont dans `10.10.0.0/16`. Cette route reste en
+place jusqu'au jour 4. Dans cette formation, on ne rebondit jamais par le nœud en SSH :
+on route.
 
-🪤 La route n'est pas persistante : elle disparaît au redémarrage du PC. Relancez la
-commande, ou rendez-la permanente (netplan, NetworkManager). Le réflexe à avoir quand
-« ça ne répond plus » : `ip route | grep 10.10`.
+🪤 La route disparaît au redémarrage du PC : relancez la commande ou rendez-la
+permanente (netplan, NetworkManager). Quand « ça ne répond plus » : `ip route | grep 10.10`.
 
 ---
 
@@ -293,7 +284,7 @@ commande, ou rendez-la permanente (netplan, NetworkManager). Le réflexe à avoi
 | Pas de firewall inter-réseaux structuré | Tout est à écrire soi-même |
 | Écrasé par le SDN | Si le SDN reprend la main, conflits possibles |
 
-👉 **C'est précisément le cahier des charges du SDN.** Comparez :
+👉 C'est le cahier des charges du SDN :
 
 ```
    TP 07 — à la main                    TP 08 — SDN
@@ -313,8 +304,7 @@ commande, ou rendez-la permanente (netplan, NetworkManager). Le réflexe à avoi
 > 💡 **Ne supprimez pas la route `10.10.0.0/16` ajoutée sur votre PC** : elle sert dès
 > le TP 08 pour joindre les VNets SDN.
 
-**Important** : on remet le nœud dans un état propre pour que le SDN travaille sans
-interférence.
+On remet le nœud dans un état propre avant le SDN.
 
 ```bash
 # 1. Supprimer le conteneur de test, et remettre srv01 sur vmbr0 si vous l'avez déplacé

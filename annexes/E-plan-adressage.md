@@ -1,6 +1,6 @@
 # Annexe E — Plan d'adressage, VMID et tags 📇
 
-La référence unique. En cas de doute, c'est ce document qui fait foi.
+En cas de doute, ce document fait foi.
 
 ---
 
@@ -31,10 +31,9 @@ La référence unique. En cas de doute, c'est ce document qui fait foi.
 | IP | `$PVE` — celle attribuée par le formateur, dans `.151`–`.156` | **la même** |
 | Contexte | nœud isolé, aucun cluster | cluster à six |
 
-🧠 Chaque stagiaire est **seul** sur son nœud pendant trois jours : rien de ce qu'il crée
-ne peut entrer en collision avec le voisin. Et comme tout est réinstallé avant la mise
-en cluster, les VMID, réseaux SDN et noms de ce document sont **identiques pour tout le
-monde**. Seules quatre adresses varient : `$PVE`, `$PC`, `$PBS`, `$PULSE`.
+🧠 Chaque stagiaire est **seul** sur son nœud pendant trois jours, et tout est
+réinstallé avant la mise en cluster : VMID, réseaux SDN et noms sont **identiques pour
+tout le monde**. Seules quatre adresses varient : `$PVE`, `$PC`, `$PBS`, `$PULSE`.
 
 > ⚠️ **Ces quatre adresses ne sont pas figées dans ce document** : seule la plage
 > `.151`–`.156` des nœuds l'est. Relevez l'adresse de votre poste avec `hostname -I`,
@@ -64,7 +63,7 @@ Sans DHCP dans la salle : le formateur attribue des adresses dans `.200`–`.250
 ## 🕸️ Réseaux SDN — jour 2 (nœud isolé, zones `Simple`)
 
 **Les mêmes pour tout le monde** : ces réseaux vivent derrière le NAT de chaque nœud,
-comme six réseaux domestiques en `192.168.1.0/24` derrière six box.
+comme six réseaux domestiques en `192.168.1.0/24`.
 
 | VNet | Zone | Subnet | Gateway | DHCP | SNAT | Créé au |
 |---|---|---|---|---|---|---|
@@ -153,7 +152,7 @@ libre. On retrouve ces machines par leur **nom** (`qm list`, `terraform output`)
 ### Jour 4 : le cluster attribue
 
 Un VMID est unique dans **tout** le cluster, et six stagiaires y créent des machines en
-même temps. On ne calcule rien :
+même temps :
 
 ```bash
 VMID=$(pvesh get /cluster/nextid)        # CLI
@@ -171,8 +170,8 @@ Les machines du jour 4 portent le **nom de leur nœud** en suffixe (`evpn-prod-p
 | `pbs` sur **pve1** | `901` | 16 |
 | `pulse` sur **pve1** | `902` | 20 |
 
-🧠 **Pourquoi sur `pve1` ?** C'est le nœud qui *crée* le cluster et l'exit node primaire
-de l'EVPN : c'est là que vivent naturellement les services de la salle.
+🧠 **Pourquoi sur `pve1` ?** Il crée le cluster et porte l'exit node primaire : les
+services de la salle y vont naturellement.
 
 🪤 Deux `pvesh get /cluster/nextid` à la même seconde peuvent renvoyer le même
 numéro : le second `qm create` échoue avec `VM already exists`. Relancez.
@@ -181,7 +180,7 @@ numéro : le second `qm create` échoue avec `VM already exists`. Relancez.
 
 ## 🏷️ Convention de tags
 
-Les tags pilotent l'inventaire Ansible (TP 13). Ils ne sont **pas** décoratifs.
+Les tags pilotent l'inventaire Ansible (TP 13).
 
 ### Tags de rôle (déclenchent un rôle Ansible)
 
@@ -309,7 +308,7 @@ Voir [TP 01 §3.1](../01-installation-proxmox.md) et [TP 18 §3](../18-ceph-clus
 
 ## 🧾 Fiche récapitulative
 
-Imprimez-la, collez-la sur votre écran. Quatre trous à remplir, le reste est commun.
+Quatre trous à remplir, le reste est commun.
 
 ```
    ┌────────────────────────────────────────────────────────┐

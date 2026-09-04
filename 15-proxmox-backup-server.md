@@ -2,12 +2,11 @@
 
 ⏱️ **1 h 15** · Jour 3
 
-Objectif : installer PBS, le brancher à votre nœud, sauvegarder, restaurer, et
-comprendre pourquoi la déduplication change complètement l'économie de la sauvegarde.
+Objectif : installer PBS, le brancher à votre nœud, sauvegarder, restaurer, et voir
+ce que la déduplication change à l'économie de la sauvegarde.
 
-🎯 **C'est le TP le plus important de la formation** : une sauvegarde qu'on n'a jamais
-restaurée n'est pas une sauvegarde. Ici, on détruit une VM pour de vrai et on la
-remonte.
+🎯 Une sauvegarde jamais restaurée n'est pas une sauvegarde : ici, on détruit une VM et
+on la remonte.
 
 📖 Doc : <https://pbs.proxmox.com/docs/>
 
@@ -50,19 +49,16 @@ déduplication dépasse couramment 10:1.
 
 ## 2. Installer PBS dans une VM 🏗️
 
-> 🤝 **Chaque stagiaire installe sa propre VM PBS, sur son nœud.** Comme tout le reste
-> des jours 1-3 : vous êtes seul chez vous, la VM s'appelle `pbs` et porte le VMID `901`
-> pour tout le monde. Seule son adresse IP, attribuée par le formateur, vous est propre.
+> 🤝 **Chaque stagiaire installe sa VM PBS sur son nœud.** Elle s'appelle `pbs` et
+> porte le VMID `901` pour tout le monde ; seule son IP, attribuée par le formateur,
+> vous est propre.
 >
-> 🎯 **Pourquoi PBS maintenant, en fin de jour 3 ?** Parce que c'est l'aboutissement de
-> l'industrialisation : vous savez fabriquer, déployer et configurer des machines, il
-> reste à savoir les **sauvegarder, vérifier et restaurer** — et on le fait pour de
-> vrai. Ce TP n'a **pas** pour but de conserver vos VM d'un jour à l'autre : le jour 4
-> commence par une **réinstallation complète** de tous les nœuds (TP 16), PBS compris.
-> Une VM PBS pour toute la salle sera alors recréée sur `pve1`, pour le cluster.
+> 🎯 Ce TP sert à apprendre à sauvegarder, vérifier et restaurer, pas à conserver vos VM
+> d'un jour à l'autre : le jour 4 commence par la réinstallation de tous les nœuds
+> (TP 16), PBS compris. Une VM PBS pour la salle sera recréée sur `pve1`.
 >
-> 🧠 Ce qui survit à la réinstallation, c'est l'export NFS de votre poste (TP 14) : si
-> vous tenez à une machine, un `vzdump … --storage nfs-pc` la mettra à l'abri.
+> 🧠 Ce qui survit, c'est l'export NFS de votre poste (TP 14) : `vzdump … --storage
+> nfs-pc` pour ce que vous voulez garder.
 
 ### Créer la VM
 
@@ -85,20 +81,17 @@ qm create 901 \
 qm start 901
 ```
 
-🧠 **Deux disques sur `local-lvm`, et pourquoi pas sur le NFS du TP 14 ?**
-Un datastore PBS est un magasin de millions de petits *chunks* avec beaucoup de
-métadonnées et de verrous. Sur NFS, les performances s'écroulent et les verrous
-deviennent fragiles — Proxmox le déconseille explicitement. On reste donc en local.
-`local-lvm` étant *thin*, les 120 Go annoncés ne consomment que ce qui est réellement
-écrit.
+🧠 **Pourquoi pas le NFS du TP 14 ?** Un datastore PBS, ce sont des millions de petits
+chunks, beaucoup de métadonnées et de verrous : sur NFS, les performances s'écroulent
+et les verrous deviennent fragiles. Proxmox le déconseille. `local-lvm` étant thin, les
+120 Go ne consomment que ce qui est écrit.
 
 🧠 **`--protection 1`** : cette VM contient vos sauvegardes. Un `qm destroy` distrait
-effacerait d'un coup les originaux… et leurs copies.
+effacerait originaux et copies.
 
-🧠 **Pas de `--pool lab`, et c'est voulu.** Le job de sauvegarde du §6 est *pool based* :
-si `pbs` était dans le pool, PBS se sauvegarderait **vers lui-même** — une copie qui
-disparaît avec l'original, l'exact contraire d'une sauvegarde. La machine qui porte les
-sauvegardes ne fait jamais partie du périmètre sauvegardé.
+🧠 **Pas de `--pool lab`.** Le job du §6 est *pool based* : dans le pool, PBS se
+sauvegarderait vers lui-même. La machine qui porte les sauvegardes ne fait jamais
+partie du périmètre sauvegardé.
 
 🔗 ISO : <https://www.proxmox.com/en/downloads> → *Proxmox Backup Server*
 
@@ -121,8 +114,8 @@ proxmox-backup-manager version
 
 Interface web : **`https://$PBS:8007`** (port **8007**, pas 8006).
 
-📌 **Gardez `$PBS` sous la main** pour tout ce TP. Au jour 4, la variable désignera la
-VM PBS de la salle (sur `pve1`, TP 16) : vous la mettrez à jour à ce moment-là.
+📌 Gardez `$PBS` sous la main. Au jour 4, la variable désignera la VM PBS de la salle
+(`pve1`, TP 16).
 
 ### Dépôts sans abonnement
 
@@ -165,9 +158,9 @@ proxmox-backup-manager datastore list
 
 ### Les namespaces 📂
 
-Un datastore peut être cloisonné en **namespaces** (jusqu'à 8 niveaux) : un par
-client, par équipe ou par environnement, chacun avec ses propres droits. On en crée un,
-`lab`, pour prendre l'habitude de ne jamais écrire à la racine.
+Un datastore se cloisonne en namespaces (jusqu'à 8 niveaux) : un par client, équipe
+ou environnement, chacun avec ses droits. On en crée un, `lab`, pour ne pas écrire à
+la racine.
 
 ```bash
 proxmox-backup-manager namespace create --store lab-store --ns lab
@@ -179,9 +172,8 @@ proxmox-backup-manager namespace list --store lab-store
    └── lab/        vm/101  vm/120  ct/111 …
 ```
 
-🧠 **La déduplication reste globale au datastore**, même entre namespaces. Sur un PBS
-mutualisé entre six équipes, on gagnerait l'isolation des droits sans perdre l'économie
-d'espace. C'est très élégant.
+🧠 La déduplication reste globale au datastore, même entre namespaces : isolation des
+droits sans perte d'espace.
 
 ---
 
@@ -205,7 +197,7 @@ proxmox-backup-manager acl list
 | `DatastorePowerUser` | créer, lire, supprimer les siennes |
 | `DatastoreAudit` | lecture des métadonnées seulement |
 
-**Récupérez l'empreinte du certificat** — indispensable pour brancher PVE :
+Récupérez l'empreinte du certificat, PVE la demandera :
 
 ```bash
 proxmox-backup-manager cert info | grep -i fingerprint
@@ -215,15 +207,12 @@ proxmox-backup-manager cert info | grep -i fingerprint
 Fingerprint (sha256): AB:CD:EF:...:12:34
 ```
 
-📌 Copiez-la : PVE la demandera.
-
 ---
 
 ## 5. Brancher PBS sur son nœud ⚡
 
-**Chacun le fait sur son nœud.** Au TP 16, une fois le cluster monté, la déclaration
-du stockage sera automatiquement commune aux six nœuds (merci pmxcfs) : on la fera
-**une seule fois**, vers la VM PBS de la salle.
+Chacun sur son nœud. En cluster (TP 16), la déclaration est commune aux six nœuds via
+pmxcfs : on la fera une seule fois, vers la VM PBS de la salle.
 
 🌐 `Datacenter → Storage → Add → Proxmox Backup Server`
 
@@ -253,8 +242,8 @@ pvesm status
 pvesm list pbs-lab
 ```
 
-🪤 Empreinte erronée ⇒ `certificate verification failed`. Recopiez-la **sans espaces
-parasites**, avec les deux-points.
+🪤 Empreinte erronée ⇒ `certificate verification failed`. Sans espaces parasites, avec
+les deux-points.
 
 ---
 
@@ -266,9 +255,8 @@ parasites**, avec les deux-points.
 vzdump 120 --storage pbs-lab --mode snapshot --notes-template '{{guestname}} — {{node}}'
 ```
 
-> `120`, c'est `cloud01`, la VM cloud-init du TP 10 — elle a l'agent QEMU, ce qui compte
-> pour la suite. Son disque est sur `nfs-pc` depuis le TP 14 : PBS sauvegarde
-> indifféremment un volume LVM ou un `.qcow2` sur NFS.
+> `120` est `cloud01` (TP 10) : elle a l'agent QEMU. Son disque est sur `nfs-pc` depuis
+> le TP 14 ; PBS sauvegarde indifféremment un volume LVM ou un `.qcow2`.
 
 Les trois modes :
 
@@ -278,12 +266,10 @@ Les trois modes :
 | `suspend` | fige la VM le temps du snapshot | courte | bonne |
 | **`snapshot`** | snapshot à chaud + agent QEMU (fsfreeze) | **aucune** | ⭐ bonne si l'agent tourne |
 
-🧠 **L'agent QEMU fait toute la différence en mode `snapshot`.** Sans lui, on capture un
-état « comme si on avait coupé le courant » : le système de fichiers devra rejouer son
-journal au démarrage, et une base de données peut être incohérente. Avec l'agent,
-Proxmox demande à l'invité de **geler ses systèmes de fichiers** (`fsfreeze`) le temps
-du snapshot. C'est la différence entre une sauvegarde qu'on restaure sereinement et une
-sauvegarde dont on prie qu'elle marche.
+🧠 **L'agent QEMU fait la différence en mode `snapshot`.** Sans lui, on capture l'état
+d'une coupure de courant : journal à rejouer au démarrage, base de données possiblement
+incohérente. Avec lui, Proxmox demande à l'invité de geler ses systèmes de fichiers
+(`fsfreeze`) le temps du snapshot.
 
 ### Un job planifié
 
@@ -313,10 +299,9 @@ pvesh create /cluster/backup \
 pvesh get /cluster/backup
 ```
 
-🧠 **Sélection par pool, jamais par liste de VM.** Une VM créée demain et ajoutée au pool
-est sauvegardée automatiquement. Une liste figée, c'est la garantie qu'un jour une
-machine importante ne sera pas dans la sauvegarde — et on ne s'en apercevra qu'au
-moment de la restaurer.
+🧠 **Sélection par pool, jamais par liste de VM.** Une VM ajoutée au pool demain est
+sauvegardée automatiquement. Avec une liste figée, une machine finit par manquer, et on
+s'en aperçoit à la restauration.
 
 ### Voir la déduplication à l'œuvre 🎯
 
@@ -346,8 +331,7 @@ proxmox-backup-client snapshot list --ns lab --repository eleve@pbs@$PBS:lab-sto
 
 ## 7. Restaurer 🔄
 
-C'est **la seule chose qui compte**. Une sauvegarde qu'on n'a jamais restaurée n'est pas
-une sauvegarde, c'est une croyance.
+Une sauvegarde jamais restaurée est une croyance.
 
 ### 7.1 Restauration complète
 
@@ -360,17 +344,14 @@ qm start 125
 🌐 `Storage pbs-lab → Backups → sélectionner → Restore`, en changeant le VMID.
 
 🧠 `--storage local-lvm` : le disque était sur `nfs-pc` (TP 14), la copie revient sur
-`local-lvm`. C'est voulu — le stockage cible d'une restauration est **libre**, c'est même
-ce qui permet de restaurer une machine ailleurs que là où elle vivait.
+`local-lvm`. Le stockage cible d'une restauration est libre : on restaure où l'on veut.
 
-🪤 La copie `125` a la **même IP fixe** (`10.10.10.50`) que l'original : ne laissez pas
-les deux tourner en même temps. Une fois le principe vu, `qm stop 125 && qm destroy 125
---purge`.
+🪤 La copie `125` a la même IP fixe (`10.10.10.50`) que l'original : pas les deux en
+même temps. Ensuite : `qm stop 125 && qm destroy 125 --purge`.
 
 ### 7.2 Restauration d'un seul fichier ⭐
 
-Le scénario réel : un utilisateur a supprimé un fichier. Restaurer 20 Go pour un
-document de 3 Ko serait absurde.
+Un utilisateur a supprimé un fichier : on ne restaure pas 20 Go pour 3 Ko.
 
 🌐 `Storage pbs-lab → Backups → sélectionner → File Restore`
 
@@ -391,8 +372,8 @@ proxmox-backup-client restore --ns lab \
 
 ### 7.3 Live-restore 🚀
 
-La fonctionnalité la plus spectaculaire : la VM **démarre immédiatement**, et les blocs
-sont récupérés depuis PBS **à la demande**, pendant qu'elle tourne.
+La VM démarre immédiatement, les blocs sont récupérés depuis PBS à la demande pendant
+qu'elle tourne.
 
 🌐 `Restore → cocher « Start after restore » + « Live restore »`
 
@@ -404,9 +385,8 @@ sont récupérés depuis PBS **à la demande**, pendant qu'elle tourne.
    puis démarrage                  les blocs arrivent en tâche de fond
 ```
 
-🧠 **Cas d'usage** : 3 h du matin, le serveur de production est mort. On veut le service
-de retour en 30 secondes, pas en 8 minutes. Les performances sont dégradées pendant la
-récupération, mais le service est **rendu**.
+🧠 3 h du matin, le serveur de production est mort : service de retour en 30 secondes
+au lieu de 8 minutes, dégradé pendant la récupération, mais rendu.
 
 ### 7.4 Exercice obligatoire 🎯
 
@@ -427,7 +407,7 @@ qm agent 120 ping
 ssh eleve@10.10.10.50 'hostname; uptime'
 ```
 
-✅ **Tant que vous n'avez pas fait ça, vous n'avez pas de sauvegarde.**
+✅ Tant que ce n'est pas fait, vous n'avez pas de sauvegarde.
 
 ---
 
@@ -449,21 +429,17 @@ pvesm set pbs-lab --encryption-key /etc/pve/priv/pbs-lab.enc
 grep -A1 encryption /etc/pve/storage.cfg
 ```
 
-🚨 **Perdez la clé, perdez les sauvegardes. Définitivement.** Il n'y a pas de porte
-dérobée. Générez une **clé papier** :
+🚨 **Clé perdue, sauvegardes perdues.** Pas de porte dérobée. Générez une clé papier :
 
 ```bash
 proxmox-backup-client key paperkey /etc/pve/priv/pbs-lab.enc --output-format text
 ```
 
-Imprimez-la, mettez-la dans un coffre. Ce n'est pas une plaisanterie : c'est la
-procédure recommandée par Proxmox, et c'est ce qui distingue une sauvegarde chiffrée
-d'une bombe à retardement.
+Imprimez-la, mettez-la dans un coffre : c'est la procédure recommandée par Proxmox.
 
-🧠 **Pourquoi chiffrer ?** Parce que la sauvegarde part souvent hors site, chez un
-prestataire, sur un NAS mal protégé. C'est une copie complète de toutes vos données,
-au même endroit, souvent moins surveillée que la production. C'est **la** cible d'un
-attaquant.
+🧠 **Pourquoi chiffrer ?** La sauvegarde part hors site, chez un prestataire, sur un
+NAS mal protégé : une copie complète de vos données, moins surveillée que la
+production. Une cible.
 
 ---
 
@@ -485,10 +461,9 @@ proxmox-backup-manager garbage-collection start lab-store
 proxmox-backup-manager garbage-collection list
 ```
 
-🧠 **Prune ≠ GC.** *Prune* supprime les **index** des sauvegardes. Les **chunks**
-restent sur le disque tant qu'ils sont référencés par au moins un index. C'est le
-*garbage collector* qui balaie et supprime les chunks orphelins. Tant qu'il n'est pas
-passé, l'espace n'est pas rendu — beaucoup d'administrateurs s'y font piéger.
+🧠 **Prune ≠ GC.** Prune supprime les index ; les chunks restent tant qu'un index les
+référence. Le garbage collector supprime les chunks orphelins : avant son passage,
+l'espace n'est pas rendu.
 
 Planifiez-le : `Datastore → Prune & GC → GC Schedule → daily`.
 
@@ -499,9 +474,8 @@ proxmox-backup-manager verify-job create verify-lab \
   --store lab-store --schedule 'sat 03:00' --ignore-verified true --outdated-after 30
 ```
 
-🧠 Chaque chunk est vérifié contre son empreinte SHA-256. C'est ce qui détecte la
-**corruption silencieuse** (bit rot) *avant* le jour où vous en aurez besoin. Une
-sauvegarde non vérifiée est une sauvegarde dont on ne sait rien.
+🧠 Chaque chunk est vérifié contre son empreinte SHA-256 : détection de la corruption
+silencieuse (bit rot) avant le jour où vous en aurez besoin.
 
 ### Sync — la copie hors site
 
@@ -539,10 +513,10 @@ Dans ce lab :
 | 2 supports | ⚠️ partiel | tout est sur le même matériel |
 | 1 hors site | ❌ | c'est un lab — le job `sync` montre comment faire |
 
-🪤 **Et la copie immuable ?** Un ransomware moderne cherche et chiffre les sauvegardes
-avant de frapper la production. Réponses : un compte de sauvegarde en
-`DatastoreBackup` (qui ne peut **pas** supprimer), un PBS distant qui **tire** les
-données au lieu de les recevoir, et idéalement une bande ou un stockage WORM.
+🪤 **Et la copie immuable ?** Un ransomware chiffre les sauvegardes avant la
+production. Réponses : un compte en `DatastoreBackup` (qui ne peut pas supprimer), un
+PBS distant qui tire les données au lieu de les recevoir, et idéalement une bande ou un
+stockage WORM.
 
 ---
 

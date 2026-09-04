@@ -1,8 +1,7 @@
 # Configuration SDN — mode standalone (jour 2)
 
-Ces fichiers reproduisent la configuration des TP 08 et 12. Aux jours 1-3, chaque
-stagiaire est seul sur son nœud : la configuration est **identique pour tout le monde**,
-rien à adapter.
+Ces fichiers reproduisent la configuration des TP 08 et 12. Chaque stagiaire est seul
+sur son nœud : la configuration est **identique pour tout le monde**, rien à adapter.
 
 ## Utilisation
 
