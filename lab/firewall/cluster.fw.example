@@ -4,6 +4,13 @@
 #   1. écrire les règles [RULES] d'autorisation
 #   2. SEULEMENT ENSUITE passer policy_in / policy_forward en DROP
 #   Sinon vous perdez l'accès à :8006 et il faut un clavier sur le serveur.
+#
+# ⭐ C'EST ICI QUE VIT LA SEGMENTATION INTER-ZONES, pas dans les .fw de VNet.
+#   Un paquet qui SORT de son VNet (vers un autre VNet ou vers Internet) est
+#   ROUTÉ par l'hôte : il traverse le hook « forward », où seules les règles
+#   FORWARD du Datacenter et du nœud sont évaluées. Les fichiers
+#   /etc/pve/sdn/firewall/<vnet>.fw ne voient que le trafic INTRA-VNet et
+#   VNet ↔ hôte.  Détail et démonstration : TP 09 §5.4.
 # ─────────────────────────────────────────────────────────────────────────────
 
 [OPTIONS]
@@ -70,11 +77,29 @@ IN ACCEPT -source lan_salle -p tcp -dport 8007 -log nolog # UI PBS
 # ── Diagnostic ───────────────────────────────────────────────────────────────
 IN ACCEPT -source lan_salle -p icmp -log nolog
 
+# ── Services d'infrastructure portés par le nœud (gateway des VNets) ─────────
+# 🧠 policy_in: DROP s'applique AUSSI aux VM : la gateway d'un subnet SDN est une
+#    IP de l'hôte. Sans ces lignes, plus de DNS ni de ping vers la gateway — et
+#    les règles de vint.fw / vdmz.fw n'y changent rien.
+# 🪤 Le DHCP part de 0.0.0.0 : aucun IPSet SDN ne peut le matcher, d'où le filtre
+#    par interface. Sans ça, un guest redémarré ne récupère plus d'IP.
+IN ACCEPT -i vint -p udp -dport 67 -log nolog # DHCP vint
+IN ACCEPT -i vdmz -p udp -dport 67 -log nolog # DHCP vdmz
+# IN ACCEPT -i vsrv -p udp -dport 67 -log nolog # DHCP vsrv — à décommenter au TP 12 (manuel)
+IN ACCEPT -source +sdn/vint-all -p udp -dport 53 -log nolog # DNS depuis vint
+IN ACCEPT -source +sdn/vint-all -p tcp -dport 53 -log nolog
+IN ACCEPT -source +sdn/vint-all -p icmp -log nolog # ping de la gateway
+IN ACCEPT -source +sdn/vdmz-all -p udp -dport 53 -log nolog # DNS depuis vdmz
+IN ACCEPT -source +sdn/vdmz-all -p tcp -dport 53 -log nolog
+IN ACCEPT -source +sdn/vdmz-all -p icmp -log nolog
+
+
 # ── ⭐ Depuis le poste vers TOUS les réseaux privés : SSH, HTTP, PostgreSQL, ping ──
 # Le PC route vers les VNets via le nœud (ip route add 10.10.0.0/16 via $PVE, TP 07).
 # Ce trafic TRAVERSE le nœud : sans ces règles, policy_forward: DROP le jette, et
 # Ansible (TP 13) comme vos « ssh eleve@10.10.x.y » ne passent plus.
 # Une règle par réseau et par flux — même politique pour les VNets EVPN du jour 4.
+# Ces flux sont ROUTÉS (LAN → VNet) : c'est ici qu'ils se décident, pas dans les .fw de VNet.
 FORWARD ACCEPT -source lan_salle -dest net_internal -p tcp -dport 22 -log nolog # SSH
 FORWARD ACCEPT -source lan_salle -dest net_internal -p tcp -dport 80 -log nolog # HTTP
 FORWARD ACCEPT -source lan_salle -dest net_internal -p tcp -dport 5432 -log nolog # PostgreSQL
@@ -91,3 +116,58 @@ FORWARD ACCEPT -source lan_salle -dest net_evpn -p tcp -dport 22 -log nolog
 FORWARD ACCEPT -source lan_salle -dest net_evpn -p tcp -dport 80 -log nolog
 FORWARD ACCEPT -source lan_salle -dest net_evpn -p tcp -dport 5432 -log nolog
 FORWARD ACCEPT -source lan_salle -dest net_evpn -p icmp -log nolog
+
+# ── Zone HOST : le trafic ROUTÉ par le nœud ⭐ ────────────────────────────────
+# C'est la traduction directe de la matrice de flux du TP 09 §1.
+# Même règle d'or qu'ailleurs : les DROP explicites AVANT les règles fourre-tout
+# sans -dest, sinon celles-ci attrapent aussi le trafic inter-zones.
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 22 -log nolog # int->dmz SSH
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 80 -log nolog
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 443 -log nolog
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p icmp -log nolog
+FORWARD DROP -source +sdn/vint-all -dest +sdn/vdmz-all -log info # tout autre int->dmz
+FORWARD DROP -source +sdn/vdmz-all -dest +sdn/vint-all -log warning # 🚨 DMZ -> INTERNE
+FORWARD ACCEPT -source +sdn/vint-all -log nolog # interne -> Internet, libre
+FORWARD ACCEPT -source +sdn/vdmz-all -p tcp -dport 80 -log nolog # dmz -> Internet
+FORWARD ACCEPT -source +sdn/vdmz-all -p tcp -dport 443 -log nolog
+FORWARD ACCEPT -source +sdn/vdmz-all -p udp -dport 53 -log nolog
+FORWARD ACCEPT -source +sdn/vdmz-all -p udp -dport 123 -log nolog # NTP
+
+# ── Zone SERVICES : vsrv n'existe qu'au TP 12, et c'est Terraform (cluster-fw.tf) ──
+#    qui gère alors cluster.fw. À décommenter seulement si vous restez en manuel.
+# FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vint-all -p tcp -dport 9100 -log nolog
+# FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vdmz-all -p tcp -dport 9100 -log nolog
+# FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vint-all -p tcp -dport 22 -log info
+# FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vsrv-all -p tcp -dport 22 -log nolog
+# FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vsrv-all -p tcp -dport 3000 -log nolog
+# FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vsrv-all -p tcp -dport 9090 -log nolog
+# FORWARD DROP -source +sdn/vdmz-all -dest +sdn/vsrv-all -log warning
+# FORWARD ACCEPT -source +sdn/vsrv-all -p tcp -dport 80 -log nolog
+# FORWARD ACCEPT -source +sdn/vsrv-all -p tcp -dport 443 -log nolog
+# FORWARD ACCEPT -source +sdn/vsrv-all -p udp -dport 53 -log nolog
+
+# ── Jour 4 — VNets EVPN (à décommenter au TP 17, quand vprod/vpub/vdb existent) ──
+# Même logique : DHCP par interface, DNS/ping vers la gateway anycast, puis la
+# matrice inter-VNet en FORWARD (voir TP 17 §10). Tant que les IPSets n'existent
+# pas, proxmox-firewall ignore ces lignes en silence — d'où le commentaire.
+# IN ACCEPT -i vprod -p udp -dport 67 -log nolog
+# IN ACCEPT -i vpub -p udp -dport 67 -log nolog
+# IN ACCEPT -i vdb -p udp -dport 67 -log nolog
+# IN ACCEPT -source +sdn/vprod-all -p udp -dport 53 -log nolog
+# IN ACCEPT -source +sdn/vprod-all -p icmp -log nolog
+# IN ACCEPT -source +sdn/vpub-all -p udp -dport 53 -log nolog
+# IN ACCEPT -source +sdn/vpub-all -p icmp -log nolog
+# IN ACCEPT -source +sdn/vdb-all -p udp -dport 53 -log nolog
+# IN ACCEPT -source +sdn/vdb-all -p icmp -log nolog
+# FORWARD ACCEPT -source +sdn/vprod-all -dest +sdn/vdb-all -p tcp -dport 5432 -log nolog
+# FORWARD ACCEPT -source +sdn/vprod-all -dest +sdn/vdb-all -p tcp -dport 3306 -log nolog
+# FORWARD ACCEPT -source +sdn/vdb-all -dest +sdn/vprod-all -p icmp -log nolog
+# FORWARD ACCEPT -source +sdn/vdb-all -dest +sdn/vprod-all -p tcp -dport 22 -log info
+# FORWARD ACCEPT -source +sdn/vprod-all -dest +sdn/vpub-all -log nolog
+# FORWARD DROP -source +sdn/vpub-all -dest +sdn/vprod-all -log warning
+# FORWARD DROP -source +sdn/vpub-all -dest +sdn/vdb-all -log warning
+# FORWARD DROP -source +sdn/vdb-all -log nolog # vdb : pas d'Internet (pas de SNAT non plus)
+# FORWARD ACCEPT -source +sdn/vprod-all -log nolog # prod -> Internet
+# FORWARD ACCEPT -source +sdn/vpub-all -p tcp -dport 80 -log nolog
+# FORWARD ACCEPT -source +sdn/vpub-all -p tcp -dport 443 -log nolog
+# FORWARD ACCEPT -source +sdn/vpub-all -p udp -dport 53 -log nolog

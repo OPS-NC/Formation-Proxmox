@@ -220,12 +220,15 @@ enable: 1
 policy_forward: DROP
 
 [RULES]
+# DHCP : le DISCOVER part de 0.0.0.0, l'OFFER repart de la gateway (TP 09 §5.4)
+FORWARD ACCEPT -p udp -dport 67:68 -log nolog
+
 # Infra : DNS et ICMP vers la gateway
 FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vsrv-gateway -p udp -dport 53 -log nolog
 FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vsrv-gateway -p icmp -log nolog
 
 # Depuis le poste (lan_salle) : SSH, HTTP, PostgreSQL, ping
-# (miroir des règles FORWARD lan_salle → net_* de cluster.fw)
+# (défense en profondeur : le flux est routé, il se décide dans cluster.fw, FORWARD lan_salle → net_*)
 FORWARD ACCEPT -source lan_salle -dest +sdn/vsrv-all -p tcp -dport 22 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vsrv-all -p tcp -dport 80 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vsrv-all -p tcp -dport 5432 -log nolog
@@ -298,6 +301,11 @@ appelle n'importe quel endpoint Proxmox en ressource Terraform.
 
 ### ⚠️ Ce que `vsrv.fw` ne peut pas faire tout seul
 
+Rappel du TP 09 §5.4 : les flux `vsrv → vint:9100` et `vint → vsrv:22` sont **routés**.
+Ce qui les autorise réellement, ce sont les règles `FORWARD` du Datacenter, portées ici
+par `cluster-fw.tf` (`local.fw_matrix`). Les fichiers de VNet restent la défense en
+profondeur, et doivent être cohérents des deux côtés :
+
 Ce fichier autorise `vsrv → vint:9100`. **Ça ne suffit pas.** Le paquet traverse
 **deux** VNets, et `vint.fw` (écrit au TP 09, `policy_forward: DROP`) n'a aucune
 règle dont la **source** est `vsrv` : il jettera le paquet à l'arrivée.
@@ -360,7 +368,7 @@ resource "proxmox_virtual_environment_firewall_rules" "cluster" {
     proto  = "tcp"
     dport  = "8006"
   }
-  # … SSH, noVNC, Corosync, VXLAN, BGP, PBS, ICMP : tout le TP 09, un bloc par règle …
+  # … SSH, noVNC, Corosync, VXLAN, BGP, PBS, ICMP, DHCP/DNS des gateways : tout le TP 09 §4.4 …
 
   # ⭐ Depuis le poste vers CHAQUE réseau privé : SSH, HTTP, PostgreSQL, ping
   dynamic "rule" {
@@ -374,6 +382,9 @@ resource "proxmox_virtual_environment_firewall_rules" "cluster" {
       dport  = rule.value.dport
     }
   }
+
+  # La matrice inter-VNet en FORWARD (TP 09 §5.4), zone services comprise : local.fw_matrix
+  dynamic "rule" { … }
 }
 
 # Les politiques EN DERNIER : les autorisations existent déjà quand DROP s'applique

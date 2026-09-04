@@ -581,6 +581,9 @@ ce soit.
 ## 10. Le firewall en cluster 🛡️
 
 Les règles VNet du TP 09 s'appliquent maintenant sur les six nœuds, écrites une fois.
+Même partage des rôles qu'au TP 09 §5.4 : le fichier de VNet filtre l'intra-VNet et
+l'accès à la gateway anycast ; les flux **entre** VNets et vers Internet sont routés dans
+le VRF et se décident dans les règles `FORWARD` de `cluster.fw`.
 
 `/etc/pve/sdn/firewall/vdb.fw` :
 
@@ -590,12 +593,15 @@ enable: 1
 policy_forward: DROP
 
 [RULES]
+# DHCP (TP 09 §5.4)
+FORWARD ACCEPT -p udp -dport 67:68 -log nolog
+
 # Infra
 FORWARD ACCEPT -source +sdn/vdb-all -dest +sdn/vdb-gateway -p udp -dport 53 -log nolog
 FORWARD ACCEPT -source +sdn/vdb-all -dest +sdn/vdb-gateway -p icmp -log nolog
 
 # Depuis le poste (lan_salle) : SSH, HTTP, PostgreSQL, ping
-# (miroir des règles FORWARD lan_salle → net_* de cluster.fw)
+# (défense en profondeur : le flux est routé, il se décide dans cluster.fw, FORWARD lan_salle → net_*)
 FORWARD ACCEPT -source lan_salle -dest +sdn/vdb-all -p tcp -dport 22 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vdb-all -p tcp -dport 80 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vdb-all -p tcp -dport 5432 -log nolog
@@ -635,9 +641,10 @@ enable: 1
 policy_forward: DROP
 
 [RULES]
+FORWARD ACCEPT -p udp -dport 67:68 -log nolog   # DHCP
 FORWARD ACCEPT -source +sdn/vpub-all -dest +sdn/vpub-gateway -p udp -dport 53 -log nolog
 # Depuis le poste (lan_salle) : SSH, HTTP, PostgreSQL, ping
-# (miroir des règles FORWARD lan_salle → net_* de cluster.fw)
+# (défense en profondeur : le flux est routé, il se décide dans cluster.fw, FORWARD lan_salle → net_*)
 FORWARD ACCEPT -source lan_salle -dest +sdn/vpub-all -p tcp -dport 22 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vpub-all -p tcp -dport 80 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vpub-all -p tcp -dport 5432 -log nolog
@@ -653,7 +660,15 @@ FORWARD ACCEPT -source +sdn/vpub-all -p tcp -dport 443 -log nolog
 FORWARD ACCEPT -source +sdn/vpub-all -p udp -dport 53 -log nolog
 ```
 
+Et dans `/etc/pve/firewall/cluster.fw`, décommentez le bloc « Jour 4 — VNets EVPN » de
+`lab/firewall/cluster.fw.example` (reposé au TP 16 §7.1) : DHCP par interface, DNS et
+ping vers la gateway pour `vprod`/`vpub`/`vdb`, et la matrice inter-VNet en `FORWARD`
+(prod → db 5432, db → prod ping/SSH, pub → prod et pub → db interdits, `vdb` sans
+Internet). Sans lui, `policy_forward: DROP` bloque tout ce qui sort d'un VNet, quoi que
+disent `vdb.fw` et `vpub.fw`.
+
 ```bash
+sed -i '/Jour 4 — VNets EVPN/,$ s/^# \(IN\|FORWARD\)/\1/' /etc/pve/firewall/cluster.fw
 pvesh set /cluster/sdn
 ```
 

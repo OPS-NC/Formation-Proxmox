@@ -1,7 +1,9 @@
 # ── Le firewall du DATACENTER, en code ───────────────────────────────────────
 # Équivalent de /etc/pve/firewall/cluster.fw (modèle : lab/firewall/cluster.fw.example),
 # porté par des ressources NATIVES du provider : options, alias, IPSet, groupes de
-# sécurité, règles. Tout ce que le TP 09 a écrit à la main est ici, versionné.
+# sécurité, règles. Tout ce que le TP 09 a écrit à la main est ici, versionné — y compris
+# la matrice inter-VNet en FORWARD (TP 09 §5.4) : un paquet qui sort de son VNet est routé
+# par l'hôte, et seules les règles FORWARD du Datacenter / du nœud le voient.
 #
 # ⚠ Ce fichier PREND LA MAIN sur cluster.fw. Avant le premier apply, retirez le
 #   fichier écrit au TP 09 (voir TP 12 §5) : Terraform le regénère entièrement,
@@ -29,6 +31,43 @@ locals {
     postgres = { proto = "tcp", dport = "5432", comment = "PostgreSQL depuis le poste" }
     icmp     = { proto = "icmp", dport = null, comment = "ping depuis le poste" }
   }
+
+  # Ce que les VM peuvent demander à leur gateway (une IP de l'hôte) : DNS et ping.
+  fw_gw_rules = flatten([
+    for vnet in ["vint", "vdmz", "vsrv"] : [
+      { key = "${vnet}-dns-udp", vnet = vnet, proto = "udp", dport = "53", comment = "DNS" },
+      { key = "${vnet}-dns-tcp", vnet = vnet, proto = "tcp", dport = "53", comment = "DNS" },
+      { key = "${vnet}-icmp", vnet = vnet, proto = "icmp", dport = null, comment = "ping gateway" },
+    ]
+  ])
+
+  # La matrice de flux du TP 09 §1 (+ la zone services du TP 12), en FORWARD. L'ORDRE compte.
+  fw_matrix = [
+    # interne → DMZ : liste blanche, puis DROP
+    { action = "ACCEPT", source = "+sdn/vint-all", dest = "+sdn/vdmz-all", proto = "tcp", dport = "22", comment = "int -> dmz SSH" },
+    { action = "ACCEPT", source = "+sdn/vint-all", dest = "+sdn/vdmz-all", proto = "tcp", dport = "80", comment = "int -> dmz HTTP" },
+    { action = "ACCEPT", source = "+sdn/vint-all", dest = "+sdn/vdmz-all", proto = "tcp", dport = "443", comment = "int -> dmz HTTPS" },
+    { action = "ACCEPT", source = "+sdn/vint-all", dest = "+sdn/vdmz-all", proto = "icmp", comment = "int -> dmz ping" },
+    { action = "DROP", source = "+sdn/vint-all", dest = "+sdn/vdmz-all", comment = "tout autre int -> dmz", log = "info" },
+    { action = "DROP", source = "+sdn/vdmz-all", dest = "+sdn/vint-all", comment = "DMZ -> INTERNE interdit", log = "warning" },
+    # services (vsrv, TP 12) : supervision et administration
+    { action = "ACCEPT", source = "+sdn/vsrv-all", dest = "+sdn/vint-all", proto = "tcp", dport = "9100", comment = "srv scrape int" },
+    { action = "ACCEPT", source = "+sdn/vsrv-all", dest = "+sdn/vdmz-all", proto = "tcp", dport = "9100", comment = "srv scrape dmz" },
+    { action = "ACCEPT", source = "+sdn/vsrv-all", dest = "+sdn/vint-all", proto = "tcp", dport = "22", comment = "srv -> int SSH", log = "info" },
+    { action = "ACCEPT", source = "+sdn/vint-all", dest = "+sdn/vsrv-all", proto = "tcp", dport = "22", comment = "admin int -> srv SSH" },
+    { action = "ACCEPT", source = "+sdn/vint-all", dest = "+sdn/vsrv-all", proto = "tcp", dport = "3000", comment = "admin int -> srv Grafana" },
+    { action = "ACCEPT", source = "+sdn/vint-all", dest = "+sdn/vsrv-all", proto = "tcp", dport = "9090", comment = "admin int -> srv Prometheus" },
+    { action = "DROP", source = "+sdn/vdmz-all", dest = "+sdn/vsrv-all", comment = "DMZ -> SERVICES interdit", log = "warning" },
+    # sortie Internet (sans dest : EN DERNIER)
+    { action = "ACCEPT", source = "+sdn/vint-all", comment = "int -> Internet libre" },
+    { action = "ACCEPT", source = "+sdn/vdmz-all", proto = "tcp", dport = "80", comment = "dmz -> Internet HTTP" },
+    { action = "ACCEPT", source = "+sdn/vdmz-all", proto = "tcp", dport = "443", comment = "dmz -> Internet HTTPS" },
+    { action = "ACCEPT", source = "+sdn/vdmz-all", proto = "udp", dport = "53", comment = "dmz -> Internet DNS" },
+    { action = "ACCEPT", source = "+sdn/vdmz-all", proto = "udp", dport = "123", comment = "dmz -> Internet NTP" },
+    { action = "ACCEPT", source = "+sdn/vsrv-all", proto = "tcp", dport = "80", comment = "srv -> Internet HTTP" },
+    { action = "ACCEPT", source = "+sdn/vsrv-all", proto = "tcp", dport = "443", comment = "srv -> Internet HTTPS" },
+    { action = "ACCEPT", source = "+sdn/vsrv-all", proto = "udp", dport = "53", comment = "srv -> Internet DNS" },
+  ]
 
   # Produit cartésien réseaux × flux → une règle FORWARD par couple, ordre stable.
   fw_forward_rules = flatten([
@@ -270,6 +309,34 @@ resource "proxmox_virtual_environment_firewall_rules" "cluster" {
     log     = "nolog"
   }
 
+  # ── Services d'infrastructure portés par le nœud : la gateway des VNets est une IP de l'hôte ──
+  # policy_in: DROP s'applique aussi aux VM. Le DHCP part de 0.0.0.0 : aucun IPSet ne le
+  # matche, d'où le filtre par interface. Les IPSets +sdn/* sont utilisables ici.
+  dynamic "rule" {
+    for_each = toset(["vint", "vdmz", "vsrv"])
+    content {
+      type    = "in"
+      action  = "ACCEPT"
+      iface   = rule.value
+      proto   = "udp"
+      dport   = "67"
+      comment = "DHCP ${rule.value}"
+      log     = "nolog"
+    }
+  }
+  dynamic "rule" {
+    for_each = { for r in local.fw_gw_rules : r.key => r }
+    content {
+      type    = "in"
+      action  = "ACCEPT"
+      source  = "+sdn/${rule.value.vnet}-all"
+      proto   = rule.value.proto
+      dport   = rule.value.dport
+      comment = "${rule.value.comment} depuis ${rule.value.vnet}"
+      log     = "nolog"
+    }
+  }
+
   # ── ⭐ Depuis le poste vers TOUS les réseaux privés : SSH, HTTP, PostgreSQL, ping ──
   # Ces règles FORWARD traversent le nœud (policy_forward: DROP sinon). Elles sont
   # ce qui permet à Ansible et à vos « ssh eleve@10.10.x.y » de joindre les VM
@@ -285,6 +352,23 @@ resource "proxmox_virtual_environment_firewall_rules" "cluster" {
       dport   = rule.value.dport
       comment = rule.value.comment
       log     = "nolog"
+    }
+  }
+
+  # ── Zone HOST : le trafic ROUTÉ par le nœud (inter-VNet, sortie Internet) ──
+  # C'est ICI que vit la segmentation inter-zones (TP 09 §5.4), pas dans les .fw de VNet.
+  # Les DROP explicites précèdent les règles fourre-tout sans dest.
+  dynamic "rule" {
+    for_each = { for i, r in local.fw_matrix : format("%02d", i) => r }
+    content {
+      type    = "forward"
+      action  = rule.value.action
+      source  = rule.value.source
+      dest    = lookup(rule.value, "dest", null)
+      proto   = lookup(rule.value, "proto", null)
+      dport   = lookup(rule.value, "dport", null)
+      comment = rule.value.comment
+      log     = lookup(rule.value, "log", "nolog")
     }
   }
 }

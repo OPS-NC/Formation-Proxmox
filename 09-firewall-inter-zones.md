@@ -56,6 +56,32 @@ L'ancien `pve-firewall` iptables les ignore silencieusement : c'est le piège n�
 apt install -y proxmox-firewall
 ```
 
+### 🪤 Avant d'aller plus loin : sur quel back-end pointe `iptables` ?
+
+Sur Debian 13, `iptables` doit être l'alternative **`iptables-nft`**. Basculée sur
+`iptables-legacy` (manipulation fréquente après le TP 07), le SDN écrit son SNAT dans
+les tables legacy, invisibles depuis `nft list ruleset` : diagnostic classique et faux,
+« le NAT a disparu ». Pire, les deux piles se disputent le hook NAT : les compteurs de
+la règle SNAT augmentent et les paquets sortent non natés.
+
+```bash
+iptables -V                              # → v1.8.x (nf_tables) — surtout PAS (legacy)
+update-alternatives --display iptables   # → doit pointer sur /usr/sbin/iptables-nft
+```
+
+Si vous lisez `(legacy)`, remettez le bon back-end et purgez les tables orphelines :
+
+```bash
+update-alternatives --set iptables  /usr/sbin/iptables-nft
+update-alternatives --set ip6tables /usr/sbin/ip6tables-nft
+for t in raw mangle nat filter; do
+  iptables-legacy -t $t -F; iptables-legacy -t $t -X
+  ip6tables-legacy -t $t -F; ip6tables-legacy -t $t -X
+done
+pvesh set /cluster/sdn          # fait ré-écrire le SNAT du SDN, cette fois via nft
+nft list tables                 # « table ip nat » doit maintenant apparaître
+```
+
 🌐 `pve → Firewall → Options → nftables` : ✅
 
 Ou en CLI, dans `/etc/pve/nodes/$(hostname)/host.fw` :
@@ -73,8 +99,22 @@ systemctl status proxmox-firewall --no-pager | head -5
 nft list tables
 ```
 
-⚠️ **Redémarrez vos VM et CT** après le passage à nftables : leurs chaînes de filtrage
-sont recréées au démarrage du guest.
+⚠️ **Redémarrez vos VM et CT** après le passage à nftables — et ce n'est pas une
+précaution de confort.
+
+Avec l'ancien `pve-firewall`, chaque carte en `firewall=1` est branchée derrière un
+**bridge intermédiaire `fwbrXXXiY`**, et une règle `iptables -t raw -A PREROUTING -i
+fwbr+ -j CT --zone 1` place son trafic dans une **zone conntrack dédiée**. Avec
+`proxmox-firewall`, ces bridges n'existent plus : le guest est branché directement sur
+le VNet et le filtrage se fait dans la table `bridge`.
+
+Tant que vous n'avez pas redémarré, vous cumulez les deux topologies. Symptôme :
+**le SNAT ne traduit plus le TCP** (le ping et le DNS en UDP passent, `curl` non), et
+un `tcpdump -ni vmbr0` montre les paquets sortir avec l'IP privée de la VM.
+
+```bash
+ip -br link | grep fwbr      # ⭐ doit ne RIEN renvoyer une fois les guests redémarrés
+```
 
 ```bash
 for id in 101 102; do qm reboot $id; done
@@ -93,7 +133,7 @@ pct reboot 111 ; pct reboot 112
    │     IN / OUT / FORWARD   ·   protection de l'hyperviseur lui-même
    │
    ├─ ③ VNet         /etc/pve/sdn/firewall/<vnet>.fw          ← nftables requis
-   │     FORWARD uniquement  ·   la segmentation inter-réseaux ★
+   │     FORWARD uniquement  ·   trafic DANS le VNet, et VNet ↔ hôte
    │
    └─ ④ VM / CT      /etc/pve/firewall/<vmid>.fw
          IN / OUT              ·   la dernière ligne de défense
@@ -228,7 +268,24 @@ FORWARD ACCEPT -source lan_salle -dest net_dmz -p tcp -dport 22 -log nolog
 FORWARD ACCEPT -source lan_salle -dest net_dmz -p tcp -dport 80 -log nolog
 FORWARD ACCEPT -source lan_salle -dest net_dmz -p tcp -dport 5432 -log nolog
 FORWARD ACCEPT -source lan_salle -dest net_dmz -p icmp -log nolog
+
+# ── Services d'infrastructure portés par le nœud (gateway des VNets) ────────
+# 🪤 `policy_in: DROP` s'applique AUSSI aux VM : la gateway d'un subnet SDN est
+#    une IP de l'hôte. Sans ces règles, plus de DNS ni de ping vers la gateway,
+#    et les règles de `vint.fw` / `vdmz.fw` n'y changent rien (§5.4).
+IN ACCEPT -i vint -p udp -dport 67 -log nolog   # DHCP (la requête part de 0.0.0.0)
+IN ACCEPT -i vdmz -p udp -dport 67 -log nolog
+IN ACCEPT -source +sdn/vint-all -p udp -dport 53 -log nolog
+IN ACCEPT -source +sdn/vint-all -p tcp -dport 53 -log nolog
+IN ACCEPT -source +sdn/vint-all -p icmp -log nolog
+IN ACCEPT -source +sdn/vdmz-all -p udp -dport 53 -log nolog
+IN ACCEPT -source +sdn/vdmz-all -p tcp -dport 53 -log nolog
+IN ACCEPT -source +sdn/vdmz-all -p icmp -log nolog
 ```
+
+🧠 Les IPSets `+sdn/...` sont utilisables dans `cluster.fw` : ils sont générés dans la
+table nftables globale. Des règles Datacenter qui suivent le plan d'adressage sans
+recopier une seule IP.
 
 🚨 `policy_forward: DROP` coupe tout le trafic qui transite par le nœud, y compris
 l'accès Internet des VM SDN. C'est voulu, on rouvre au §5.
@@ -248,6 +305,9 @@ ssh eleve@<IP-de-srv01> hostname     # → ✅ passe toujours (FORWARD lan_salle
 ---
 
 ## 5. Étage ③ — Les règles par VNet ⭐
+
+C'est le cœur du TP, mais **pas la totalité du filtrage**. Lisez le §5.4 avant de
+conclure que « les règles VNet ne marchent pas ».
 
 ### 5.1 Les IPSets offerts par le SDN
 
@@ -280,8 +340,8 @@ FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vint-gateway -p tcp -dport 53 -l
 FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vint-gateway -p icmp -log nolog
 
 # --- Depuis le poste (lan_salle) : SSH, HTTP, PostgreSQL, ping ---------------
-# ⚠ Miroir des règles FORWARD du Datacenter (cluster.fw) : le trafic routé depuis le
-#   LAN traverse aussi ce VNet, et policy_forward est en DROP ici aussi.
+# Défense en profondeur : ce flux est ROUTÉ (LAN → VNet), il se décide dans cluster.fw
+# (FORWARD lan_salle → net_*). Ces lignes ne couvrent que ce que la chaîne VNet voit.
 FORWARD ACCEPT -source lan_salle -dest +sdn/vint-all -p tcp -dport 22 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vint-all -p tcp -dport 80 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vint-all -p tcp -dport 5432 -log nolog
@@ -380,8 +440,8 @@ FORWARD ACCEPT -source +sdn/vdmz-all -dest +sdn/vdmz-gateway -p tcp -dport 53 -l
 FORWARD ACCEPT -source +sdn/vdmz-all -dest +sdn/vdmz-gateway -p icmp -log nolog
 
 # --- Depuis le poste (lan_salle) : SSH, HTTP, PostgreSQL, ping ---------------
-# ⚠ Miroir des règles FORWARD du Datacenter (cluster.fw) : le trafic routé depuis le
-#   LAN traverse aussi ce VNet, et policy_forward est en DROP ici aussi.
+# Défense en profondeur : ce flux est ROUTÉ (LAN → VNet), il se décide dans cluster.fw
+# (FORWARD lan_salle → net_*). Ces lignes ne couvrent que ce que la chaîne VNet voit.
 FORWARD ACCEPT -source lan_salle -dest +sdn/vdmz-all -p tcp -dport 22 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vdmz-all -p tcp -dport 80 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vdmz-all -p tcp -dport 5432 -log nolog
@@ -428,6 +488,131 @@ pvesh set /cluster/sdn
 systemctl reload proxmox-firewall 2>/dev/null || systemctl restart proxmox-firewall
 nft list ruleset | grep -c .
 ```
+
+🪤 `proxmox-firewall` **ignore silencieusement** toute règle qui référence un IPSet
+inconnu (d'où la neutralisation des lignes `vsrv` ci-dessus). Rien à l'écran, il faut
+aller le lire :
+
+```bash
+journalctl -u proxmox-firewall -n 50 --no-pager | grep -i "could not find ipset"   # → vide
+```
+
+---
+
+### 5.4 ⚠️ Ce que les règles VNet ne filtrent PAS — à lire deux fois
+
+Le §5.2 laisse croire qu'un fichier `vint.fw` suffit à rouvrir ce que
+`policy_forward: DROP` a fermé. **C'est faux**, et la documentation officielle est
+formelle sur le périmètre de chaque zone :
+
+> **VNet** — *Traffic passing through a SDN VNet, either from guest to guest or from
+> host to guest and vice-versa.*
+>
+> **Host** — *Traffic going from/to a host, **or traffic that is forwarded by a
+> host**. You can define rules for this zone either at the datacenter level or at the
+> host level.*
+
+Traduction opérationnelle :
+
+| Flux | Étage qui décide | Fichier |
+|---|---|---|
+| VM ↔ VM **dans le même VNet** | ③ VNet | `<vnet>.fw` |
+| VM ↔ **gateway / hôte** (DNS, DHCP, ping de la gw) | ③ VNet **et** ① Datacenter (`IN`) | `<vnet>.fw` + `cluster.fw` |
+| VM d'un VNet → **autre VNet** (routé) | ① Datacenter / ② Nœud, direction `FORWARD` | `cluster.fw` / `host.fw` |
+| VM → **Internet** (routé + SNAT) | ① Datacenter / ② Nœud, direction `FORWARD` | `cluster.fw` / `host.fw` |
+
+Dès qu'un paquet **sort** de son VNet, il est routé par l'hôte : il ne traverse plus la
+chaîne du VNet, il traverse le hook `forward`. Là, seules les règles `FORWARD` du
+Datacenter et du nœud sont évaluées — puis `policy_forward: DROP`.
+
+```
+   VM 10.10.10.50 ──► 1.1.1.1
+        │
+        ├─ bridge vint ......... chaîne « bridge-vint »  (règles de vint.fw)
+        │                        ↑ vue seulement pour vint↔vint et vint↔hôte
+        │
+        └─ ROUTAGE par l'hôte ─► hook « forward »
+                                 ├─ host-forward     (host.fw)
+                                 └─ cluster-forward  (cluster.fw)  ← ★ ici, et ici seul
+                                        └─ policy_forward: DROP
+```
+
+🔬 **La preuve, sur votre nœud** — c'est aussi la meilleure technique de dépannage du
+firewall nftables :
+
+```bash
+nft add table inet dbg
+nft add chain inet dbg pre '{ type filter hook prerouting priority -300; }'
+nft add rule  inet dbg pre ip saddr 10.10.20.101 tcp dport 443 meta nftrace set 1
+nft monitor trace          # … puis lancez un curl depuis la VM, dans un autre terminal
+nft delete table inet dbg  # ⚠ ne l'oubliez pas
+```
+
+Vous verrez le paquet passer de `forward` à `cluster-forward` puis `drop`, **sans
+jamais visiter `bridge-vint`**. Voilà pourquoi vos règles VNet « ne servent à rien ».
+
+#### Les règles `FORWARD` de `cluster.fw`
+
+Elles reprennent la matrice du §1. Même logique d'ordre qu'au niveau VNet : les `DROP`
+explicites **avant** les règles fourre-tout sans `-dest`. `lab/firewall/cluster.fw.example`
+les contient déjà, à la suite des règles `lan_salle` du §4.4 ; si vous l'avez copié,
+elles sont en place.
+
+```ini
+# ── Zone HOST : trafic ROUTÉ par le nœud (inter-VNet et sortie Internet) ─────
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 22 -log nolog
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 80 -log nolog
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 443 -log nolog
+FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p icmp -log nolog
+FORWARD DROP   -source +sdn/vint-all -dest +sdn/vdmz-all -log info
+FORWARD DROP   -source +sdn/vdmz-all -dest +sdn/vint-all -log warning   # 🚨 DMZ → INTERNE
+FORWARD ACCEPT -source +sdn/vint-all -log nolog                          # interne → Internet
+FORWARD ACCEPT -source +sdn/vdmz-all -p tcp -dport 80 -log nolog
+FORWARD ACCEPT -source +sdn/vdmz-all -p tcp -dport 443 -log nolog
+FORWARD ACCEPT -source +sdn/vdmz-all -p udp -dport 53 -log nolog
+FORWARD ACCEPT -source +sdn/vdmz-all -p udp -dport 123 -log nolog
+```
+
+🧠 **Alors les fichiers VNet servent-ils encore à quelque chose ?** Oui, à deux choses
+que le Datacenter ne sait pas faire : filtrer le trafic **intra-VNet** (une VM de la
+DMZ qui attaque sa voisine — ça ne passe jamais par le routeur, donc jamais par
+`forward`), et filtrer les accès **à la gateway** elle-même. C'est de la
+micro-segmentation, pas de la segmentation inter-zones. Gardez les deux : défense en
+profondeur.
+
+#### Le DHCP : la règle que personne n'écrit
+
+Dès qu'un VNet a `policy_forward: DROP`, sa chaîne se termine par un `drop`. Or un
+`DHCPDISCOVER` part de **`0.0.0.0`** vers `255.255.255.255` : **aucun IPSet SDN ne peut
+le matcher**. Et la réponse de dnsmasq, de la gateway vers le guest, tombe sur le même
+`drop`.
+
+Symptôme : au premier redémarrage d'un guest, **plus aucune IP**, et dans le journal :
+
+```
+dnsmasq-dhcp: DHCPOFFER(vdmz) 10.10.20.100 bc:24:11:...
+dnsmasq-dhcp: Error sending DHCP packet to 10.10.20.100: Operation not permitted
+```
+
+D'où cette ligne **en tête** des `[RULES]` de chaque fichier VNet (les exemples du dépôt
+l'ont déjà) :
+
+```ini
+# DHCP : la requête vient de 0.0.0.0 (aucun IPSet ne matche) et l'OFFER repart
+# de la gateway. Sans cette ligne, le drop final de la chaîne tue les deux.
+FORWARD ACCEPT -p udp -dport 67:68 -log nolog
+```
+
+et, côté `cluster.fw`, la requête doit entrer sur l'interface du VNet (déjà au §4.4) :
+
+```ini
+IN ACCEPT -i vint -p udp -dport 67 -log nolog
+IN ACCEPT -i vdmz -p udp -dport 67 -log nolog
+```
+
+🪤 Le piège est **différé** : tout fonctionne tant que les baux en cours sont valides.
+La panne apparaît au redémarrage suivant — souvent le lendemain matin, quand plus
+personne ne fait le lien avec le firewall écrit la veille.
 
 ---
 
@@ -595,8 +780,15 @@ plus personne n'ose supprimer une règle.
 |---|---|---|
 | Les règles VNet n'ont aucun effet | `pve-firewall` iptables actif | `nftables: 1` dans `host.fw` + `apt install proxmox-firewall` |
 | Plus d'accès à `:8006` | `policy_in: DROP` sans règle d'autorisation | Console physique → `pve-firewall stop`, corriger `cluster.fw` |
-| Les VM n'ont plus Internet | `policy_forward: DROP` sans règles VNet | Écrire les règles VNet, ou repasser `policy_forward: ACCEPT` le temps de déboguer |
+| **Les VM n'ont plus Internet, ni accès à l'autre VNet** | Règles écrites **uniquement** au niveau VNet : elles ne couvrent pas le trafic routé | Ajouter les règles `FORWARD` dans `cluster.fw` (**§5.4**) |
+| Plus de DNS ni de ping vers la gateway | `policy_in: DROP` : la gateway est une IP de l'hôte | Règles `IN ACCEPT -source +sdn/<vnet>-all` (**§4.4**) |
+| **Un guest redémarré n'obtient plus d'IP** | Le `drop` final du VNet tue le `DHCPDISCOVER` (source `0.0.0.0`) et l'`OFFER` | `FORWARD ACCEPT -p udp -dport 67:68` dans le `.fw` du VNet (**§5.4**) |
+| `Error sending DHCP packet … Operation not permitted` | Idem, sens hôte → guest | Idem : la plage `67:68`, pas seulement `67` |
+| **`curl` bloque mais `ping` et DNS passent** | Guests encore derrière des `fwbr*` : conflit de zone conntrack, le SNAT ne traduit plus le TCP | `ip -br link \| grep fwbr` puis redémarrer les guests (**§2**) |
+| « Le NAT a disparu » (`nft list ruleset` vide côté NAT) | `iptables` pointe sur `iptables-legacy` | `update-alternatives --display iptables` (**§2**) |
+| Une règle est absente de `nft list ruleset` | Elle référence un IPSet inexistant (ex. `+sdn/vsrv-all` avant le TP 12) | `journalctl -u proxmox-firewall \| grep "could not find ipset"` |
 | Une règle « ne marche pas » | Une règle précédente a déjà matché | Relire de haut en bas ; ajouter `-log info` pour tracer |
+| Je ne sais pas **où** le paquet meurt | — | `nft monitor trace` avec une règle `meta nftrace set 1` (**§5.4**) |
 | Le retour de connexion est bloqué | Croyance erronée | Le conntrack gère les retours : **une seule règle par sens de connexion** |
 | Règles perdues après reboot du guest | Chaînes non recréées | Redémarrer la VM après un changement de backend firewall |
 
@@ -613,9 +805,15 @@ systemctl start proxmox-firewall
 
 ## ✅ Checklist de validation
 
+- [ ] `iptables -V` répond `(nf_tables)` et **pas** `(legacy)`
 - [ ] `nftables: 1` est actif et `proxmox-firewall` tourne
+- [ ] `ip -br link | grep fwbr` ne renvoie rien (guests redémarrés)
 - [ ] `policy_forward: DROP` au niveau Datacenter
 - [ ] `vint.fw` et `vdmz.fw` existent et sont appliqués
+- [ ] `journalctl -u proxmox-firewall | grep "could not find ipset"` ne renvoie rien
+- [ ] Les règles `FORWARD` de la matrice sont dans `cluster.fw`, **pas seulement** dans les `.fw` de VNet
+- [ ] Un guest redémarré récupère bien une IP par DHCP
+- [ ] Je sais dire quel étage filtre un flux routé, et lequel filtre un flux intra-VNet
 - [ ] INTERNAL → Internet : ✅
 - [ ] INTERNAL → DMZ sur 80/443/22 : ✅
 - [ ] INTERNAL → DMZ sur 3306 : ❌
