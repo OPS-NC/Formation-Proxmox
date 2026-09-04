@@ -114,11 +114,11 @@ pvesh set /cluster/sdn
 
 ## 3. Prérequis sur les 6 nœuds ⚙️
 
-**Chaque élève, sur son nœud.** Une seule machine mal préparée fait échouer le fabric.
+**Chaque stagiaire, sur son nœud.** Une seule machine mal préparée fait échouer le fabric.
 
 ```bash
-apt install -y frr frr-pythontools
-dpkg -l | grep -E 'frr|frr-pythontools'
+# Installés à la réinstallation (TP 16 §2.4) — on vérifie, on n'installe pas
+dpkg -l | grep -E '^ii\s+frr(-pythontools)?\s'      # deux lignes attendues
 systemctl status frr --no-pager | head -3
 ```
 
@@ -159,7 +159,8 @@ done
 
 ## 4. Le contrôleur EVPN 🎛️
 
-**Une seule personne** (l'élève 1) crée les objets SDN : ils sont cluster-wide.
+**Une seule personne** (le stagiaire de `pve1`, ou le formateur) crée les objets SDN :
+ils sont cluster-wide.
 
 🌐 `Datacenter → SDN → Controllers → Add → EVPN`
 
@@ -433,25 +434,33 @@ Il enchaîne tous les contrôles ci-dessus et signale ce qui cloche.
 
 ## 8. Déployer et tester 🚀
 
-Chaque élève déploie **sur son nœud**, dans les VNets partagés.
+Chaque stagiaire déploie **sur son nœud**, dans les VNets partagés. Le cluster choisit
+les VMID ; le nom porte celui de votre nœud pour s'y retrouver dans la vue globale.
 
 ```bash
-N=3
-qm clone ${N}90 ${N}60 --name evpn-prod-e$N --pool eleve$N --full 1
-qm set ${N}60 --net0 virtio,bridge=vprod,firewall=1,mtu=1 --ipconfig0 ip=dhcp
-qm set ${N}60 --tags "evpn,prod,eleve$N"
-qm start ${N}60
+# Vos templates du TP 16 §7.4
+TPL_D=$(qm list | awk '/tpl-debian13/   {print $1}')
+TPL_U=$(qm list | awk '/tpl-ubuntu2604/ {print $1}')
 
-qm clone ${N}91 ${N}61 --name evpn-pub-e$N --pool eleve$N --full 1
-qm set ${N}61 --net0 virtio,bridge=vpub,firewall=1,mtu=1 --ipconfig0 ip=dhcp
-qm set ${N}61 --tags "evpn,pub,eleve$N"
-qm start ${N}61
+VMID_PROD=$(pvesh get /cluster/nextid)
+qm clone $TPL_D $VMID_PROD --name evpn-prod-$(hostname) --pool lab --full 1
+qm set $VMID_PROD --net0 virtio,bridge=vprod,firewall=1,mtu=1 --ipconfig0 ip=dhcp
+qm set $VMID_PROD --tags "evpn,prod"
+qm start $VMID_PROD
+
+VMID_PUB=$(pvesh get /cluster/nextid)
+qm clone $TPL_U $VMID_PUB --name evpn-pub-$(hostname) --pool lab --full 1
+qm set $VMID_PUB --net0 virtio,bridge=vpub,firewall=1,mtu=1 --ipconfig0 ip=dhcp
+qm set $VMID_PUB --tags "evpn,pub"
+qm start $VMID_PUB
+
+echo "prod=$VMID_PROD pub=$VMID_PUB"      # 📌 notez-les : TP 18 et 19 les réutilisent
 ```
 
 🪤 **`--full 1` n'est pas une coquetterie ici.** Sur un template, `qm clone` fait un
 **clone lié** par défaut. Or un clone lié sur stockage local **ne peut pas migrer** :
-Proxmox refuse avec `can't migrate 'local-lvm:base-390-disk-0/vm-360-disk-0' as it's
-a clone of 'base-390-disk-0'` — l'image de base n'existe pas sur le nœud cible.
+Proxmox refuse avec `can't migrate 'local-lvm:base-<tpl>-disk-0/vm-<id>-disk-0' as
+it's a clone of 'base-<tpl>-disk-0'` — l'image de base n'existe pas sur le nœud cible.
 Comme on va justement démontrer la migration au §9, on paie les 30 secondes de copie.
 
 Le tableau du [TP 10 §5](10-cloudinit-cli-clonage.md) le disait déjà : *« ❌ pas de
@@ -467,18 +476,29 @@ pvesh get /cluster/sdn/ipam/pve/status --output-format json | jq -r \
   '.[] | select(.subnet != null) | "\(.ip)\t\(.vmid // "-")\t\(.hostname // "-")"' | sort -V
 ```
 
-🧠 **Six élèves déploient en même temps, personne n'obtient la même IP.** L'IPAM est
+🧠 **Six stagiaires déploient en même temps, personne n'obtient la même IP — ni le même
+VMID.** L'IPAM est
 dans `/etc/pve`, donc clusterisé, donc atomique. C'est exactement le service qu'on
 bricolait avec un tableur il y a dix ans.
 
 ### 8.2 Les tests qui comptent
 
-Depuis votre VM `evpn-prod-eN` :
+Avant tout, **depuis votre PC**, une route vers les réseaux EVPN. Ils vivent dans un
+VRF que seuls les **exit nodes** relient au LAN (`exitnodes-local-routing`) : on passe
+par `pve1`.
+
+```bash
+sudo ip route add 10.60.0.0/16 via 172.30.30.151     # pve1, exit node primaire
+ping -c2 10.60.10.<votre-vm>
+ssh eleve@10.60.10.<votre-vm> hostname               # ✅ direct, comme aux jours 2-3
+```
+
+Depuis votre VM `evpn-prod-<nœud>` :
 
 | # | Test | Commande | Attendu |
 |---|---|---|---|
 | 1 | Gateway locale | `ping -c2 10.60.10.1` | ✅ |
-| 2 | **VM d'un autre élève, autre nœud** | `ping -c2 10.60.10.<autre>` | ✅ 🎯 |
+| 2 | **VM d'un autre stagiaire, autre nœud** | `ping -c2 10.60.10.<autre>` | ✅ 🎯 |
 | 3 | **Routage inter-VNet** | `ping -c2 10.60.20.<vpub>` | ✅ 🎯 |
 | 4 | Internet | `ping -c2 1.1.1.1` | ✅ |
 | 5 | **MTU — juste en dessous** | `ping -M do -s 1422 -c2 1.1.1.1` | ✅ |
@@ -545,18 +565,28 @@ ping 10.60.10.<votre-vm>
 Pendant ce temps, sur le nœud :
 
 ```bash
-qm migrate ${N}60 pve5 --online --with-local-disks
+VMID_PROD=$(qm list | awk '/evpn-prod/{print $1}')        # si vous avez changé de shell depuis le §8
+qm migrate $VMID_PROD pve5 --online --with-local-disks    # vers un nœud autre que le vôtre
 ```
 
 Observez le ping. ✅ **Zéro ou un paquet perdu.** La VM a changé de machine physique,
 et son réseau n'a pas bougé d'un millimètre.
 
 ```bash
-qm config ${N}60 | grep -E 'net0'
-ssh -J root@172.30.30.151 eleve@10.60.10.<ip> 'ip -br a; ip route; arp -n'
+# la VM est maintenant sur pve5 : « qm config » ne la connaît plus ici, on passe par l'API
+pvesh get /nodes/pve5/qemu/$VMID_PROD/config | grep -E 'net0'
+ssh eleve@10.60.10.<ip> 'ip -br a; ip route; arp -n'
 ```
 
 L'entrée ARP de la gateway est **identique** avant et après. C'est l'anycast.
+
+Puis **rapatriez-la** : les TP 18 et 19 la cherchent sur votre nœud.
+
+```bash
+# $(hostname) est développé sur VOTRE nœud avant l'envoi : la cible, c'est vous
+ssh root@pve5 "qm migrate $VMID_PROD $(hostname) --online --with-local-disks"
+qm list | grep evpn-prod      # de retour
+```
 
 🧠 Comparez mentalement avec la zone `Simple` du §1 : la même migration aurait fait
 atterrir la VM dans un réseau homonyme mais totalement différent, sans qu'elle s'en
@@ -579,6 +609,13 @@ policy_forward: DROP
 # Infra
 FORWARD ACCEPT -source +sdn/vdb-all -dest +sdn/vdb-gateway -p udp -dport 53 -log nolog
 FORWARD ACCEPT -source +sdn/vdb-all -dest +sdn/vdb-gateway -p icmp -log nolog
+
+# Depuis le poste (lan_salle) : SSH, HTTP, PostgreSQL, ping
+# (miroir des règles FORWARD lan_salle → net_* de cluster.fw)
+FORWARD ACCEPT -source lan_salle -dest +sdn/vdb-all -p tcp -dport 22 -log nolog
+FORWARD ACCEPT -source lan_salle -dest +sdn/vdb-all -p tcp -dport 80 -log nolog
+FORWARD ACCEPT -source lan_salle -dest +sdn/vdb-all -p tcp -dport 5432 -log nolog
+FORWARD ACCEPT -source lan_salle -dest +sdn/vdb-all -p icmp -log nolog
 
 # Entre bases
 FORWARD ACCEPT -source +sdn/vdb-all -dest +sdn/vdb-all -log nolog
@@ -617,6 +654,13 @@ policy_forward: DROP
 
 [RULES]
 FORWARD ACCEPT -source +sdn/vpub-all -dest +sdn/vpub-gateway -p udp -dport 53 -log nolog
+# Depuis le poste (lan_salle) : SSH, HTTP, PostgreSQL, ping
+# (miroir des règles FORWARD lan_salle → net_* de cluster.fw)
+FORWARD ACCEPT -source lan_salle -dest +sdn/vpub-all -p tcp -dport 22 -log nolog
+FORWARD ACCEPT -source lan_salle -dest +sdn/vpub-all -p tcp -dport 80 -log nolog
+FORWARD ACCEPT -source lan_salle -dest +sdn/vpub-all -p tcp -dport 5432 -log nolog
+FORWARD ACCEPT -source lan_salle -dest +sdn/vpub-all -p icmp -log nolog
+
 FORWARD ACCEPT -source +sdn/vpub-all -dest +sdn/vpub-all -p tcp -dport 80 -log nolog
 FORWARD ACCEPT -source +sdn/vpub-all -dest +sdn/vpub-all -p tcp -dport 443 -log nolog
 FORWARD ACCEPT -source +sdn/vprod-all -dest +sdn/vpub-all -log nolog
@@ -640,7 +684,7 @@ dans deux fichiers texte.
 ## 11. Tester la bascule d'exit node 🔥
 
 Démonstration de résilience — **avec l'accord du formateur**, puisque `pve1` héberge
-peut-être des services de la salle.
+PBS et Pulse, les services de la salle.
 
 ```bash
 # Depuis une VM d'un nœud quelconque, un ping continu vers Internet

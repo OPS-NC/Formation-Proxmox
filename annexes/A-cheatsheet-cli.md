@@ -58,10 +58,12 @@ cat /etc/pve/storage.cfg
 
 # NFS  (le serveur, c'est votre poste Ubuntu — TP 14)
 PC=172.30.30.___   # l'IP de votre poste — hostname -I
-pvesm add nfs nfs-e3 --server $PC --export /srv/nfs-e3 \
-    --content images,rootdir,iso,backup,snippets --options vers=4.2 --nodes pve3
+pvesm add nfs nfs-pc --server $PC --export /srv/nfs \
+    --content images,rootdir,iso,backup,snippets --options vers=4.2
+#   en cluster (jour 4) : un ID unique et une restriction au nœud
+#   pvesm add nfs nfs-$(hostname) ... --nodes $(hostname)
 showmount -e <serveur>
-mount -t nfs -o vers=4.2 <serveur>:/srv/nfs-e3 /mnt/test     # tester AVANT de déclarer
+mount -t nfs -o vers=4.2 <serveur>:/srv/nfs /mnt/test         # tester AVANT de déclarer
 
 # Côté serveur NFS (poste Ubuntu)
 sudo exportfs -v ; sudo exportfs -ra
@@ -100,6 +102,7 @@ lvreduce -L -50G pve/data                     # 🪤 REFUSÉ sur un thin pool
 ```bash
 qm list
 qm config <vmid>
+pvesh get /cluster/nextid                  # ⭐ le prochain VMID libre (jour 4 : toujours lui)
 qm create <vmid> --name X --memory 2048 --cores 2 --net0 virtio,bridge=vmbr0
 qm set <vmid> --memory 4096                # à chaud si hotplug actif
 qm start|stop|shutdown|reboot|reset <vmid>
@@ -133,7 +136,7 @@ qm guest exec <vmid> -- /bin/ls /
 qm set <vmid> --ide2 <storage>:cloudinit
 qm set <vmid> --ciuser X --cipassword "$(openssl passwd -6 'mdp')"
 qm set <vmid> --sshkeys /root/.ssh/authorized_keys
-qm set <vmid> --ipconfig0 ip=10.3.10.50/24,gw=10.3.10.1
+qm set <vmid> --ipconfig0 ip=10.10.10.50/24,gw=10.10.10.1
 qm set <vmid> --ipconfig0 ip=dhcp
 qm set <vmid> --cicustom "user=local:snippets/user.yaml"
 qm cloudinit dump <vmid> user|network|meta
@@ -197,7 +200,7 @@ ls -l /etc/pve/sdn/
 diff /etc/pve/sdn/zones.cfg /etc/pve/sdn/zones.running.cfg
 
 # SDN — écriture
-pvesh create /cluster/sdn/zones --zone Z --type simple --nodes pveN --ipam pve --dhcp dnsmasq
+pvesh create /cluster/sdn/zones --zone Z --type simple --ipam pve --dhcp dnsmasq   # --nodes <liste> pour restreindre (cluster)
 pvesh create /cluster/sdn/vnets --vnet V --zone Z
 pvesh create /cluster/sdn/vnets/V/subnets --subnet 10.0.0.0/24 --type subnet \
     --gateway 10.0.0.1 --snat 1 --dhcp-range start-address=10.0.0.100,end-address=10.0.0.200
@@ -261,10 +264,10 @@ ceph config dump | grep -E 'backfill|recovery'
 
 # Pools et images
 ceph osd pool ls detail
-ceph osd map vm-store vm-301-disk-0     # sur QUELS OSD est cet objet ?
+ceph osd map vm-store vm-<vmid>-disk-0  # sur QUELS OSD est cet objet ?
 rbd -p vm-store ls -l
 rbd -p vm-store du
-rbd -p vm-store info vm-301-disk-0
+rbd -p vm-store info vm-<vmid>-disk-0
 
 # CephFS
 ceph fs status

@@ -103,7 +103,7 @@ La documentation officielle est excellente. Prenez le réflexe d'y aller **en pr
 | Dépôt du provider | <https://github.com/bpg/terraform-provider-proxmox> |
 | OpenTofu | <https://opentofu.org/docs/> |
 | Terraform — bonnes pratiques | <https://developer.hashicorp.com/terraform/language/style> |
-| **Ansible — inventaire Proxmox** | <https://docs.ansible.com/ansible/latest/collections/community/general/proxmox_inventory.html> |
+| **Ansible — inventaire Proxmox** | <https://docs.ansible.com/ansible/latest/collections/community/proxmox/proxmox_inventory.html> |
 | Ansible — collection `community.general` | <https://docs.ansible.com/ansible/latest/collections/community/general/> |
 | Ansible — bonnes pratiques | <https://docs.ansible.com/ansible/latest/tips_tricks/ansible_tips_tricks.html> |
 | ansible-lint | <https://ansible.readthedocs.io/projects/lint/> |

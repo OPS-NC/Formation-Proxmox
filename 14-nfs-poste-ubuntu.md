@@ -21,11 +21,11 @@ NAS ou d'une baie de stockage.
    │                LAN salle  172.30.30.0/24                     │
    │                                                              │
    │   ┌──────────────┐                    ┌──────────────┐       │
-   │   │  PC Ubuntu   │                    │  Nœud pve3   │       │
-   │   │172.30.30.<PC>│   NFS v4 / 2049    │172.30.30.153 │       │
+   │   │  PC Ubuntu   │                    │  Nœud pve    │       │
+   │   │     $PC      │   NFS v4 / 2049    │    $PVE      │       │
    │   │              │◄──────────────────►│              │       │
    │   │              │                    │  /mnt/pve/   │       │
-   │   │ /srv/nfs-e3/ │                    │   nfs-e3/    │       │
+   │   │  /srv/nfs/   │                    │   nfs-pc/    │       │
    │   │  ├─ images/  │                    │              │       │
    │   │  ├─ dump/    │                    │              │       │
    │   │  ├─ template/│                    │              │       │
@@ -47,7 +47,7 @@ Le vrai stockage partagé du lab, redondé et sans point de défaillance unique,
 
 ## 2. Ce que le stockage réseau change 📊
 
-| | `local-lvm` (LVM-thin) | `nfs-eN` |
+| | `local-lvm` (LVM-thin) | `nfs-pc` |
 |---|---|---|
 | Performance | ⭐⭐⭐ disque local | ⭐ limité par le lien 1 Gb/s |
 | Format des disques | volume bloc | fichier **`.qcow2`** |
@@ -74,13 +74,11 @@ systemctl status nfs-server --no-pager | head -5
 ### Créer l'arborescence
 
 ```bash
-N=3      # votre numéro d'élève
-
 # ⚠ Ces noms ne sont pas arbitraires : c'est le LAYOUT attendu par Proxmox.
-sudo mkdir -p /srv/nfs-e$N/{images,dump,snippets,template/{iso,cache}}
-sudo chown -R nobody:nogroup /srv/nfs-e$N
-sudo chmod -R 0777 /srv/nfs-e$N
-ls -lR /srv/nfs-e$N | head -20
+sudo mkdir -p /srv/nfs/{images,dump,snippets,template/{iso,cache}}
+sudo chown -R nobody:nogroup /srv/nfs
+sudo chmod -R 0777 /srv/nfs
+ls -lR /srv/nfs | head -20
 ```
 
 | Répertoire | Contenu | Type de `--content` |
@@ -104,24 +102,29 @@ l'interface, sans le moindre message d'erreur.
 ### Déclarer l'export
 
 ```bash
-N=3
+PVE=172.30.30.___                 # ⚠ l'IP de VOTRE nœud (TP 00 §2)
 sudo tee /etc/exports.d/proxmox-lab.exports >/dev/null <<EOF
-# Export pour la formation Proxmox — élève $N
+# Export pour la formation Proxmox
 # ⚠ no_root_squash : Proxmox écrit en root pour créer les disques de VM.
 #   On l'accepte, MAIS on restreint l'export à la seule IP du nœud.
-/srv/nfs-e$N  172.30.30.15$N(rw,sync,no_subtree_check,no_root_squash)
+/srv/nfs  $PVE(rw,sync,no_subtree_check,no_root_squash)
 EOF
 
+cat /etc/exports.d/proxmox-lab.exports    # ⭐ le shell a remplacé $PVE par l'IP littérale
 sudo exportfs -ra
 sudo exportfs -v
 ```
 
-Sortie attendue :
+Sortie attendue (ici avec `.151` en exemple) :
 
 ```
-/srv/nfs-e3     172.30.30.153(sync,wdelay,hide,no_subtree_check,sec=sys,rw,
+/srv/nfs        172.30.30.151(sync,wdelay,hide,no_subtree_check,sec=sys,rw,
                 secure,no_root_squash,no_all_squash)
 ```
+
+🪤 Un fichier d'export ne connaît pas vos variables shell : c'est le heredoc (sans
+quotes autour de `EOF`) qui a substitué `$PVE`. Si vous voyez `$PVE` en toutes lettres
+dans le fichier, la variable n'était pas définie — corrigez avant `exportfs`.
 
 🪤 **`no_root_squash` est un compromis assumé.** Par défaut, NFS transforme le `root`
 du client en `nobody` — mais Proxmox a besoin d'écrire en root pour créer les disques.
@@ -129,7 +132,7 @@ On désactive donc le squash, **et en compensation on restreint l'export à une 
 adresse IP**. Sur une infrastructure réelle, ce partage aurait son propre VLAN de
 stockage, isolé de tout le reste.
 
-> 💡 Pour partager avec tous les nœuds (utile au jour 4) : remplacez `172.30.30.15$N`
+> 💡 Pour partager avec tous les nœuds (utile au jour 4) : remplacez `$PVE`
 > par `172.30.30.0/24`. Mesurez la différence de posture de sécurité — vous venez
 > d'ouvrir un accès root en écriture à tout le réseau.
 
@@ -156,7 +159,7 @@ cauchemar à filtrer. Forcez toujours la v4.
 ```bash
 sudo ufw status
 # S'il est actif :
-sudo ufw allow from 172.30.30.153 to any port 2049 proto tcp comment 'NFS Proxmox'
+sudo ufw allow from $PVE to any port 2049 proto tcp comment 'NFS Proxmox'
 sudo ufw status numbered
 ```
 
@@ -164,7 +167,7 @@ sudo ufw status numbered
 
 ## 4. Automatiser avec Ansible 🎼
 
-On réutilise le rôle `nfs` du TP 13 — cette fois joué sur **`localhost`**.
+On réutilise le rôle `nfs` fourni dans `lab/ansible` — cette fois joué sur **`localhost`**.
 
 `lab/ansible/inventory/local.yml` :
 
@@ -176,9 +179,9 @@ all:
       ansible_host: localhost
       ansible_connection: local
   vars:
-    nfs_root: "/srv/nfs-e3"            # ⚠ votre numéro
-    nfs_allowed_network: "172.30.30.153"   # ⚠ l'IP de VOTRE nœud
-    nfs_manage_disk: false             # pas de disque dédié : on utilise /srv
+    nfs_manage_disk: false                   # pas de disque dédié : on utilise /srv
+    nfs_root: "/srv/nfs"
+    nfs_allowed_network: "172.30.30.151"     # ⚠ l'IP de VOTRE nœud ($PVE)
     # nfs_subdirs : la valeur par défaut du rôle est déjà le layout Proxmox
 ```
 
@@ -204,7 +207,6 @@ hostname -I | awk '{print $1}'        # → notez-la, c'est votre $PC
 Puis, **sur le nœud Proxmox** :
 
 ```bash
-N=3
 PC=172.30.30.___                  # ⚠ l'IP relevée ci-dessus
 
 apt install -y nfs-common
@@ -213,17 +215,17 @@ showmount -e $PC
 
 ```
 Export list for 172.30.30.35:
-/srv/nfs-e3 172.30.30.153
+/srv/nfs 172.30.30.151
 ```
 
 Test manuel **avant** de déclarer le stockage — toujours :
 
 ```bash
-N=3 ; PC=172.30.30.___            # ⚠ votre numéro, et l'IP de votre poste
+PC=172.30.30.___                  # ⚠ l'IP de votre poste
 mkdir -p /mnt/test-nfs
-mount -t nfs -o vers=4.2 $PC:/srv/nfs-e$N /mnt/test-nfs
-touch /mnt/test-nfs/ok-depuis-pve$N && ls -l /mnt/test-nfs/
-rm /mnt/test-nfs/ok-depuis-pve$N
+mount -t nfs -o vers=4.2 $PC:/srv/nfs /mnt/test-nfs
+touch /mnt/test-nfs/ok-depuis-pve && ls -l /mnt/test-nfs/
+rm /mnt/test-nfs/ok-depuis-pve
 umount /mnt/test-nfs
 ```
 
@@ -233,7 +235,7 @@ umount /mnt/test-nfs
 |---|---|
 | `Connection refused` | `nfs-server` arrêté sur le PC |
 | `access denied by server` | L'IP du nœud n'est pas dans l'export |
-| `No route to host` | `ufw` sur le PC, ou `cluster.fw` sur le nœud |
+| `No route to host` | `ufw` sur le PC bloque le port 2049 |
 | `Permission denied` en écriture | `no_root_squash` absent, ou droits sur `/srv` |
 
 ```bash
@@ -251,24 +253,22 @@ ss -tlnp | grep 2049
 
 | Champ | Valeur |
 |---|---|
-| ID | `nfs-eN` |
+| ID | `nfs-pc` |
 | Server | l'IP de **votre poste** (`hostname -I`) |
-| Export | `/srv/nfs-eN` — choisi dans la liste déroulante |
+| Export | `/srv/nfs` — choisi dans la liste déroulante |
 | Content | `Disk image`, `Container`, `ISO image`, `Backup`, `Snippets` |
-| Nodes | `pveN` uniquement (l'export n'autorise que lui) |
+| Nodes | `All` (il n'y en a qu'un pour l'instant) |
 | Enable | ✅ |
 | Options | `vers=4.2` |
 | Prune | `keep-last=3` |
 
 ```bash
-N=3
 PC=172.30.30.___                  # ⚠ l'IP de VOTRE poste
-pvesm add nfs nfs-e$N \
+pvesm add nfs nfs-pc \
   --server $PC \
-  --export /srv/nfs-e$N \
+  --export /srv/nfs \
   --content images,rootdir,iso,backup,snippets \
   --options vers=4.2 \
-  --nodes pve$N \
   --prune-backups 'keep-last=3'
 
 pvesm status
@@ -277,10 +277,16 @@ df -h | grep nfs
 mount | grep nfs
 ```
 
-🧠 **Remarquez `--nodes pve$N`.** Le stockage est déclaré au niveau *Datacenter*, mais
-restreint à votre nœud : c'est cohérent avec un export limité à une IP. Au jour 4, en
-cluster, cette restriction évitera que les cinq autres nœuds tentent de monter votre
-partage et le signalent en erreur.
+🧠 **Pas de `--nodes` aujourd'hui, mais retenez l'option.** Un stockage est déclaré
+au niveau *Datacenter* ; aux jours 1-3 il n'y a qu'un nœud, la restriction est inutile.
+Au TP 16, en cluster, elle deviendra **indispensable** (`--nodes $(hostname)`) :
+sans elle, les six nœuds tenteraient de monter votre partage — qui n'autorise que
+votre IP — et le signaleraient en erreur toutes les 30 secondes dans l'interface de
+tout le monde.
+
+🧠 **Ce stockage est le seul qui survivra à la réinstallation du TP 16.** Il vit sur
+votre PC, pas sur le nœud : les ISO, les snippets et les `vzdump` que vous y déposez
+seront encore là au jour 4. Tout ce qui est sur `local` et `local-lvm` disparaîtra.
 
 ---
 
@@ -289,29 +295,27 @@ partage et le signalent en erreur.
 ### Déplacer un disque de VM, à chaud
 
 ```bash
-N=3
-qm move-disk ${N}20 scsi0 nfs-e$N --delete 1
-qm config ${N}20 | grep scsi0
-ls -lh /mnt/pve/nfs-e$N/images/${N}20/
+qm move-disk 120 scsi0 nfs-pc --delete 1      # cloud01, clonée au TP 10
+qm config 120 | grep scsi0
+ls -lh /mnt/pve/nfs-pc/images/120/
 ```
 
 🧠 Observez le format : sur un stockage `nfs` ou `dir`, le disque est un **fichier
 `.qcow2`** dans `images/<vmid>/`. Sur `local-lvm`, c'était un volume bloc
-(`/dev/pve/vm-320-disk-0`). C'est cette différence qui permet les snapshots qcow2 sur
+(`/dev/pve/vm-120-disk-0`). C'est cette différence qui permet les snapshots qcow2 sur
 NFS — et qui explique la légère perte de performance.
 
 ### Comparer les débits
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
 # Disque sur local-lvm
-qm move-disk ${N}20 scsi0 local-lvm --delete 1
-ssh -J root@172.30.30.153 eleve@10.3.10.50 \
+qm move-disk 120 scsi0 local-lvm --delete 1
+ssh eleve@10.10.10.50 \
   'dd if=/dev/zero of=/tmp/t bs=1M count=512 oflag=direct conv=fsync; rm /tmp/t'
 
 # Le même disque sur NFS
-qm move-disk ${N}20 scsi0 nfs-e3 --delete 1
-ssh -J root@172.30.30.153 eleve@10.3.10.50 \
+qm move-disk 120 scsi0 nfs-pc --delete 1
+ssh eleve@10.10.10.50 \
   'dd if=/dev/zero of=/tmp/t bs=1M count=512 oflag=direct conv=fsync; rm /tmp/t'
 ```
 
@@ -323,23 +327,30 @@ plusieurs centaines de Mo/s en local. C'est la limite du réseau, pas du protoco
 C'est l'usage le plus utile.
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
 # Déplacer l'ISO Debian vers le NFS
-mv /var/lib/vz/template/iso/debian-13*.iso /mnt/pve/nfs-e3/template/iso/
-pvesm list nfs-e3
+mv /var/lib/vz/template/iso/debian-13*.iso /mnt/pve/nfs-pc/template/iso/
+pvesm list nfs-pc
 
 # Un snippet cloud-init partagé
-cp /root/formation/lab/cloud-init/vendor-data-common.yaml /mnt/pve/nfs-e3/snippets/
-qm set ${N}20 --cicustom "vendor=nfs-e3:snippets/vendor-data-common.yaml"
+cp /root/formation/lab/cloud-init/vendor-data-common.yaml /mnt/pve/nfs-pc/snippets/
+qm set 120 --cicustom "vendor=nfs-pc:snippets/vendor-data-common.yaml"
+qm cloudinit dump 120 vendor | head        # Proxmox le lit bien depuis le NFS
+
+# … puis on détache : au TP 16, le stockage s'appellera nfs-<nœud>, et une VM qui
+# référence un stockage inexistant refuse de démarrer.
+qm set 120 --delete cicustom
 ```
 
 ### Une sauvegarde
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-vzdump ${N}20 --storage nfs-e3 --mode snapshot --compress zstd
-ls -lh /mnt/pve/nfs-e3/dump/
+vzdump 120 --storage nfs-pc --mode snapshot --compress zstd
+ls -lh /mnt/pve/nfs-pc/dump/
 ```
+
+🧠 Cette archive est sur votre PC : c'est **le** moyen de faire passer une machine
+au-delà de la réinstallation du TP 16 (`qmrestore` depuis `nfs-pc`, une fois le
+cluster monté).
 
 ---
 
@@ -348,10 +359,9 @@ ls -lh /mnt/pve/nfs-e3/dump/
 **À faire, vraiment.** C'est l'incident que vous vivrez en production.
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-# 1. Une VM tourne, son disque est sur le NFS
-qm move-disk ${N}20 scsi0 nfs-e3 --delete 1
-qm start ${N}20
+# 1. Une VM tourne, son disque est sur le NFS (il y est déjà depuis le §7)
+qm config 120 | grep scsi0                    # → nfs-pc:120/vm-120-disk-0.qcow2
+qm status 120 | grep -q running || qm start 120
 ```
 
 ```bash
@@ -362,11 +372,10 @@ sudo systemctl stop nfs-server
 Observez, sur le nœud :
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-qm status ${N}20
-ls /mnt/pve/nfs-e3/            # ⏳ gèle
+qm status 120
+ls /mnt/pve/nfs-pc/            # ⏳ gèle
 dmesg -T | tail -20            # « nfs: server ... not responding, still trying »
-pvesm status                   # nfs-e3 en « inactive »
+pvesm status                   # nfs-pc en « inactive »
 ```
 
 La VM ne plante pas : ses I/O sont **bloquées en attente**. C'est le comportement du
@@ -406,12 +415,12 @@ copies réparties, complexe, sans point de défaillance.
 ## ✅ Checklist de validation
 
 - [ ] `nfs-kernel-server` tourne sur mon PC Ubuntu
-- [ ] `/srv/nfs-eN/` contient les sous-répertoires attendus
+- [ ] `/srv/nfs/` contient les sous-répertoires attendus
 - [ ] `sudo exportfs -v` montre l'export restreint à l'IP de mon nœud
 - [ ] Seul NFSv4 est actif (`cat /proc/fs/nfsd/versions`)
 - [ ] `showmount -e <ip-pc>` fonctionne depuis le nœud
 - [ ] Le montage manuel a été testé **avant** la déclaration du stockage
-- [ ] Le stockage `nfs-eN` est `active` dans `pvesm status`
+- [ ] Le stockage `nfs-pc` est `active` dans `pvesm status`
 - [ ] J'ai déplacé un disque de VM vers le NFS et la VM fonctionne
 - [ ] J'ai vu le disque sous forme de fichier `.qcow2`
 - [ ] J'ai comparé les débits `local-lvm` vs NFS
@@ -423,15 +432,15 @@ copies réparties, complexe, sans point de défaillance.
 
 ## 🎁 Bonus
 
-1. **Le disque plein** : `fallocate -l 40G /srv/nfs-e3/gros`, puis essayez d'écrire
+1. **Le disque plein** : `fallocate -l 40G /srv/nfs/gros`, puis essayez d'écrire
    depuis une VM. Observez le comportement de Proxmox et les messages du noyau.
-   Nettoyez ensuite (`rm /srv/nfs-e3/gros`). Ce genre d'incident arrive vraiment.
+   Nettoyez ensuite (`rm /srv/nfs/gros`). Ce genre d'incident arrive vraiment.
 2. **CIFS/SMB** : ajoutez un second partage en Samba (`apt install samba`) et déclarez-le
    avec `pvesm add cifs`. Comparez les débits avec NFS.
 3. **Les options de montage** : passez `--options vers=4.2,rsize=1048576,wsize=1048576`
    et re-mesurez avec `dd`. Documentez l'écart.
-4. **Partager avec tout le cluster** : élargissez l'export à `172.30.30.0/24`, retirez
-   `--nodes`, et au jour 4 constatez que les six nœuds le montent. Puis expliquez
+4. **Partager avec tout le cluster** : élargissez l'export à `172.30.30.0/24`, et au
+   jour 4 déclarez le stockage sans `--nodes` : les six nœuds le montent. Puis expliquez
    pourquoi ce n'est **pas** une bonne idée en production (indice : qui éteint son PC
    à 18 h ?).
 

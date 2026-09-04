@@ -18,20 +18,14 @@ log_ratelimit: enable=1,rate=5/second,burst=20
 
 lan_salle 172.30.30.0/24   # LAN physique de la salle
 gw_salle 172.30.30.2       # routeur / accès Internet
-pc_eleve 172.30.30.35      # ⚠ REMPLACEZ : l'IP de VOTRE poste (hostname -I)
-srv_pbs 172.30.30.41       # ⚠ REMPLACEZ : l'IP de la VM PBS (TP 15)
-net_internal 10.3.10.0/24  # ⚠ adapter au numéro d'élève
-net_dmz 10.3.20.0/24
-net_services 10.3.30.0/24
+net_internal 10.10.10.0/24 # zone interne (TP 08)
+net_dmz 10.10.20.0/24      # DMZ (TP 08)
+net_services 10.10.30.0/24 # zone services (TP 12)
 net_evpn 10.60.0.0/16      # les VNets EVPN du jour 4
 
 [IPSET management]               # tout ce qui peut administrer les nœuds
 
 172.30.30.0/24
-
-[IPSET blacklist]
-
-# 203.0.113.66                   # exemple : une IP bannie
 
 [group pve-admin]                # accès à l'administration Proxmox
 
@@ -75,3 +69,25 @@ IN ACCEPT -source lan_salle -p tcp -dport 8007 -log nolog # UI PBS
 
 # ── Diagnostic ───────────────────────────────────────────────────────────────
 IN ACCEPT -source lan_salle -p icmp -log nolog
+
+# ── ⭐ Depuis le poste vers TOUS les réseaux privés : SSH, HTTP, PostgreSQL, ping ──
+# Le PC route vers les VNets via le nœud (ip route add 10.10.0.0/16 via $PVE, TP 07).
+# Ce trafic TRAVERSE le nœud : sans ces règles, policy_forward: DROP le jette, et
+# Ansible (TP 13) comme vos « ssh eleve@10.10.x.y » ne passent plus.
+# Une règle par réseau et par flux — même politique pour les VNets EVPN du jour 4.
+FORWARD ACCEPT -source lan_salle -dest net_internal -p tcp -dport 22 -log nolog # SSH
+FORWARD ACCEPT -source lan_salle -dest net_internal -p tcp -dport 80 -log nolog # HTTP
+FORWARD ACCEPT -source lan_salle -dest net_internal -p tcp -dport 5432 -log nolog # PostgreSQL
+FORWARD ACCEPT -source lan_salle -dest net_internal -p icmp -log nolog # ping
+FORWARD ACCEPT -source lan_salle -dest net_dmz -p tcp -dport 22 -log nolog
+FORWARD ACCEPT -source lan_salle -dest net_dmz -p tcp -dport 80 -log nolog
+FORWARD ACCEPT -source lan_salle -dest net_dmz -p tcp -dport 5432 -log nolog
+FORWARD ACCEPT -source lan_salle -dest net_dmz -p icmp -log nolog
+FORWARD ACCEPT -source lan_salle -dest net_services -p tcp -dport 22 -log nolog
+FORWARD ACCEPT -source lan_salle -dest net_services -p tcp -dport 80 -log nolog
+FORWARD ACCEPT -source lan_salle -dest net_services -p tcp -dport 5432 -log nolog
+FORWARD ACCEPT -source lan_salle -dest net_services -p icmp -log nolog
+FORWARD ACCEPT -source lan_salle -dest net_evpn -p tcp -dport 22 -log nolog
+FORWARD ACCEPT -source lan_salle -dest net_evpn -p tcp -dport 80 -log nolog
+FORWARD ACCEPT -source lan_salle -dest net_evpn -p tcp -dport 5432 -log nolog
+FORWARD ACCEPT -source lan_salle -dest net_evpn -p icmp -log nolog

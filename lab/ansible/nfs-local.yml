@@ -25,6 +25,6 @@
     - name: Comment déclarer le stockage dans Proxmox
       ansible.builtin.debug:
         msg: >-
-          pvesm add nfs nfs-e3 --server {{ ansible_default_ipv4.address }}
+          pvesm add nfs nfs-pc --server {{ ansible_default_ipv4.address }}
           --export {{ nfs_root }} --content images,rootdir,iso,backup,snippets
-          --options vers=4.2 --nodes pve3
+          --options vers=4.2

@@ -1,10 +1,8 @@
 locals {
-  net_srv = "10.${var.eleve}.30.0/24"
-  gw_srv  = "10.${var.eleve}.30.1"
-  net_int = "10.${var.eleve}.10.0/24"
-  net_dmz = "10.${var.eleve}.20.0/24"
-
-  template_id = coalesce(var.template_debian, var.eleve * 100 + 90)
+  net_srv = "10.10.30.0/24"
+  gw_srv  = "10.10.30.1"
+  net_int = "10.10.10.0/24"
+  net_dmz = "10.10.20.0/24"
 }
 
 # ── L'apply SDN, en deux temps ───────────────────────────────────────────────
@@ -36,7 +34,7 @@ resource "proxmox_sdn_zone_simple" "srv" {
 resource "proxmox_sdn_vnet" "srv" {
   id    = "vsrv"
   zone  = proxmox_sdn_zone_simple.srv.id
-  alias = "Services infra e${var.eleve}"
+  alias = "Services infra"
 
   depends_on = [proxmox_sdn_applier.finalizer]
 }
@@ -52,8 +50,8 @@ resource "proxmox_sdn_subnet" "srv" {
   snat    = true
 
   dhcp_range = {
-    start_address = "10.${var.eleve}.30.100"
-    end_address   = "10.${var.eleve}.30.200"
+    start_address = "10.10.30.100"
+    end_address   = "10.10.30.200"
   }
 
   depends_on = [proxmox_sdn_applier.finalizer]

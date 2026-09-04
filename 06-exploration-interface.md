@@ -52,8 +52,8 @@ Si c'est spécifique à une machine → guest.
 | **Pool View** | par pool — ⭐ celle qu'on utilisera en cluster |
 | **Tag View** | par tag — regroupe par étiquette |
 
-🌐 **Testez les quatre maintenant.** En cluster à 6 élèves, la *Pool View* sera la
-seule utilisable.
+🌐 **Testez les quatre maintenant.** Dans le cluster à six nœuds du jour 4, la *Pool
+View* et la *Tag View* seront les seules qui permettent de s'y retrouver.
 
 ### La barre du haut
 
@@ -78,7 +78,7 @@ se trouve la vraie erreur quand une action échoue avec un message vague.
 
 ```bash
 # La même chose en CLI
-pvesh get /nodes/pveN/tasks --limit 20
+pvesh get /nodes/pve/tasks --limit 20
 pvesh get /cluster/tasks
 ```
 
@@ -114,14 +114,17 @@ pvesh get /cluster/tasks
 | Email from address | Expéditeur des notifications | `pve@lab.local` |
 | MAC address prefix | Préfixe MAC des VM | laisser |
 | Migration Settings | Réseau et type de migration | TP 19 |
-| **Next Free VMID Range** | Borne l'attribution automatique | ⭐ `N00`–`N99` |
+| **Next Free VMID Range** | Borne l'attribution automatique du prochain VMID libre | laisser (100–1 000 000) |
 | Cluster Resource Scheduling | Algorithme de placement HA | TP 19 |
 | Tag Style Override | Couleur des tags ⬇ | ⭐ |
 | U2F / WebAuthn | Second facteur | bonus |
 
-🎯 **Faites-le maintenant** : réglez *Next Free VMID Range* sur votre plage. L'interface
-proposera automatiquement le bon VMID et vous ne marcherez plus sur les plates-bandes
-des autres au jour 4.
+🧠 **Regardez *Next Free VMID Range*** sans le modifier. C'est cette option qui
+alimente le VMID proposé par défaut dans *Create VM*, et l'API `pvesh get
+/cluster/nextid`. Aux jours 1-3, on suit le plan de VMID du TP 00 pour les machines
+créées à la main (Terraform, lui, prend déjà le prochain libre) ; au jour 4,
+dans le cluster partagé, c'est **ce mécanisme** qui évitera que deux personnes créent la
+VM 105 en même temps : on laissera Proxmox choisir.
 
 ### 3.2 Notifications
 
@@ -158,24 +161,22 @@ Un **pool** regroupe VM, CT et stockages. Deux usages :
 2. **Déléguer des droits** d'un seul geste.
 
 ```bash
-N=3
-pvesh create /pools --poolid eleve$N --comment "Ressources de l'eleve $N" 2>/dev/null
+pvesh create /pools --poolid lab --comment "Ressources du lab" 2>/dev/null
 pvesh get /pools
 ```
 
 Ajoutez-y toutes vos machines :
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-for id in ${N}01 ${N}02 ${N}11 ${N}12; do
-  pvesh set /pools/eleve$N --vms $id 2>/dev/null
+for id in 101 102 111 112; do
+  pvesh set /pools/lab --vms $id 2>/dev/null
 done
-pvesh get /pools/eleve$N
+pvesh get /pools/lab
 ```
 
 🌐 Basculez en **Pool View**. Vos machines sont regroupées.
 
-🧠 **La vraie force du pool** : `pveum aclmod /pool/eleve3 --users stagiaire@pve --roles
+🧠 **La vraie force du pool** : `pveum aclmod /pool/lab --users stagiaire@pve --roles
 PVEVMUser` donne à un utilisateur le droit d'utiliser *exactement* ces machines, et rien
 d'autre. Pas besoin de lister VM par VM, et les nouvelles VM ajoutées au pool héritent
 automatiquement des droits.
@@ -188,12 +189,14 @@ Un tag est une étiquette libre posée sur un guest. Contrairement au pool, un g
 en porter **plusieurs**.
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-qm set ${N}01 --tags "debian,interne,prod"
-qm set ${N}02 --tags "windows,interne,rdp"
-pct set ${N}11 --tags "alpine,dmz,web"
-pct set ${N}12 --tags "rocky,dmz,web"
+qm set 101 --tags "manuel,debian,interne"
+qm set 102 --tags "manuel,windows,interne,rdp"
+pct set 111 --tags "manuel,alpine,dmz,web"
+pct set 112 --tags "manuel,rocky,dmz,web"
 ```
+
+🧠 `manuel` est le tag d'**origine** (annexe E) : il dit « pas géré par Terraform ». Il
+fera la différence au TP 13, où Ansible ne cible par défaut que les VM `terraform`.
 
 🌐 Basculez en **Tag View**, puis filtrez avec la barre de recherche.
 
@@ -202,8 +205,10 @@ pct set ${N}12 --tags "rocky,dmz,web"
 🌐 `Datacenter → Options → Tag Style Override → Edit`
 
 ```
-prod:FF4444:FFFFFF;dmz:FF8800:000000;interne:0088FF:FFFFFF;web:22AA22:FFFFFF
+prod:CC2222:FFFFFF;dmz:EE7700:000000;interne:2277CC:FFFFFF;services:22AA55:FFFFFF;web:44AA22:FFFFFF;db:8844CC:FFFFFF;terraform:7B42BC:FFFFFF;windows:0078D4:FFFFFF;alpine:0D597F:FFFFFF;rocky:10B981:FFFFFF
 ```
+
+(C'est la palette de référence de l'[annexe E](annexes/E-plan-adressage.md).)
 
 Format : `tag:couleurFond:couleurTexte;` séparés par `;`.
 
@@ -230,8 +235,8 @@ pvesh get /cluster/resources --type vm --output-format json \
 ```
    ┌──────────┐      ┌──────────┐      ┌──────────────────────┐
    │   USER   │      │  GROUP   │      │        PATH          │
-   │ eleve@pve├─────►│ stagiaires├────►│ /pool/eleve3         │
-   └──────────┘      └────┬─────┘      │ /vms/301             │
+   │ eleve@pve├─────►│ stagiaires├────►│ /pool/lab            │
+   └──────────┘      └────┬─────┘      │ /vms/101             │
                           │            │ /storage/local       │
                           │            │ /sdn/zones/zint      │
                           ▼            │ /  (racine)          │
@@ -272,18 +277,17 @@ pveum role list
 ### 6.4 Exercice : créer un compte « stagiaire » 🎯
 
 ```bash
-N=3
 pveum group add stagiaires --comment "Comptes de TP en lecture-execution"
-pveum user add stagiaire$N@pve --password 'Stagiaire2026!' --groups stagiaires
-pveum aclmod /pool/eleve$N --groups stagiaires --roles PVEVMUser
+pveum user add stagiaire@pve --password 'Stagiaire2026!' --groups stagiaires
+pveum aclmod /pool/lab --groups stagiaires --roles PVEVMUser
 pveum acl list
 ```
 
-Testez : déconnectez-vous, reconnectez-vous en `stagiaire3@pve` (realm
+Testez : déconnectez-vous, reconnectez-vous en `stagiaire@pve` (realm
 *Proxmox VE authentication server*).
 
 ✅ Ce que vous devez constater :
-- Vous voyez **uniquement** les machines de votre pool,
+- Vous voyez **uniquement** les machines du pool `lab`,
 - Vous pouvez les démarrer, les arrêter, ouvrir la console,
 - Le bouton **Create VM** est grisé,
 - L'onglet **Hardware** est en lecture seule,
@@ -294,13 +298,9 @@ un prestataire : on crée un pool, un groupe, une ACL.
 
 ### 6.5 Un rôle sur mesure
 
-```bash
-pveum role add SuperviseurLab -privs "VM.Audit Datastore.Audit Sys.Audit SDN.Audit Pool.Audit"
-pveum user add monitoring@pve --comment "Compte lecture seule pour Pulse/Zabbix"
-pveum aclmod / --users monitoring@pve --roles SuperviseurLab
-```
-
-On s'en resservira au **TP 20** pour Pulse.
+`pveum role add` permet de composer un rôle à partir de privilèges unitaires
+(`VM.Audit`, `Datastore.Audit`, `Sys.Audit`…). On le fera au **TP 20**, pour donner à
+Pulse un compte strictement en lecture seule.
 
 ---
 
@@ -355,12 +355,12 @@ pveum user token add ansible@pve inv --privsep 0
 ### 7.3 Stocker les secrets sur votre PC
 
 ```bash
-# 💻 Sur votre PC Ubuntu
+# 💻 Sur votre PC Ubuntu — remplacez 172.30.30.151 par l'IP de VOTRE nœud ($PVE)
 mkdir -p ~/.config/pve && chmod 700 ~/.config/pve
 cat > ~/.config/pve/token.env <<'EOF'
-export PVE_HOST="172.30.30.153"
-export PVE_NODE="pve3"
-export PVE_ENDPOINT="https://172.30.30.153:8006"
+export PVE_HOST="172.30.30.151"
+export PVE_NODE="pve"
+export PVE_ENDPOINT="https://172.30.30.151:8006"
 export PVE_API_TOKEN="terraform@pve!tf=12345678-90ab-cdef-1234-567890abcdef"
 export PVE_ANSIBLE_TOKEN_ID="ansible@pve!inv"
 export PVE_ANSIBLE_TOKEN_SECRET="abcdef00-1111-2222-3333-444455556666"
@@ -414,12 +414,13 @@ pveum user token remove terraform@pve tf     # ne le faites PAS maintenant
 🎯 **Exercice** : dans `Notes`, écrivez la fiche de votre nœud en markdown.
 
 ```markdown
-# pve3 — élève 3
-- IP : 172.30.30.153
-- Plage VMID : 300-399
-- Subnets SDN : 10.3.10.0/24 (int), 10.3.20.0/24 (dmz)
-- Disques : sda (système), sdb (données)
-- Contact : eleve3@formation.local
+# pve — nœud de TP
+- IP : 172.30.30.___ (la vôtre)
+- Pool : lab · VMID : 101 srv01, 102 win01, 111 ct-alpine, 112 ct-rocky
+- Subnets SDN (TP 08) : 10.10.10.0/24 (int), 10.10.20.0/24 (dmz)
+- Disques : sda (système), sdb (si présent : réservé à Ceph, TP 18)
+- Contact : eleve@formation.local
+- ⚠ Réinstallé au TP 16 en pve1…pve6 avant la mise en cluster
 ```
 
 🧠 En production, ces notes sont ce que votre collègue lira à 3 h du matin.
@@ -447,10 +448,9 @@ Ne les négligez pas.
 ### L'option qui sauve : `Protection`
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-qm set ${N}01 --protection 1
-qm destroy ${N}01           # → refusé
-qm set ${N}01 --protection 0
+qm set 101 --protection 1
+qm destroy 101              # → refusé
+qm set 101 --protection 0
 ```
 
 🧠 À activer sur toute VM de production. Empêche la suppression et l'effacement du
@@ -459,10 +459,9 @@ disque, même en `root`. Coût : zéro. Bénéfice : énorme.
 ### Les autres options utiles
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-qm set ${N}01 --onboot 1 --startup order=2,up=30,down=60
-qm set ${N}01 --hotplug disk,network,usb,memory,cpu
-qm set ${N}01 --description "Serveur applicatif — contact: eleve3@formation.local"
+qm set 101 --onboot 1 --startup order=2,up=30,down=60
+qm set 101 --hotplug disk,network,usb,memory,cpu
+qm set 101 --description "Serveur applicatif — contact: eleve@formation.local"
 ```
 
 `startup order=2,up=30` : démarre en deuxième position, puis attend 30 s avant de lancer
@@ -487,8 +486,7 @@ info snapshots
 Équivalent CLI :
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-qm monitor ${N}01
+qm monitor 101
 # puis les mêmes commandes ; « quit » pour sortir
 ```
 
@@ -498,11 +496,11 @@ qm monitor ${N}01
 
 - [ ] Je sais dire, pour un réglage donné, s'il est *datacenter*, *nœud* ou *guest*
 - [ ] J'ai testé les 4 vues de l'arbre (Server / Folder / Pool / Tag)
-- [ ] `Next Free VMID Range` est réglé sur ma plage
-- [ ] Mes 4 machines sont dans le pool `eleveN`
+- [ ] Je sais à quoi sert `Next Free VMID Range` et pourquoi il comptera au jour 4
+- [ ] Mes 4 machines sont dans le pool `lab`
 - [ ] Mes machines portent des tags cohérents (`interne`, `dmz`, `web`…)
 - [ ] Les couleurs de tags sont personnalisées
-- [ ] Un compte `stagiaireN@pve` existe et ne voit que mon pool
+- [ ] Un compte `stagiaire@pve` existe et ne voit que le pool `lab`
 - [ ] Les tokens `terraform@pve!tf` et `ansible@pve!inv` sont créés et testés au `curl`
 - [ ] `~/.config/pve/token.env` existe sur mon PC, en `chmod 600`
 - [ ] La fiche de mon nœud est écrite dans `Notes`
@@ -518,7 +516,7 @@ qm monitor ${N}01
 2. **Realm OpenID** : si le formateur fournit un Keycloak, configurez le SSO.
 3. **Explorer l'API par l'interface** : ouvrez les outils de développement (F12 →
    Réseau), cliquez sur « Start » d'une VM, et repérez l'appel
-   `POST /api2/extjs/nodes/pveN/qemu/N01/status/start`. Vous venez de découvrir
+   `POST /api2/extjs/nodes/pve/qemu/101/status/start`. Vous venez de découvrir
    comment automatiser n'importe quelle action que vous ne savez faire qu'en cliquant.
 4. **Documentation embarquée** : cliquez sur le bouton *Documentation* depuis
    `Datacenter → SDN`. Vous atterrissez directement au bon chapitre, **hors ligne**.

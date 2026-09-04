@@ -11,10 +11,10 @@ ethernets:
   ens18:
     dhcp4: false
     addresses:
-      - 10.3.10.50/24
-    gateway4: 10.3.10.1
+      - 10.10.10.50/24
+    gateway4: 10.10.10.1
     nameservers:
       search: [lab.local]
-      addresses: [10.3.10.1, 1.1.1.1, 8.8.8.8]
+      addresses: [10.10.10.1, 1.1.1.1, 8.8.8.8]
     # ⭐ En EVPN, décommentez : 1500 − 50 octets d'entête VXLAN
     # mtu: 1450

@@ -1,20 +1,13 @@
 # Configuration SDN — mode standalone (jour 2)
 
-Ces fichiers reproduisent la configuration des TP 08 et 12 pour **l'élève 3**.
+Ces fichiers reproduisent la configuration des TP 08 et 12. Aux jours 1-3, chaque
+stagiaire est seul sur son nœud : la configuration est **identique pour tout le monde**,
+rien à adapter.
 
 ## Utilisation
 
-⚠️ **Ne les copiez pas aveuglément** : adaptez le nom du nœud (`pve3`) et le numéro
-d'élève (`10.3.x.x`) au vôtre.
-
 ```bash
-N=3        # votre numéro
-NODE=pve3  # votre nœud
-
-for f in zones vnets subnets; do
-  sed -e "s/pve3/$NODE/g" -e "s/10\.3\./10.$N./g" -e "s/e3$/e$N/" \
-      $f.cfg > /etc/pve/sdn/$f.cfg
-done
+cp zones.cfg vnets.cfg subnets.cfg /etc/pve/sdn/
 
 pvesh set /cluster/sdn          # ⭐ l'apply, sans lui rien ne se passe
 ip -br a | grep -E 'vint|vdmz|vsrv'

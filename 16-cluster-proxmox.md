@@ -1,8 +1,8 @@
-# TP 16 — Mise en cluster des 6 nœuds 🔗
+# TP 16 — Réinstallation et mise en cluster des 6 nœuds 🔗
 
-⏱️ **1 h 15** · Jour 4
+⏱️ **2 h 30** · Jour 4
 
-Objectif : fusionner six hyperviseurs indépendants en un seul cluster Proxmox.
+Objectif : repartir de six nœuds propres, puis les fusionner en un seul cluster Proxmox.
 Comprendre Corosync, le quorum, et ce qui se passe quand ça se passe mal.
 
 📖 Doc : <https://pve.proxmox.com/pve-docs/chapter-pvecm.html>
@@ -57,79 +57,140 @@ Solution : un **QDevice** (§8) — une petite machine tierce qui apporte un vot
 
 ---
 
-## 2. ⚠️ Préparation obligatoire
+## 2. ⚠️ Réinstaller les nœuds
 
-**Un nœud ne peut rejoindre un cluster que s'il n'héberge aucune VM ni conteneur.**
-Et rejoindre un cluster **écrase `/etc/pve`** — donc votre configuration SDN, firewall
-et vos utilisateurs.
+### 2.1 Pourquoi on réinstalle 🧠
 
-### 2.1 Sauvegarder tout ce qui compte
+Pendant trois jours, les six nœuds ont été **rigoureusement identiques** : même
+hostname `pve`, mêmes VMID (`101`, `102`, `111`…), mêmes subnets `10.10.x.0/24`, même
+pool `lab`. C'était voulu — chacun était seul chez lui, aucune convention de
+numérotation à retenir.
 
-**Les guests, vers PBS** (TP 15) — c'est la sauvegarde qui compte :
+Un cluster, lui, exige des **hostnames uniques** et des **VMID uniques** sur les six
+machines. Et de toute façon :
+
+- un nœud ne peut rejoindre un cluster que s'il **n'héberge aucun guest** ;
+- rejoindre un cluster **écrase `/etc/pve`** — SDN, firewall, stockages, utilisateurs.
+
+Renommer un nœud Proxmox à chaud est possible mais piégeux (répertoires dans
+`/etc/pve/nodes/`, certificats, configs de VM à déplacer). Détruire tous les guests
+puis rebaptiser six machines, c'est plus long et plus risqué qu'une **réinstallation
+propre de 15 minutes** — qui, en prime, vous donne une seconde chance sur `maxvz`.
+C'est la voie la plus rapide et la plus honnête.
+
+### 2.2 Sauvegarder ce qui doit survivre 💾
+
+Tout ce qui vit sur votre nœud va disparaître, **y compris votre VM PBS**. Le seul
+stockage qui survit est **l'export NFS de votre poste** (TP 14) : déposez-y ce que vous
+voulez garder.
 
 ```bash
-N=3
-vzdump --pool eleve$N --storage pbs-lab --mode snapshot --compress zstd
-pvesm list pbs-lab
-```
+# Les guests que vous tenez à revoir (ex. cloud01, votre clone cloud-init du TP 10)
+vzdump 120 --storage nfs-pc --mode snapshot --compress zstd
+ls -lh /mnt/pve/nfs-pc/dump/
 
-🌐 Sur PBS : `Datastore → lab-store → <namespace> → Verify`.
-🚨 **Ne continuez pas si la vérification n'est pas verte.** Vous allez détruire les
-originaux.
-
-**Les configurations**, qui ne sont pas dans les sauvegardes de guests :
-
-```bash
-mkdir -p /root/pre-cluster
-tar czf /root/pre-cluster/conf-$(hostname)-$(date +%F).tgz \
+# Les configurations, qui ne sont dans aucune sauvegarde de guest
+mkdir -p /mnt/pve/nfs-pc/conf
+tar czf /mnt/pve/nfs-pc/conf/conf-$(date +%F).tgz \
     /etc/pve/sdn /etc/pve/firewall /etc/pve/nodes/$(hostname)/host.fw \
     /etc/pve/storage.cfg /etc/pve/user.cfg \
     /etc/network/interfaces /etc/hosts 2>/dev/null
-
-cp /etc/pve/qemu-server/*.conf /etc/pve/lxc/*.conf /root/pre-cluster/ 2>/dev/null
-ls -lh /root/pre-cluster/
+cp /etc/pve/qemu-server/*.conf /etc/pve/lxc/*.conf /mnt/pve/nfs-pc/conf/ 2>/dev/null
+ls -lh /mnt/pve/nfs-pc/conf/
 ```
 
-Récupérez tout sur votre PC — il est dehors, lui :
+> 💡 Le stagiaire dont le nœud deviendra **`pve1`** peut aussi sauvegarder sa VM PBS
+> (`vzdump 901 --storage nfs-pc --mode stop`) : c'est elle qui servira de PBS à toute
+> la salle au §7.2, à moins de préférer la réinstaller (10 minutes).
+
+🧠 Pas besoin de `scp` : l'export NFS **est** votre PC. Tout ce que vous venez de
+déposer est déjà dans `/srv/nfs/conf/` et `/srv/nfs/dump/` sur votre poste — il est
+dehors, lui.
+
+🧠 **Ce qui n'a pas besoin d'être sauvegardé** : les templates, les VM Terraform, les
+snippets cloud-init, le code Ansible. Tout cela se reconstruit en quelques commandes —
+c'est **le retour sur investissement du jour 3**. Dans une vraie exploitation,
+`/etc/pve` part dans une sauvegarde de configuration séparée, versionnée dans Git.
+
+### 2.3 Le tableau de la salle 🗺️
+
+Le formateur attribue les noms. **Chacun garde l'IP qu'il avait** : seul le hostname
+change.
+
+| Nœud | Hostname (FQDN) | IP | Rôles au jour 4 |
+|---|---|---|---|
+| `pve1` | `pve1.lab.local` | `172.30.30.151` | crée le cluster · exit node primaire · PBS et Pulse · MON + MGR Ceph |
+| `pve2` | `pve2.lab.local` | `172.30.30.152` | exit node secondaire · MON + MGR Ceph |
+| `pve3` | `pve3.lab.local` | `172.30.30.153` | MON Ceph |
+| `pve4` | `pve4.lab.local` | `172.30.30.154` | |
+| `pve5` | `pve5.lab.local` | `172.30.30.155` | |
+| `pve6` | `pve6.lab.local` | `172.30.30.156` | |
+
+### 2.4 Réinstaller 🏗️
+
+Rejouez le [TP 01 §3](01-installation-proxmox.md) **à l'identique**, avec deux
+différences :
+
+| Champ | Jours 1-3 | **Jour 4** |
+|---|---|---|
+| Hostname (FQDN) | `pve.lab.local` | **`pveX.lab.local`** selon le tableau |
+| IP | `$PVE/24` | `$PVE/24` — inchangée |
+| `maxvz` | … | ⭐ **réduisez-le** (TP 01 §3.1 bis) : 80 Go libres dans le VG |
+
+🎯 **`maxvz` : votre seconde chance.** Si vous l'aviez laissé par défaut au jour 1,
+c'est le moment de le régler : le TP 18 (Ceph) se fera alors en trois commandes
+(« chemin A ») au lieu d'une chirurgie LVM.
+
+Puis rejouez le [TP 01 §5 et §6](01-installation-proxmox.md) : dépôts
+`no-subscription`, `apt full-upgrade`, paquets, `dnsmasq` désactivé, fuseau horaire.
 
 ```bash
-scp -r root@172.30.30.15N:/root/pre-cluster ~/ProxmoxFormation/backup-conf/
+apt install -y vim tmux htop iftop tcpdump ethtool bridge-utils \
+               frr frr-pythontools dnsmasq git proxmox-firewall
+systemctl disable --now dnsmasq
+timedatectl set-timezone Pacific/Noumea    # ou Europe/Paris
 ```
 
-🧠 **Ce que PBS ne sauvegarde pas** : la configuration du nœud (`/etc/pve`), les
-templates, et les ISO. D'où ce `tar`. Dans une vraie exploitation, `/etc/pve` part dans
-une sauvegarde de configuration séparée, versionnée dans Git si possible.
+🪤 **`proxmox-firewall` n'est pas dans l'installation de base.** C'est lui qui donne
+un sens à `nftables: 1` dans `host.fw` (TP 09 §2). Sans lui, les règles VNet du TP 17
+sont ignorées **en silence** — le piège n°1 du TP 09, à ne pas retrouver au jour 4.
 
-### 2.2 Supprimer les guests
+Et depuis votre PC, la clé SSH :
 
 ```bash
-for id in $(qm list | awk 'NR>1{print $1}') ; do qm stop $id 2>/dev/null; sleep 2; qm destroy $id --purge; done
-for id in $(pct list | awk 'NR>1{print $1}') ; do pct stop $id 2>/dev/null; sleep 1; pct destroy $id --purge; done
-qm list ; pct list
+PVE=172.30.30.___            # ⚠ l'IP de VOTRE nœud
+ssh-keygen -R $PVE           # l'ancienne empreinte du nœud n'est plus valable
+ssh-copy-id root@$PVE
+ssh root@$PVE hostname       # → pveX
 ```
 
-> 💡 Les **templates** aussi doivent partir. On les reconstruira en 5 minutes avec
-> `build-template.sh` (§7.4). C'est justement pourquoi on a industrialisé au TP 10.
->
-> ⚠️ **`pve1` fait exception** : il *crée* le cluster, donc il conserve ses guests —
-> dont la VM `pbs-lab`. Ne la détruisez surtout pas, c'est elle qui contient les
-> sauvegardes de toute la salle.
+### 2.5 Résolution de noms : les six nœuds 📇
 
-### 2.3 Nettoyer le SDN local
+Sur **chaque** nœud, `/etc/hosts` doit connaître toute la salle :
 
-```bash
-bash /root/formation/lab/scripts/reset-sdn.sh
-pvesh get /cluster/sdn/zones      # doit être vide
-ip -br a | grep -E 'vint|vdmz|vsrv'    # aucune sortie
+```
+127.0.0.1       localhost.localdomain localhost
+172.30.30.151   pve1.lab.local pve1
+172.30.30.152   pve2.lab.local pve2
+172.30.30.153   pve3.lab.local pve3
+172.30.30.154   pve4.lab.local pve4
+172.30.30.155   pve5.lab.local pve5
+172.30.30.156   pve6.lab.local pve6
 ```
 
-### 2.4 Vérifications finales
+🪤 **La ligne de votre propre nœud doit contenir votre vraie IP**, pas `127.0.1.1`.
+Sinon Corosync s'annonce sur la loopback et le cluster ne se forme pas.
 
 ```bash
-qm list && pct list                       # vides
-hostname --ip-address                     # 172.30.30.15N, pas 127.x
-ping -c1 pve1 && ping -c1 pve2 && ping -c1 pve3 \
-  && ping -c1 pve4 && ping -c1 pve5 && ping -c1 pve6
+hostname --ip-address     # doit renvoyer votre IP en 172.30.30.x, pas 127.x
+```
+
+### 2.6 Vérifications finales
+
+```bash
+qm list && pct list                       # vides : nœud neuf
+hostname ; hostname --ip-address          # pveX, et votre IP
+for n in 1 2 3 4 5 6; do ping -c1 -W1 pve$n >/dev/null && echo "pve$n OK" || echo "pve$n KO"; done
 timedatectl status | grep -E 'synchron|Time zone'
 pveversion                                # MÊME version sur tous les nœuds
 systemctl status corosync --no-pager | head -3
@@ -142,7 +203,7 @@ retard : `apt update && apt full-upgrade && reboot`.
 
 ## 3. Créer le cluster (sur `pve1` uniquement) 🖥️
 
-Un seul élève, l'élève 1, exécute ceci :
+Un seul stagiaire — celui dont le nœud est `pve1` — exécute ceci :
 
 ```bash
 pvecm create FORMATION --link0 172.30.30.151
@@ -187,13 +248,13 @@ mentionner en soutenance.
 
 ---
 
-## 4. Rejoindre le cluster (élèves 2 à 6) 🔗
+## 4. Rejoindre le cluster (les cinq autres nœuds) 🔗
 
 **Un nœud à la fois.** Attendez que le précédent soit `Quorate: Yes` avant de lancer
-le suivant. Six `pvecm add` simultanés, c'est le meilleur moyen de tout casser.
+le suivant. Cinq `pvecm add` simultanés, c'est le meilleur moyen de tout casser.
 
 ```bash
-pvecm add 172.30.30.151 --link0 172.30.30.15N
+pvecm add 172.30.30.151 --link0 $(hostname --ip-address)
 ```
 
 Il demande :
@@ -204,7 +265,7 @@ Puis :
 
 ```
 Please wait while the node is joined...
-successfully added node 'pveN' to cluster.
+successfully added node 'pve3' to cluster.
 ```
 
 ⚠️ **Votre session web est cassée** : le certificat du nœud a été régénéré et
@@ -233,7 +294,7 @@ Quorum:           4
 
 Sans SSH ni mot de passe partagé :
 1. Sur `pve1` : `Datacenter → Cluster → Join Information → Copy Information`
-2. Sur `pveN` : `Datacenter → Cluster → Join Cluster`, coller, saisir le mot de passe
+2. Sur votre nœud : `Datacenter → Cluster → Join Cluster`, coller, saisir le mot de passe
    root de `pve1`, valider.
 
 C'est la méthode recommandée quand plusieurs personnes opèrent.
@@ -339,14 +400,18 @@ récupérations de sinistre, quand on est **certain** que l'autre moitié est mo
 
 ### 7.1 Rétablir le firewall
 
-`/etc/pve/firewall/cluster.fw` est maintenant **commun aux six nœuds**. L'élève 1
-le remet en place, tout le monde en bénéficie :
+`/etc/pve/firewall/cluster.fw` est maintenant **commun aux six nœuds**. Le stagiaire de
+`pve1` (ou le formateur) le met en place, tout le monde en bénéficie :
 
 ```bash
+[ -d /root/formation ] || git clone <url-du-depot> /root/formation   # le nœud est neuf
 cp /root/formation/lab/firewall/cluster.fw.example /etc/pve/firewall/cluster.fw
-vim /etc/pve/firewall/cluster.fw     # vérifier la règle Corosync 5405:5412 !
+vim /etc/pve/firewall/cluster.fw     # vérifier la règle Corosync 5405:5412
 pve-firewall compile | head -20
 ```
+
+Le fichier d'exemple porte aussi les règles `FORWARD lan_salle → net_evpn` : c'est ce
+qui permettra à votre PC de joindre les VM EVPN du TP 17 directement.
 
 🪤 **Sans la règle Corosync, activer le firewall casse le cluster.** Vérifiez avant :
 
@@ -368,18 +433,31 @@ EOF
 
 ### 7.2 Re-déclarer les stockages 💾
 
-`/etc/pve/storage.cfg` est maintenant **commun aux six nœuds**. Vos déclarations des
-TP 14 et 15 ont disparu avec le reste de `/etc/pve`. On les refait — et cette fois
-une seule déclaration suffit pour tout le cluster.
+`/etc/pve/storage.cfg` est **commun aux six nœuds**, et il ne contient plus que `local`
+et `local-lvm` : les nœuds sont neufs. On redéclare — et cette fois, une seule déclaration suffit pour tout le cluster.
 
-**PBS** — une seule personne le fait, c'est cluster-wide :
+**PBS** — la VM PBS de la salle vit sur **`pve1`**. Le stagiaire de `pve1` (ou le
+formateur) la recrée, au choix :
 
 ```bash
-PBS=172.30.30.___            # ⚠ l'adresse de la VM PBS (TP 15)
+# Option A : la restaurer depuis le NFS de son poste (sauvegardée au §2.2)
+PC=172.30.30.___             # ⚠ l'IP du poste du stagiaire de pve1
+pvesm add nfs nfs-pve1 --server $PC --export /srv/nfs \
+  --content images,rootdir,iso,backup,snippets --options vers=4.2 --nodes pve1
+qmrestore /mnt/pve/nfs-pve1/dump/vzdump-qemu-901-*.vma.zst 901 --storage local-lvm
+qm start 901
+
+# Option B : la réinstaller — TP 15 §2 à §4, une dizaine de minutes
+```
+
+Puis, **une seule personne**, depuis n'importe quel nœud :
+
+```bash
+PBS=172.30.30.___            # ⚠ l'adresse de la VM PBS de la salle
 pvesm add pbs pbs-lab \
-  --server $PBS --datastore lab-store \
-  --username eleve1@pbs --password 'Formation2026!' \
-  --fingerprint '<empreinte relevée au TP 15>' \
+  --server $PBS --datastore lab-store --namespace lab \
+  --username eleve@pbs --password 'Formation2026!' \
+  --fingerprint '<empreinte : proxmox-backup-manager cert info sur la VM PBS>' \
   --content backup
 pvesm status
 ```
@@ -389,67 +467,128 @@ Vérifiez depuis un autre nœud : `pbs-lab` y apparaît tout seul. 🎩
 **Le NFS de chaque poste** — chacun sur son nœud :
 
 ```bash
-N=3
 PC=172.30.30.___             # ⚠ l'IP de VOTRE poste (hostname -I)
-pvesm add nfs nfs-e$N \
-  --server $PC --export /srv/nfs-e$N \
+pvesm status | grep -q "^nfs-$(hostname) " || \
+pvesm add nfs nfs-$(hostname) \
+  --server $PC --export /srv/nfs \
   --content images,rootdir,iso,backup,snippets \
-  --options vers=4.2 --nodes pve$N
+  --options vers=4.2 --nodes $(hostname)
+pvesm status
 ```
 
-🪤 **N'oubliez pas `--nodes pveN`.** Sans lui, les six nœuds tenteraient de monter votre
-partage — qui n'autorise que votre IP — et le signaleraient en erreur toutes les
-30 secondes dans l'interface de **tout le monde**.
+> Le stagiaire de `pve1` l'a déjà fait à l'option A : le garde-fou `grep -q` évite le
+> `storage ID 'nfs-pve1' already defined`.
 
-> 💡 Chaque élève peut aussi ajouter un stockage `pbs-eN` pointant sur **son** namespace
-> (`--namespace eleveN --nodes pveN`), pour ne voir que ses propres sauvegardes.
+🪤 **En cluster, `--nodes` n'est plus optionnel.** L'ID du stockage doit être unique
+dans le cluster (d'où `nfs-pve3` plutôt que `nfs-pc`), et sans `--nodes`, les six nœuds
+tenteraient de monter votre partage — qui n'autorise que votre IP — et le signaleraient
+en erreur toutes les 30 secondes dans l'interface de **tout le monde**.
 
 🧠 Le stockage réellement partagé et redondé arrivera au **TP 18** avec Ceph :
 `vm-store` et `cephfs`, visibles et utilisables depuis les six nœuds.
 
-### 7.3 Restaurer vos guests depuis PBS 🔄
+### 7.3 Restaurer depuis votre NFS — ce qui a survécu 🔄
 
-C'est maintenant que le TP 15 paie. Vos machines sont dans PBS, le cluster est monté :
-restaurez-les.
+Facultatif, mais instructif : la sauvegarde déposée au §2.2 est là, sur un nœud
+réinstallé, dans un cluster qui n'existait pas quand elle a été faite.
 
 ```bash
-N=3
-pvesm list pbs-lab | grep "vm/$((N))"
-qm restore ${N}01 pbs-lab:backup/vm/${N}01/<timestamp> --storage local-lvm
-qm restore ${N}02 pbs-lab:backup/vm/${N}02/<timestamp> --storage local-lvm
-pct restore ${N}11 pbs-lab:backup/ct/${N}11/<timestamp> --storage local-lvm
-qm list ; pct list
+ls /mnt/pve/nfs-$(hostname)/dump/
+NEW=$(pvesh get /cluster/nextid)
+qmrestore /mnt/pve/nfs-$(hostname)/dump/vzdump-qemu-120-*.vma.zst $NEW --storage local-lvm
+qm set $NEW --delete cicustom     # le snippet pointait sur « nfs-pc », qui n'existe plus
+qm list
 ```
 
-⚠️ **Respectez votre plage de VMID** : dans un cluster à six, un VMID en doublon est
-purement refusé. C'est le plan du TP 00 qui vous sauve ici.
+🪤 **`--delete cicustom`** : si `cloud01` a gardé le `--cicustom vendor=nfs-pc:snippets/…`
+du TP 14, la VM restaurée refuse de démarrer (`storage 'nfs-pc' does not exist`). Le
+stockage s'appelle désormais `nfs-<nœud>` — le TP 14 retirait déjà ce réglage en fin
+de TP, ceci est le filet de sécurité.
+
+🧠 **En cluster, le VMID est unique pour les six nœuds.** Ne choisissez plus vos numéros
+à la main : `pvesh get /cluster/nextid` rend le prochain VMID libre du cluster, et
+l'interface web le propose d'elle-même. C'est ce qu'on fera pour toutes les machines du
+jour 4.
+
+🪤 Deux stagiaires qui lancent `nextid` à la même seconde obtiennent le même numéro :
+le second `qm create` échoue avec `VM already exists`. Relancez, c'est tout.
 
 ### 7.4 Reconstruire les templates
 
-Un template n'existe que sur son nœud (stockage local, non sauvegardé). Chacun refait
-les siens — en cinq minutes, parce qu'on les a industrialisés au TP 10 :
+Un template n'existe que sur son nœud (stockage local). Chacun refait les siens — en
+cinq minutes, parce qu'on les a industrialisés au TP 10. Le nœud est neuf : commencez
+par y recloner le dépôt.
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
+[ -d /root/formation ] || git clone <url-du-depot> /root/formation
 cd /root/formation
-./lab/scripts/build-template.sh --eleve N --os debian13   --vmid ${N}90
-./lab/scripts/build-template.sh --eleve N --os ubuntu2604 --vmid ${N}91
-./lab/scripts/build-template.sh --eleve N --os rocky10    --vmid ${N}92
+./lab/scripts/build-template.sh --os debian13   --vmid $(pvesh get /cluster/nextid)
+./lab/scripts/build-template.sh --os ubuntu2604 --vmid $(pvesh get /cluster/nextid)
+./lab/scripts/build-template.sh --os rocky10    --vmid $(pvesh get /cluster/nextid)
+qm list | grep tpl-          # notez VOS trois VMID, les TP 17 et 18 s'en servent
 ```
 
 🧠 **C'est le retour sur investissement du jour 3.** Sans les scripts, Terraform et
 Ansible, reconstruire l'environnement après la mise en cluster prendrait la matinée.
 Là, il suffit de rejouer `terraform apply` puis `ansible-playbook site.yml`.
 
-🌐 Dans `Datacenter → Search`, vous voyez maintenant les templates de tout le monde.
-D'où l'importance du plan de VMID.
+🌐 Dans `Datacenter → Search`, vous voyez maintenant les templates de tout le monde :
+six `tpl-debian13`, avec six VMID différents. Filtrez sur votre nœud.
 
-### 7.5 Recréer les pools
+### 7.5 Recréer le pool
+
+Un seul pool, partagé, comme aux jours 1-3 — une seule personne le crée :
 
 ```bash
-for i in 1 2 3 4 5 6; do pvesh create /pools --poolid eleve$i 2>/dev/null; done
+pvesh create /pools --poolid lab --comment "Ressources de la formation"
 pvesh get /pools
 ```
+
+### 7.6 Comptes, tokens et poste de travail 🔑
+
+`/etc/pve/user.cfg` a disparu avec la réinstallation : les comptes et tokens du
+[TP 06 §7](06-exploration-interface.md) n'existent plus. En cluster, ils sont
+**cluster-wide** — **une seule personne** les recrée, tout le monde en profite :
+
+```bash
+pveum user add eleve@pve --password 'Formation2026!' --comment "Compte de TP"
+pveum aclmod / --users eleve@pve --roles PVEAdmin
+
+pveum role add TerraformProv -privs "Datastore.Allocate Datastore.AllocateSpace Datastore.AllocateTemplate Datastore.Audit Pool.Allocate Pool.Audit SDN.Allocate SDN.Audit SDN.Use Sys.Audit Sys.Console Sys.Modify VM.Allocate VM.Audit VM.Clone VM.Config.CDROM VM.Config.Cloudinit VM.Config.CPU VM.Config.Disk VM.Config.HWType VM.Config.Memory VM.Config.Network VM.Config.Options VM.Migrate VM.Monitor VM.PowerMgmt User.Modify"
+pveum user add terraform@pve --comment "Provisioning Terraform"
+pveum aclmod / --users terraform@pve --roles TerraformProv
+pveum user token add terraform@pve tf --privsep 0        # 📌 notez le secret
+
+pveum user add ansible@pve --comment "Inventaire dynamique Ansible"
+pveum aclmod / --users ansible@pve --roles PVEAuditor
+pveum user token add ansible@pve inv --privsep 0         # 📌 notez le secret
+```
+
+> La liste des privilèges est celle du TP 06 §7.1.
+
+Puis **chacun, sur son PC**, met à jour ses deux fichiers : le nœud ne s'appelle plus
+`pve`, et les tokens ont changé.
+
+```bash
+# ~/.config/pve/token.env
+export PVE_NODE="pve3"                                   # ⚠ VOTRE nœud
+export PVE_API_TOKEN="terraform@pve!tf=<nouveau-secret>"
+export PVE_ANSIBLE_TOKEN_SECRET="<nouveau-secret>"
+
+# lab/terraform/*/terraform.tfvars
+pve_node      = "pve3"                                   # ⚠ VOTRE nœud
+pve_api_token = "terraform@pve!tf=<nouveau-secret>"
+```
+
+```bash
+source ~/.config/pve/token.env
+curl -sk -H "Authorization: PVEAPIToken=$PVE_API_TOKEN" \
+  "$PVE_ENDPOINT/api2/json/nodes" | jq -r '.data[].node'       # → les six nœuds
+rm -rf /tmp/ansible-pve-cache                                   # le cache d'inventaire Ansible est périmé
+```
+
+🧠 **Un seul token Terraform pour six postes ?** C'est un lab. En production, un token
+par équipe ou par pipeline, avec des privilèges limités au pool concerné.
 
 ---
 
@@ -519,17 +658,19 @@ rm -rf /etc/pve/nodes/pve6      # si le répertoire persiste
 
 ## ✅ Checklist de validation
 
+- [ ] Mon nœud est réinstallé en `pveX` (tableau du §2.3), avec `maxvz` réglé
+- [ ] `/etc/hosts` contient les six nœuds, et `hostname --ip-address` renvoie ma vraie IP
 - [ ] `pvecm status` : `Nodes: 6`, `Quorate: Yes`, `Quorum: 4`
 - [ ] `pvecm nodes` liste les six nœuds avec le bon numéro d'ID
 - [ ] L'interface web d'un nœud affiche les six
 - [ ] Un fichier créé dans `/etc/pve` sur un nœud apparaît sur les autres
 - [ ] J'ai vu `/etc/pve` passer en lecture seule pendant la perte de quorum
 - [ ] Le firewall du datacenter autorise Corosync (5405-5412)
-- [ ] Mes guests sont restaurés depuis PBS
-- [ ] Mes templates sont reconstruits
-- [ ] Les stockages `pbs-lab` et `nfs-eN` sont déclarés et actifs
-- [ ] Mon pool `eleveN` existe
-- [ ] La VM `pbs-lab` sur pve1 n'a **pas** été détruite
+- [ ] Mes templates sont reconstruits (`qm list | grep tpl-`)
+- [ ] Les stockages `pbs-lab` et `nfs-<nœud>` sont déclarés et actifs
+- [ ] Le pool `lab` existe
+- [ ] Les comptes `eleve@pve`, `terraform@pve!tf` et `ansible@pve!inv` sont recréés, et mon `token.env` / `terraform.tfvars` pointent sur `pveX`
+- [ ] Je sais pourquoi on laisse le cluster choisir les VMID (`pvesh get /cluster/nextid`)
 - [ ] Je sais dire combien de pannes tolère un cluster de 6, et pourquoi
 
 ---

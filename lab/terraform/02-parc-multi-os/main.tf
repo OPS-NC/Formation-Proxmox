@@ -1,33 +1,19 @@
-locals {
-  # VMID par défaut : eleve*100 + 90/91/92, conformément au TP 10
-  templates = merge({
-    debian = var.eleve * 100 + 90
-    ubuntu = var.eleve * 100 + 91
-    rocky  = var.eleve * 100 + 92
-  }, var.templates)
-
-  # Un VMID stable et déterministe pour chaque machine de la map
-  machine_names = sort(keys(var.machines))
-  vmids = {
-    for i, name in local.machine_names :
-    name => var.eleve * 100 + 22 + i
-  }
-}
-
 resource "proxmox_virtual_environment_vm" "parc" {
   for_each = var.machines
 
-  name        = "${each.key}-e${var.eleve}"
+  name        = each.key
   description = "Déployée par Terraform — TP 11"
   node_name   = var.pve_node
-  vm_id       = local.vmids[each.key]
-  pool_id     = "eleve${var.eleve}"
+  # Pas de vm_id : Proxmox attribue le prochain libre à chaque machine.
+  # Le VMID n'est donc pas prévisible — on retrouve une machine par son NOM
+  # (« qm list »), ou dans « terraform output vmids ».
+  pool_id = "lab"
 
   # ⭐ Le fil rouge : ces tags deviennent des groupes Ansible au TP 13
-  tags = concat(["terraform", "eleve${var.eleve}"], each.value.tags)
+  tags = concat(["terraform"], each.value.tags)
 
   clone {
-    vm_id = local.templates[each.value.template]
+    vm_id = var.templates[each.value.template]
     # 🪤 linked clone = non migrable entre nœuds sur stockage local.
     #    Ces VM restent sur leur nœud jusqu'au TP 19, où on les déplacera
     #    d'abord sur Ceph (qm move-disk) avant toute migration.
@@ -74,14 +60,13 @@ resource "proxmox_virtual_environment_vm" "parc" {
 
 resource "proxmox_virtual_environment_container" "cache" {
   node_name = var.pve_node
-  vm_id     = var.eleve * 100 + 16
-  pool_id   = "eleve${var.eleve}"
-  tags      = ["terraform", "cache", "dmz", "alpine", "eleve${var.eleve}"]
+  pool_id   = "lab"
+  tags      = ["terraform", "cache", "dmz", "alpine"]
 
   description = "Conteneur Alpine déployé par Terraform — TP 11"
 
   initialization {
-    hostname = "ct-cache-e${var.eleve}"
+    hostname = "ct-cache"
 
     ip_config {
       ipv4 {

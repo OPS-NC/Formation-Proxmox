@@ -1,6 +1,6 @@
 # Configuration SDN — cluster EVPN (jour 4)
 
-Configuration de référence du TP 16. **Cluster-wide** : à poser une seule fois,
+Configuration de référence du TP 17. **Cluster-wide** : à poser une seule fois,
 depuis n'importe quel nœud.
 
 ## Prérequis, sur les 6 nœuds
@@ -16,6 +16,11 @@ Et dans `/etc/pve/firewall/cluster.fw`, section `[RULES]` :
 IN ACCEPT -source lan_salle -p udp -dport 4789 -log nolog  # VXLAN
 IN ACCEPT -source lan_salle -p tcp -dport 179  -log nolog  # BGP
 ```
+
+`lab/firewall/cluster.fw.example` les contient déjà, ainsi que les règles
+`FORWARD ACCEPT -source lan_salle -dest net_evpn …` (SSH, HTTP, PostgreSQL, ICMP) qui
+permettent au poste de joindre les VM EVPN directement, via la route
+`10.60.0.0/16 → 172.30.30.151` (TP 17 §8.2).
 
 ## Poser la configuration
 

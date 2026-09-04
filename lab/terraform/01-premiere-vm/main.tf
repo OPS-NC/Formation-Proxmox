@@ -1,20 +1,16 @@
-locals {
-  template_id = coalesce(var.template_debian, var.eleve * 100 + 90)
-  vm_id       = var.eleve * 100 + 21
-}
-
 resource "proxmox_virtual_environment_vm" "web" {
-  name        = "web01-e${var.eleve}"
+  name        = "web01"
   description = "Première VM Terraform — TP 11"
   node_name   = var.pve_node
-  vm_id       = local.vm_id
-  pool_id     = "eleve${var.eleve}"
+  # Pas de vm_id : le provider demande le prochain VMID libre à Proxmox
+  # (comme « pvesh get /cluster/nextid »). Rien à calculer, ni seul ni en cluster.
+  pool_id = "lab"
 
   # ⭐ Ces tags pilotent l'inventaire Ansible du TP 13
-  tags = ["terraform", "web", "dmz", "debian", "eleve${var.eleve}"]
+  tags = ["terraform", "web", "dmz", "debian"]
 
   clone {
-    vm_id = local.template_id
+    vm_id = var.template_debian
     # linked clone : instantané et économe en disque.
     # 🪤 MAIS un linked clone sur stockage local N'EST PAS MIGRABLE entre nœuds
     #    (« can't migrate ... as it's a clone of ... »). C'est sans conséquence

@@ -2,4 +2,4 @@
 web_root: "{{ '/var/www/html' if ansible_os_family == 'Debian' else '/usr/share/nginx/html' }}"
 web_conf_dir: "{{ '/etc/nginx/sites-enabled' if ansible_os_family == 'Debian' else '/etc/nginx/conf.d' }}"
 web_listen_port: 80
-web_upstream: ""   # ex. "10.3.10.50:8080" pour faire du reverse-proxy
+web_upstream: ""   # ex. "10.10.10.50:8080" pour faire du reverse-proxy

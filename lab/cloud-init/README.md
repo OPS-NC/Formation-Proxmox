@@ -5,7 +5,8 @@
 Le stockage doit accepter le content `snippets` (TP 02 §4).
 
 ```bash
-scp *.yaml root@172.30.30.153:/var/lib/vz/snippets/
+PVE=172.30.30.___            # ⚠ l'IP de VOTRE nœud
+scp *.yaml root@$PVE:/var/lib/vz/snippets/
 ```
 
 ## Les utiliser

@@ -66,7 +66,7 @@ intégré.
 
 ```
      VM ──┐
-     VM ──┼── vnet (bridge local) ── [gw 10.1.10.1] ── SNAT ── vmbr0 ── LAN
+     VM ──┼── vnet (bridge local) ── [gw 10.10.10.1] ── SNAT ── vmbr0 ── LAN
      VM ──┘
               ← tout ceci existe UNIQUEMENT sur ce nœud →
 ```
@@ -78,7 +78,7 @@ intégré.
 | IPAM + DHCP fonctionnels | La gateway est locale : pas de redondance |
 | Idéal pour labs, DMZ mono-nœud, réseaux de service | |
 
-👉 **On l'utilise au jour 2** (TP 08) : chaque élève est encore sur un nœud isolé.
+👉 **On l'utilise au jour 2** (TP 08) : chaque stagiaire est encore sur un nœud isolé.
 
 ---
 
@@ -280,7 +280,7 @@ Ce que l'IPAM fait pour vous :
 - attribue automatiquement une IP libre du subnet à chaque interface de VM/CT,
 - garde la trace des baux (`Datacenter → SDN → IPAM`),
 - alimente le DHCP et le DNS,
-- évite les doublons entre 6 élèves qui déploient en même temps.
+- évite les doublons entre six stagiaires qui déploient en même temps.
 
 ```
    Création VM → NIC sur vnet « vprod »
@@ -370,7 +370,8 @@ bloqué à 0 %.
 ### 🪤 Le piège n°3 : l'hôte ne joint pas ses propres VM
 Par défaut, l'hôte Proxmox n'a pas de route vers le VRF. Si vous voulez que le nœud
 (ou un agent de monitoring dessus) puisse joindre les VM :
-`exitnodes-local-routing 1`. À n'activer que si nécessaire.
+`exitnodes-local-routing 1`. **Activé dans ce lab** : c'est ce qui permet au poste de
+joindre les VM via `pve1` (route statique `10.60.0.0/16 → 172.30.30.151`, TP 17 §8.2).
 
 ### 🪤 Le piège n°4 : FRR absent
 Une zone EVPN sans `frr` + `frr-pythontools` sur **tous** les nœuds ne montera jamais
@@ -401,7 +402,7 @@ Et dans l'autre sens — c'est là que ça surprend :
 |---|:---:|---|
 | une autre VM de la zone | ✅ | même fabric EVPN, cf. tableau ci-dessus |
 | le **shell de pve4** lui-même | ❌ **sans `exitnodes-local-routing`** | l'hôte n'a pas de route vers le VRF (cf. piège n°3) |
-| un poste du LAN de la salle | ❌ | pas de DNAT managé dans le SDN Proxmox (cf. §12) — il faut un reverse-proxy ou du DNAT à la main sur l'exit node |
+| un poste du LAN de la salle | ✅ **via une route statique vers un exit node** | `ip route add 10.60.0.0/16 via 172.30.30.151` sur le poste, `exitnodes-local-routing` sur la zone (TP 17 §8.2). Pour une *publication* Internet, en revanche : DNAT ou reverse-proxy (cf. §12) |
 
 🪤 **Le piège de démonstration** : le formateur teste depuis le shell de son nœud,
 `ping 10.60.10.42` échoue, et tout le monde conclut que l'EVPN est cassé — alors que

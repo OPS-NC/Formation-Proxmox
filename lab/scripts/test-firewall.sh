@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Vérifie la matrice de flux des TP 09 / 12 / 16 depuis un poste de rebond.
-# À exécuter depuis une VM de la zone INTERNE, ou depuis le nœud avec --via-node.
+# Vérifie la matrice de flux des TP 09 / 12 / 17.
+# À exécuter depuis une VM de la zone INTERNE (ou depuis le PC, qui route vers les VNets).
 #
-#   ./test-firewall.sh --eleve 3 --int 10.3.10.101 --dmz 10.3.20.101 --win 10.3.10.102
-#   ./test-firewall.sh --eleve 3 --int 10.60.10.101 --dmz 10.60.20.101 --mtu 1450   # EVPN
+#   ./test-firewall.sh --int 10.10.10.101 --dmz 10.10.20.101 --win 10.10.10.102
+#   ./test-firewall.sh --int 10.60.10.101 --dmz 10.60.20.101 --mtu 1450   # EVPN
+#
+# Les gateways sont déduites des adresses (.1 du réseau) ; --gw-int / --gw-dmz pour forcer.
 set -uo pipefail
 
-ELEVE=""; IP_INT=""; IP_DMZ=""; IP_WIN=""; IP_SRV=""
+IP_INT=""; IP_DMZ=""; IP_WIN=""; IP_SRV=""; GW_INT=""; GW_DMZ=""
+# Compte SSH sur la machine DMZ : root sur un CT (la clé y est posée par pct), eleve sur une VM cloud-init
+DMZ_USER="${DMZ_USER:-root}"
 # MTU du réseau testé : 1500 en zone Simple (TP 09/12), 1450 en zone EVPN (TP 17).
 MTU=1500
 GREEN=$'\033[0;32m'; RED=$'\033[0;31m'; YEL=$'\033[0;33m'; BLU=$'\033[0;34m'; NC=$'\033[0m'
@@ -14,21 +18,25 @@ PASS=0; FAIL=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --eleve) ELEVE="$2"; shift 2 ;;
     --int)   IP_INT="$2"; shift 2 ;;
+    --gw-int) GW_INT="$2"; shift 2 ;;
+    --gw-dmz) GW_DMZ="$2"; shift 2 ;;
+    --dmz-user) DMZ_USER="$2"; shift 2 ;;
     --dmz)   IP_DMZ="$2"; shift 2 ;;
     --win)   IP_WIN="$2"; shift 2 ;;
     --srv)   IP_SRV="$2"; shift 2 ;;
     --mtu)   MTU="$2"; shift 2 ;;
     -h|--help)
-      echo "Usage: $0 --eleve N --int IP --dmz IP [--win IP] [--srv IP] [--mtu 1500|1450]"
+      echo "Usage: $0 --int IP --dmz IP [--win IP] [--srv IP] [--gw-int IP] [--gw-dmz IP] [--dmz-user root|eleve] [--mtu 1500|1450]"
       echo "       --mtu 1450 pour une zone EVPN (TP 17)"
       exit 0 ;;
     *) echo "option inconnue : $1"; exit 1 ;;
   esac
 done
-[[ -n "$ELEVE" && -n "$IP_INT" && -n "$IP_DMZ" ]] || { echo "--eleve, --int et --dmz sont requis"; exit 1; }
+[[ -n "$IP_INT" && -n "$IP_DMZ" ]] || { echo "--int et --dmz sont requis"; exit 1; }
 IP_SRV="${IP_SRV:-$IP_INT}"
+GW_INT="${GW_INT:-${IP_INT%.*}.1}"
+GW_DMZ="${GW_DMZ:-${IP_DMZ%.*}.1}"
 
 # attendu = ok | ko
 t() { # <description> <attendu> <commande...>
@@ -44,11 +52,11 @@ t() { # <description> <attendu> <commande...>
 nc_test()   { nc -z -w2 "$1" "$2"; }
 ping_test() { ping -c1 -W2 "$1"; }
 
-printf "${BLU}Tests de la matrice de flux — élève %s${NC}\n" "$ELEVE"
+printf "${BLU}Tests de la matrice de flux — %s${NC}\n" "$(hostname)"
 printf "  interne=%s  dmz=%s  windows=%s\n" "$IP_INT" "$IP_DMZ" "${IP_WIN:-n/a}"
 
 printf "\n${BLU}── Depuis la zone INTERNE ──${NC}\n"
-t "gateway interne joignable"            ok ping_test "10.${ELEVE}.10.1"
+t "gateway interne joignable"            ok ping_test "$GW_INT"
 t "Internet (ICMP)"                      ok ping_test 1.1.1.1
 t "résolution DNS"                       ok getent hosts debian.org
 t "interne → DMZ : HTTP 80"              ok nc_test "$IP_DMZ" 80
@@ -57,11 +65,11 @@ t "interne → DMZ : MySQL 3306 (refusé)"  ko nc_test "$IP_DMZ" 3306
 t "interne → DMZ : 8080 (refusé)"        ko nc_test "$IP_DMZ" 8080
 [[ -n "$IP_WIN" ]] && t "interne → Windows : RDP 3389" ok nc_test "$IP_WIN" 3389
 
-printf "\n${BLU}── Depuis la DMZ (rebond SSH) ──${NC}\n"
+printf "\n${BLU}── Depuis la DMZ (via SSH) ──${NC}\n"
 if ssh -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
-       "eleve@$IP_DMZ" true 2>/dev/null; then
-  R() { ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no "eleve@$IP_DMZ" "$@"; }
-  t "DMZ → gateway DMZ"                    ok R ping -c1 -W2 "10.${ELEVE}.20.1"
+       "$DMZ_USER@$IP_DMZ" true 2>/dev/null; then
+  R() { ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$DMZ_USER@$IP_DMZ" "$@"; }
+  t "DMZ → gateway DMZ"                    ok R ping -c1 -W2 "$GW_DMZ"
   t "DMZ → Internet HTTPS"                 ok R "curl -s -m5 -o /dev/null https://debian.org"
   t "DMZ → PostgreSQL interne (REFUSÉ)"    ko R nc -z -w2 "$IP_SRV" 5432
   t "DMZ → SSH interne (REFUSÉ)"           ko R nc -z -w2 "$IP_SRV" 22

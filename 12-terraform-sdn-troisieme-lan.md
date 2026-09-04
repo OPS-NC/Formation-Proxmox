@@ -36,7 +36,7 @@ On ajoute une troisième zone : `zsrv`, un réseau de **services d'infrastructur
 ```
    ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐
    │   INTERNAL   │  │     DMZ      │  │  SERVICES  (nouveau) │
-   │ 10.N.10.0/24 │  │ 10.N.20.0/24 │  │    10.N.30.0/24      │
+   │ 10.10.10.0/24│  │ 10.10.20.0/24│  │   10.10.30.0/24      │
    │   TP 08 🖱️   │  │   TP 08 🖱️   │  │   TP 12 🤖 Terraform │
    └──────┬───────┘  └──────┬───────┘  └───────────┬──────────┘
           │                 │                      │
@@ -60,11 +60,17 @@ Matrice de flux ciblée :
 
 ## 3. Prendre en main la stack 💻
 
+> 📌 **Prérequis** : la stack `02-parc-multi-os` doit être **appliquée** (les tests du §7
+> visent `app01` et `db01`). Si vous l'avez détruite en fin de TP 11, relancez son `apply`.
+
 ```bash
 cd ~/ProxmoxFormation/lab/terraform/03-sdn-troisieme-lan
-cp ../01-premiere-vm/terraform.tfvars .
+cp ../02-parc-multi-os/terraform.tfvars .      # il contient déjà lxc_template_alpine
 terraform init
 ```
+
+🪤 Si vous copiez celui de la stack 01, ajoutez la ligne `lxc_template_alpine = "…"`
+(nom exact via `pveam list local`), sinon : `No value for required variable`.
 
 Structure :
 
@@ -72,9 +78,12 @@ Structure :
 03-sdn-troisieme-lan/
 ├── versions.tf      provider et versions
 ├── provider.tf      connexion à l'API
-├── variables.tf     eleve, node, endpoint, token, template…
+├── variables.tf     node, endpoint, token, template…
 ├── sdn.tf           ★ zone + vnet + subnet
-├── firewall.tf      ★ règles VNet
+├── firewall.tf      ★ règles VNet (fichier .fw déposé par SSH)
+├── templates/
+│   └── vsrv.fw.tftpl    le modèle du fichier vsrv.fw
+├── cluster-fw.tf    ★ le firewall Datacenter, en ressources natives
 ├── vms.tf           2 VM dans le nouveau réseau
 ├── outputs.tf       récapitulatif
 └── terraform.tfvars vos valeurs (non versionné)
@@ -86,15 +95,15 @@ Structure :
 
 ```hcl
 locals {
-  net_srv = "10.${var.eleve}.30.0/24"
-  gw_srv  = "10.${var.eleve}.30.1"
-  net_int = "10.${var.eleve}.10.0/24"
-  net_dmz = "10.${var.eleve}.20.0/24"
+  net_srv = "10.10.30.0/24"
+  gw_srv  = "10.10.30.1"
+  net_int = "10.10.10.0/24"
+  net_dmz = "10.10.20.0/24"
 }
 
 resource "proxmox_sdn_zone_simple" "srv" {
   id    = "zsrv"
-  nodes = [var.pve_node]
+  nodes = [var.pve_node] # "pve" par défaut
   ipam  = "pve"
   dhcp  = "dnsmasq"
   mtu   = 1500
@@ -105,7 +114,7 @@ resource "proxmox_sdn_zone_simple" "srv" {
 resource "proxmox_sdn_vnet" "srv" {
   id    = "vsrv"
   zone  = proxmox_sdn_zone_simple.srv.id
-  alias = "Services infra e${var.eleve}"
+  alias = "Services infra"
 
   depends_on = [proxmox_sdn_applier.finalizer]
 }
@@ -117,8 +126,8 @@ resource "proxmox_sdn_subnet" "srv" {
   snat    = true
 
   dhcp_range = {
-    start_address = "10.${var.eleve}.30.100"
-    end_address   = "10.${var.eleve}.30.200"
+    start_address = "10.10.30.100"
+    end_address   = "10.10.30.200"
   }
 
   depends_on = [proxmox_sdn_applier.finalizer]
@@ -129,11 +138,11 @@ resource "proxmox_sdn_subnet" "srv" {
 
 | Ce qu'on écrit spontanément | Ce qu'attend le provider |
 |---|---|
-| `subnet = "10.3.30.0/24"` | **`cidr`** — le provider ne calque pas l'API |
+| `subnet = "10.10.30.0/24"` | **`cidr`** — le provider ne calque pas l'API |
 | `type = "subnet"` | *(rien)* — cet argument n'existe pas côté Terraform |
 | `dhcp_range { ... }` (bloc) | `dhcp_range = { ... }` (**attribut**) |
 
-🧠 **Pourquoi cet écart ?** Côté `pvesh`, on écrit bien `--subnet 10.3.30.0/24 --type
+🧠 **Pourquoi cet écart ?** Côté `pvesh`, on écrit bien `--subnet 10.10.30.0/24 --type
 subnet` (c'est ce qu'on a tapé au TP 08 §6). Le provider, lui, est écrit avec le
 *plugin framework* de Terraform et suit les conventions HashiCorp : un réseau
 s'appelle `cidr`, et un bloc à occurrence unique devient un attribut objet. **Un
@@ -228,6 +237,13 @@ policy_forward: DROP
 FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vsrv-gateway -p udp -dport 53 -log nolog
 FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vsrv-gateway -p icmp -log nolog
 
+# Depuis le poste (lan_salle) : SSH, HTTP, PostgreSQL, ping
+# (miroir des règles FORWARD lan_salle → net_* de cluster.fw)
+FORWARD ACCEPT -source lan_salle -dest +sdn/vsrv-all -p tcp -dport 22 -log nolog
+FORWARD ACCEPT -source lan_salle -dest +sdn/vsrv-all -p tcp -dport 80 -log nolog
+FORWARD ACCEPT -source lan_salle -dest +sdn/vsrv-all -p tcp -dport 5432 -log nolog
+FORWARD ACCEPT -source lan_salle -dest +sdn/vsrv-all -p icmp -log nolog
+
 # Interne au réseau services
 FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vsrv-all -log nolog
 
@@ -303,22 +319,28 @@ Ce fichier autorise `vsrv → vint:9100`. **Ça ne suffit pas.** Le paquet trave
 **deux** VNets, et `vint.fw` (écrit au TP 09, `policy_forward: DROP`) n'a aucune
 règle dont la **source** est `vsrv` : il jettera le paquet à l'arrivée.
 
-Ajoutez donc dans `/etc/pve/sdn/firewall/vint.fw` :
-
-```ini
-# ── Supervision : la zone SERVICES scrape l'interne (ajouté au TP 12) ────────
-FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vint-all -p tcp -dport 9100 -log nolog
-FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vint-all -p tcp -dport 22 -log info
-```
-
-et dans `/etc/pve/sdn/firewall/vdmz.fw` :
-
-```ini
-FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vdmz-all -p tcp -dport 9100 -log nolog
-```
+Les règles nécessaires sont **déjà dans `vint.fw` et `vdmz.fw`** — vous les aviez
+copiées au TP 09 §5 puis **neutralisées** (`#`) parce que `vsrv` n'existait pas encore.
+Maintenant qu'il existe, décommentez-les :
 
 ```bash
-systemctl reload proxmox-firewall
+ssh root@$PVE '
+  sed -i "s/^#\(FORWARD .*+sdn\/vsrv-all\)/\1/" /etc/pve/sdn/firewall/{vint,vdmz}.fw
+  grep -n "vsrv-all" /etc/pve/sdn/firewall/vint.fw /etc/pve/sdn/firewall/vdmz.fw
+  systemctl reload proxmox-firewall
+'
+```
+
+Ce que vous venez de réactiver :
+
+```ini
+# dans vint.fw — Supervision : la zone SERVICES scrape l'interne
+FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vint-all -p tcp -dport 9100 -log nolog
+FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vint-all -p tcp -dport 22 -log info
+
+# dans vdmz.fw
+FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vdmz-all -p tcp -dport 9100 -log nolog
+FORWARD DROP -source +sdn/vdmz-all -dest +sdn/vsrv-all -log warning   # la DMZ n'approche pas SERVICES
 ```
 
 🧠 **C'est le piège annoncé au [TP 09 §5.2](09-firewall-inter-zones.md).** Une règle
@@ -330,10 +352,91 @@ Le réflexe à acquérir : **pour chaque flux de votre matrice, deux fichiers à
 modifier.** Une matrice de flux se lit toujours deux fois : une fois en colonnes
 (qui sort ?), une fois en lignes (qui entre ?).
 
-> 🎁 Ces deux règles sont déjà dans `lab/firewall/vint.fw.example` et
-> `vdmz.fw.example`. **Exercice** : faites-les générer par Terraform, comme
-> `vsrv.fw`. Vous découvrirez que trois VNets ⇒ six blocs de règles à garder
-> cohérents — et pourquoi on modularise.
+> 🎁 **Exercice** : faites générer `vint.fw` et `vdmz.fw` par Terraform, comme
+> `vsrv.fw` (un template chacun, un `local_file`, un `scp`). Vous découvrirez que trois
+> VNets ⇒ six blocs de règles à garder cohérents — et pourquoi on modularise.
+
+---
+
+### `cluster-fw.tf` — le firewall Datacenter, lui, a ses ressources natives 🏛️
+
+Contraste instructif : pour le **VNet**, pas de ressource, donc `local-exec`. Pour le
+**Datacenter** (`/etc/pve/firewall/cluster.fw`, écrit à la main au TP 09), le provider
+couvre tout : options, alias, IPSet, groupes de sécurité, règles. `cluster-fw.tf` reprend
+donc l'intégralité du fichier du TP 09, en code.
+
+```hcl
+resource "proxmox_virtual_environment_firewall_alias" "nets" {
+  for_each = local.fw_nets          # net_internal, net_dmz, net_services, net_evpn
+  name     = each.key
+  cidr     = each.value.cidr
+}
+
+# Sans node_name ni vm_id : ce sont les règles du DATACENTER
+resource "proxmox_virtual_environment_firewall_rules" "cluster" {
+  rule {
+    type   = "in"
+    action = "ACCEPT"
+    source = "+management"
+    proto  = "tcp"
+    dport  = "8006"
+  }
+  # … SSH, noVNC, Corosync, VXLAN, BGP, PBS, ICMP : tout le TP 09, un bloc par règle …
+
+  # ⭐ Depuis le poste vers CHAQUE réseau privé : SSH, HTTP, PostgreSQL, ping
+  dynamic "rule" {
+    for_each = { for r in local.fw_forward_rules : r.key => r }   # 4 réseaux × 4 flux
+    content {
+      type   = "forward"
+      action = "ACCEPT"
+      source = "lan_salle"
+      dest   = rule.value.dest
+      proto  = rule.value.proto
+      dport  = rule.value.dport
+    }
+  }
+}
+
+# Les politiques EN DERNIER : les autorisations existent déjà quand DROP s'applique
+resource "proxmox_virtual_environment_cluster_firewall" "options" {
+  depends_on     = [proxmox_virtual_environment_firewall_rules.cluster]
+  enabled        = true
+  input_policy   = "DROP"
+  output_policy  = "ACCEPT"
+  forward_policy = "DROP"
+}
+```
+
+🧠 **Ce que gagne la version Terraform** : ajouter un réseau (`net_services` aujourd'hui,
+`net_evpn` au jour 4) ou un flux (un port de plus) se fait en **une ligne dans un
+`local`**, et les 16 règles FORWARD se régénèrent. À la main, c'est 4 lignes à recopier
+sans faute par réseau — et un oubli est silencieux.
+
+#### ⚠️ Reprise en main : Terraform ne cohabite pas avec le fichier du TP 09
+
+La ressource `firewall_rules` gère les règles **par position**. Si des règles écrites à
+la main existent déjà, le plan et la réalité divergent à chaque `apply`. On lui laisse
+donc la place, **avant le premier `apply`** :
+
+```bash
+ssh root@$PVE 'cp /etc/pve/firewall/cluster.fw /root/cluster.fw.tp09 && rm /etc/pve/firewall/cluster.fw'
+```
+
+Les deux à trois secondes sans `cluster.fw` ne coupent rien : sans fichier, le firewall
+Datacenter est simplement désactivé, et le `host.fw` reste en place. L'`apply` recrée
+alias, IPSet, groupes, règles, **puis** les options en `DROP`.
+
+Vérification, une fois l'`apply` passé :
+
+```bash
+ssh root@$PVE 'cat /etc/pve/firewall/cluster.fw'            # le fichier, regénéré par l'API
+ssh root@$PVE 'pve-firewall compile | grep -c FORWARD'        # les règles FORWARD sont là
+ssh eleve@10.10.10.50 hostname                                # ✅ depuis le PC, toujours direct
+```
+
+🪤 Un `terraform destroy` **retire aussi le firewall Datacenter** (règles, alias, options).
+Après un destroy, reposez `lab/firewall/cluster.fw.example` à la main (TP 09 §4), ou
+relancez `apply`.
 
 ---
 
@@ -341,11 +444,10 @@ modifier.** Une matrice de flux se lit toujours deux fois : une fois en colonnes
 
 ```hcl
 resource "proxmox_virtual_environment_vm" "mon" {
-  name      = "mon01-e${var.eleve}"
+  name      = "mon01"
   node_name = var.pve_node
-  vm_id     = var.eleve * 100 + 50
-  pool_id   = "eleve${var.eleve}"
-  tags      = ["terraform", "services", "monitoring"]
+  pool_id   = "lab"
+  tags      = ["terraform", "services", "monitoring", "debian"]
 
   clone {
     vm_id = var.template_debian
@@ -383,12 +485,11 @@ resource "proxmox_virtual_environment_vm" "mon" {
 
 resource "proxmox_virtual_environment_container" "log" {
   node_name = var.pve_node
-  vm_id     = var.eleve * 100 + 51
-  pool_id   = "eleve${var.eleve}"
-  tags      = ["terraform", "services"]
+  pool_id   = "lab"
+  tags      = ["terraform", "services", "logs", "alpine"]
 
   initialization {
-    hostname = "log01-e${var.eleve}"
+    hostname = "log01"
     ip_config { ipv4 { address = "dhcp" } }
     user_account { keys = [var.ssh_public_key] }
   }
@@ -443,7 +544,10 @@ terraform validate
 terraform plan -out=tf.plan
 ```
 
-Lisez le plan : 3 ressources SDN, 1 fichier local, 2 `terraform_data`, 2 guests.
+Lisez le plan, et classez ce qu'il annonce en quatre familles : le **SDN** (zone,
+VNet, subnet, deux appliers), le **firewall VNet** (un fichier local, un
+`terraform_data`), le **firewall Datacenter** (alias, IPSet, groupes, règles, options)
+et les **2 guests**. Rien de ce qui est listé ne doit vous surprendre.
 
 ```bash
 terraform apply tf.plan
@@ -453,7 +557,7 @@ terraform output
 Vérifications côté nœud :
 
 ```bash
-ssh root@172.30.30.15N '
+ssh root@$PVE '
   ip -br a | grep vsrv
   cat /etc/pve/sdn/subnets.cfg
   cat /etc/pve/sdn/firewall/vsrv.fw
@@ -466,18 +570,20 @@ Tests fonctionnels :
 
 ```bash
 # depuis mon01 (SERVICES)
-ping -c2 10.N.30.1            # ✅ gateway
-ping -c2 1.1.1.1              # ❌ ICMP non autorisé vers Internet
-curl -sI https://debian.org   # ✅ 443 autorisé
-nc -zvw2 10.N.10.<db01> 5432  # ❌ refusé
-nc -zvw2 10.N.10.<db01> 9100  # ✅ autorisé — SI la règle inverse est dans vint.fw (§5)
+ping -c2 10.10.30.1             # ✅ gateway
+ping -c2 1.1.1.1                # ❌ ICMP non autorisé vers Internet
+curl -sI https://debian.org     # ✅ 443 autorisé
+nc -zvw2 10.10.10.<db01> 5432   # ❌ refusé
+nc -zvw2 10.10.10.<app01> 9100  # ✅ autorisé — SI les lignes vsrv de vint.fw sont décommentées (§5)
+#   (app01, Debian : node-exporter est installé par le rôle common du TP 13 ;
+#    db01 est une Rocky, sans exporter — le test y donnerait ❌ pour une autre raison)
 
 # depuis web01 (DMZ)
-nc -zvw2 10.N.30.<mon01> 22   # ❌ refusé, et journalisé en warning
+nc -zvw2 10.10.30.<mon01> 22    # ❌ refusé, et journalisé en warning
 ```
 
 ```bash
-ssh root@172.30.30.15N 'tail -20 /var/log/pve-firewall.log'
+ssh root@$PVE 'tail -20 /var/log/pve-firewall.log'
 ```
 
 ---
@@ -520,8 +626,17 @@ terraform destroy
 Observez l'ordre : VM → firewall → subnet → VNet → zone. L'inverse exact de la
 création. C'est le graphe de dépendances qui travaille.
 
+⚠️ Le firewall **Datacenter** part aussi (`cluster-fw.tf`) : options, alias, règles.
+Reposez le fichier de référence **tout de suite** : d'une part le nœud reste sans
+firewall Datacenter, d'autre part `vint.fw` et `vdmz.fw` référencent l'alias
+`lan_salle`, qui vient d'être supprimé.
+
 ```bash
-ssh root@172.30.30.15N 'ip -br a | grep vsrv; pvesh get /cluster/sdn/zones'
+ssh root@$PVE 'cp /root/formation/lab/firewall/cluster.fw.example /etc/pve/firewall/cluster.fw'
+```
+
+```bash
+ssh root@$PVE 'ip -br a | grep vsrv; pvesh get /cluster/sdn/zones'
 ```
 
 🪤 Si la destruction bloque sur « zone in use », c'est qu'un guest est encore branché
@@ -533,10 +648,12 @@ l'UI bloque le `destroy`.
 ## ✅ Checklist de validation
 
 - [ ] `terraform apply` crée la zone, le VNet, le subnet et les règles
-- [ ] `ip -br a` montre `vsrv` avec `10.N.30.1/24`
+- [ ] `cluster.fw` est géré par Terraform : `cat /etc/pve/firewall/cluster.fw` montre les 16 règles FORWARD `lan_salle → net_*`
+- [ ] Depuis mon PC, `ssh eleve@10.10.10.50` passe toujours après l'apply
+- [ ] `ip -br a` montre `vsrv` avec `10.10.30.1/24`
 - [ ] Les 2 guests obtiennent une IP par DHCP dans le nouveau réseau
 - [ ] SERVICES → INTERNAL:9100 ✅ · SERVICES → INTERNAL:5432 ❌
-- [ ] J'ai ajouté la règle **inverse** dans `vint.fw` et `vdmz.fw`, et je sais pourquoi
+- [ ] J'ai **décommenté** les règles `vsrv` dans `vint.fw` et `vdmz.fw`, et je sais pourquoi elles sont nécessaires
 - [ ] DMZ → SERVICES ❌ et journalisé
 - [ ] L'ajout d'une règle se fait en modifiant le template + `apply`
 - [ ] `terraform destroy` supprime tout, dans le bon ordre

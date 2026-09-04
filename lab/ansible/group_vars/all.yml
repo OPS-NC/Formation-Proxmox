@@ -1,13 +1,11 @@
 ---
-# ── Rebond SSH ───────────────────────────────────────────────────────────────
-# Les VM vivent dans les VNets 10.N.x.0/24, derrière le NAT du nœud.
-# Votre PC ne peut pas les joindre directement : le nœud Proxmox sert de bastion.
-# C'est exactement ce qu'on fait en production.
-pve_host: 172.30.30.153
-eleve: 3
-
+# ── Connexion SSH ────────────────────────────────────────────────────────────
+# Les VM vivent dans les VNets 10.10.x.0/24. Le PC les joint DIRECTEMENT, grâce
+# à une route statique qui passe par le nœud (posée au TP 07) :
+#   sudo ip route add 10.10.0.0/16 via $PVE
+# Pas de bastion, pas de ProxyCommand. Les clés d'hôte des VM changent à chaque
+# recréation par Terraform : on ne les épingle pas.
 ansible_ssh_common_args: >-
-  -o ProxyCommand="ssh -W %h:%p -q root@{{ pve_host }}"
   -o StrictHostKeyChecking=no
   -o UserKnownHostsFile=/dev/null
 

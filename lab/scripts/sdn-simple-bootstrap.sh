@@ -2,10 +2,11 @@
 # Crée les zones/VNets/subnets « internal » et « dmz » du TP 08.
 # À exécuter SUR LE NŒUD PROXMOX, en root.
 #
-#   ./sdn-simple-bootstrap.sh --eleve 3
+#   ./sdn-simple-bootstrap.sh              # nœud isolé (jours 1-3)
+#   ./sdn-simple-bootstrap.sh --node pve3  # pour restreindre la zone à un nœud
 set -euo pipefail
 
-ELEVE=""; NODE="$(hostname)"; DRYRUN=0
+NODE=""; DRYRUN=0
 GREEN=$'\033[0;32m'; YEL=$'\033[0;33m'; RED=$'\033[0;31m'; NC=$'\033[0m'
 info(){ printf "${GREEN}==>${NC} %s\n" "$*"; }
 warn(){ printf "${YEL}/!\\${NC} %s\n" "$*"; }
@@ -14,14 +15,12 @@ run(){  if [ "$DRYRUN" = 1 ]; then echo "  [dry-run] $*"; else "$@"; fi; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --eleve) ELEVE="$2"; shift 2 ;;
     --node)  NODE="$2";  shift 2 ;;
     --dry-run) DRYRUN=1; shift ;;
-    -h|--help) echo "Usage: $0 --eleve N [--node pveN] [--dry-run]"; exit 0 ;;
+    -h|--help) echo "Usage: $0 [--node <nom>] [--dry-run]"; exit 0 ;;
     *) die "option inconnue : $1" ;;
   esac
 done
-[[ -n "$ELEVE" ]] || die "--eleve est requis"
 [[ $EUID -eq 0 ]] || die "à exécuter en root"
 
 # ─── Prérequis ───────────────────────────────────────────────────────────────
@@ -46,17 +45,18 @@ ZONES=(
 
 for entry in "${ZONES[@]}"; do
   read -r ZONE VNET OCT ALIAS <<<"$entry"
-  NET="10.${ELEVE}.${OCT}.0/24"
-  GW="10.${ELEVE}.${OCT}.1"
-  DHCP_START="10.${ELEVE}.${OCT}.100"
-  DHCP_END="10.${ELEVE}.${OCT}.200"
+  NET="10.10.${OCT}.0/24"
+  GW="10.10.${OCT}.1"
+  DHCP_START="10.10.${OCT}.100"
+  DHCP_END="10.10.${OCT}.200"
 
   info "zone $ZONE"
   if pvesh get "/cluster/sdn/zones/$ZONE" &>/dev/null; then
     warn "la zone $ZONE existe déjà, ignorée"
   else
+    # Sans --nodes, la zone s'applique à tous les nœuds : sur un nœud isolé, c'est le bon choix.
     run pvesh create /cluster/sdn/zones \
-      --zone "$ZONE" --type simple --nodes "$NODE" --ipam pve --dhcp dnsmasq
+      --zone "$ZONE" --type simple ${NODE:+--nodes "$NODE"} --ipam pve --dhcp dnsmasq
   fi
 
   info "vnet $VNET"
@@ -64,7 +64,7 @@ for entry in "${ZONES[@]}"; do
     warn "le vnet $VNET existe déjà, ignoré"
   else
     run pvesh create /cluster/sdn/vnets \
-      --vnet "$VNET" --zone "$ZONE" --alias "${ALIAS}-e${ELEVE}"
+      --vnet "$VNET" --zone "$ZONE" --alias "$ALIAS"
   fi
 
   info "subnet $NET (gw $GW, snat, dhcp ${DHCP_START}-${DHCP_END})"
@@ -97,4 +97,4 @@ if [ "$DRYRUN" = 0 ]; then
   fi
 fi
 
-printf "\n${GREEN}✔ Terminé.${NC} Réseaux : 10.%s.10.0/24 (vint) et 10.%s.20.0/24 (vdmz)\n\n" "$ELEVE" "$ELEVE"
+printf "\n${GREEN}✔ Terminé.${NC} Réseaux : 10.10.10.0/24 (vint) et 10.10.20.0/24 (vdmz)\n\n"

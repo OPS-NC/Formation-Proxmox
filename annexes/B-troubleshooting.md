@@ -46,10 +46,11 @@ Dépôt *enterprise* actif sans abonnement. Voir [TP 01 §5](../01-installation-
 
 ### `hostname --ip-address` renvoie `127.0.1.1`
 
-`/etc/hosts` mal renseigné. **À corriger avant toute mise en cluster.**
+`/etc/hosts` mal renseigné. **À corriger avant toute mise en cluster.** La ligne de
+votre nœud doit porter sa vraie IP (`$PVE`), pas `127.0.1.1` :
 
 ```
-172.30.30.153   pve3.lab.local pve3
+172.30.30.153   pve3.lab.local pve3      # exemple, en cluster (jour 4)
 ```
 
 ### Une VM refuse de démarrer : « KVM virtualisation not available »
@@ -120,7 +121,7 @@ lsblk        # y a-t-il un second disque libre ? → pveceph osd create /dev/sdb
 ```
 
 Anticipez à l'installation : réduire `maxvz` laisse de l'espace non alloué
-([TP 01 §3.1](../01-installation-proxmox.md)).
+([TP 01 §3.1 bis](../01-installation-proxmox.md)).
 
 ### Le disque ne rétrécit pas après suppression
 
@@ -137,7 +138,7 @@ fstrim -av
 | `Connection refused` | `systemctl status nfs-server` sur le poste Ubuntu |
 | `access denied by server` | l'IP du nœud n'est pas dans `/etc/exports.d/*` |
 | `No route to host` | `ufw` sur le poste, ou `cluster.fw` sur le nœud |
-| `Permission denied` en écriture | `no_root_squash` absent, ou droits sur `/srv/nfs-eN` |
+| `Permission denied` en écriture | `no_root_squash` absent, ou droits sur `/srv/nfs` |
 | `Protocol not supported` | v3 désactivée : forcez `-o vers=4.2` |
 
 ```bash
@@ -147,10 +148,11 @@ sudo exportfs -v ; ss -tlnp | grep 2049 ; sudo journalctl -u nfs-server -n 30
 
 ### Le stockage NFS est signalé en erreur sur les autres nœuds
 
-L'export n'autorise qu'une IP. Restreignez la déclaration :
+L'export n'autorise qu'une IP : en cluster (jour 4), restreignez la déclaration au nœud
+concerné — et donnez-lui un ID unique dans le cluster (`nfs-<nœud>`) :
 
 ```bash
-pvesm set nfs-e3 --nodes pve3
+pvesm set nfs-pve3 --nodes pve3
 ```
 
 ---
@@ -518,7 +520,7 @@ ceph-volume lvm zap /dev/pve/ceph-osd --destroy
 | `401 authentication failure` | Format : `user@realm!tokenid=secret` |
 | `403 Permission check failed` | Ajoutez le privilège manquant au rôle |
 | `unable to parse directory volume name` | Bloc `ssh` du provider absent ; testez `ssh root@<node>` |
-| `VM already exists` | Respectez le plan de VMID |
+| `VM already exists` | Deux `apply` (ou deux `nextid`) simultanés ont obtenu le même numéro : relancez |
 | `bridge 'X' does not exist` | Ajoutez `depends_on` sur l'apply SDN |
 | Ressource supprimée à la main | `terraform state rm <adresse>` |
 | `timeout waiting for agent` | `qemu-guest-agent` absent du template |
@@ -537,7 +539,7 @@ export TF_LOG=DEBUG ; terraform apply 2>&1 | tee /tmp/tf.log ; unset TF_LOG
 | Le rôle `nfs` tente de partitionner un disque | mettez `nfs_manage_disk: false` (TP 14) |
 | Aucun hôte dans l'inventaire | Vérifiez le token, `validate_certs: false`, et videz le cache |
 | `ansible_host` absent | L'agent QEMU ne tourne pas dans la VM |
-| `UNREACHABLE` | Le rebond SSH (`ProxyCommand`) n'est pas configuré |
+| `UNREACHABLE` | La route `10.10.0.0/16 via $PVE` manque sur le PC, ou le firewall du nœud bloque le forward LAN → VNets |
 | `changed` à chaque exécution | Une tâche non idempotente : ajoutez `creates:` ou `changed_when:` |
 | `sudo: a password is required` | `become: true` + `NOPASSWD` dans sudoers, ou `--ask-become-pass` |
 

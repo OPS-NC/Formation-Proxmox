@@ -3,7 +3,7 @@ db_name: applab
 db_user: applab
 # 🪤 En production : ansible-vault encrypt_string 'motdepasse' --name 'db_password'
 db_password: "Formation2026!"
-db_allowed_network: "10.{{ eleve }}.10.0/24"
+db_allowed_network: "10.10.10.0/24"
 
 db_conf_path: >-
   {{ '/etc/postgresql/17/main/postgresql.conf'

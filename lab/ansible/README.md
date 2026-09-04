@@ -41,8 +41,8 @@ ansible-galaxy collection install community.proxmox community.general \
    ```bash
    export PVE_ANSIBLE_TOKEN_SECRET="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
    ```
-3. Adaptez `inventory/proxmox.yml` (l'URL de votre nœud) et
-   `group_vars/all.yml` (`pve_host` et `eleve`).
+3. Adaptez `inventory/proxmox.yml` (l'URL de votre nœud).
+4. Sur votre PC, ajoutez la route vers les VNets (voir ci-dessous).
 
 ## Utilisation
 
@@ -50,7 +50,7 @@ ansible-galaxy collection install community.proxmox community.general \
 source ~/.config/pve/token.env
 
 ansible-inventory --graph              # les groupes construits depuis les tags
-ansible-inventory --host web01-e3 | jq # toutes les variables d'un hôte
+ansible-inventory --host web01 | jq    # toutes les variables d'un hôte
 ansible linux -m ping                  # test de connectivité
 
 ansible-playbook site.yml --syntax-check
@@ -64,19 +64,19 @@ ansible-playbook site.yml --limit proxmox_web
 ni Python, ni bash, ni sudo, et leur clé SSH est sur `root` : ils passent par
 `alpine.yml`, qui les amorce avec le module `raw`.
 
-## Le rebond SSH
+## Joindre les VM
 
-Les VM sont dans les VNets `10.N.x.0/24`, derrière le NAT du nœud : votre PC ne
-les joint pas directement. `group_vars/all.yml` configure donc le nœud Proxmox
-comme **bastion** :
+Les VM sont dans les VNets `10.10.x.0/24`, dont la gateway est votre nœud. Le PC les
+joint **directement**, via une route statique qui passe par le nœud :
 
-```yaml
-ansible_ssh_common_args: >-
-  -o ProxyCommand="ssh -W %h:%p -q root@{{ pve_host }}"
+```bash
+PVE=172.30.30.___          # ⚠ l'IP de VOTRE nœud
+sudo ip route add 10.10.0.0/16 via $PVE
+ssh eleve@10.10.20.<ip-web01> hostname     # doit répondre
 ```
 
-C'est exactement ce qu'on fait en production. Vérifiez d'abord que
-`ssh root@<votre-noeud>` fonctionne sans mot de passe.
+Pas de bastion ni de `ProxyCommand` : Ansible parle aux VM comme à n'importe quel
+serveur. Le firewall du nœud doit laisser passer le forward LAN → VNets (TP 09).
 
 ## Le critère de qualité 🎯
 
@@ -98,7 +98,7 @@ ansible/
 ├── inventory/proxmox.yml       ← ★ l'inventaire dynamique
 ├── inventory/local.yml         ← inventaire statique : votre poste (TP 14)
 ├── group_vars/
-│   ├── all.yml                 rebond SSH, variables globales
+│   ├── all.yml                 options SSH, variables globales
 │   ├── proxmox_web.yml         variables du groupe « web »
 │   └── proxmox_db.yml          variables du groupe « db »
 ├── roles/
@@ -143,10 +143,11 @@ ansible-playbook site.yml --ask-vault-pass
 | `Invalid data from server` | `apt install python3-proxmoxer` |
 | Inventaire vide / plugin introuvable | `ansible-galaxy collection install community.proxmox` |
 | `UNREACHABLE` sur un CT Alpine | Jouer `alpine.yml` d'abord (`remote_user: root`) |
+| `srv01` / `cloud01` / `pbs` absents de `linux` | Voulu : `linux` = VM taguées `terraform`. Posez un tag de rôle pour les inclure dans `proxmox_<tag>` |
 | Inventaire vide | Vérifiez le token, `validate_certs: false`, videz `/tmp/ansible-pve-cache` |
 | `ansible_host` absent (VM) | L'agent QEMU ne tourne pas dans la VM |
 | `ansible_host` = le nom du guest (LXC) | Conteneur arrêté, ou `want_facts` désactivé — un LXC passe par `proxmox_lxc_interfaces`, pas par l'agent |
-| `UNREACHABLE` | Le `ProxyCommand` n'est pas configuré, ou `ssh root@node` échoue |
+| `UNREACHABLE` | La route `10.10.0.0/16 via $PVE` manque sur le PC, ou le firewall du nœud bloque le forward |
 | `changed` à chaque fois | Tâche non idempotente |
 
 ```bash

@@ -3,7 +3,7 @@
 # ⭐ Les groupes sont dérivés des TAGS posés par Terraform (TP 11).
 #
 #   ansible-inventory --graph
-#   ansible-inventory --host web01-e3 | jq
+#   ansible-inventory --host web01 | jq
 #
 # Prérequis : sudo apt install -y python3-proxmoxer
 #             ansible-galaxy collection install community.proxmox
@@ -16,9 +16,9 @@
 
 plugin: community.proxmox.proxmox
 
-# ⚠ adapter à votre nœud, et exporter le secret :
+# ⚠ adapter à l'IP de VOTRE nœud ($PVE), et exporter le secret :
 #   source ~/.config/pve/token.env
-url: "https://172.30.30.153:8006"
+url: "https://172.30.30.151:8006"
 user: ansible@pve
 token_id: inv
 token_secret: "{{ lookup('env', 'PVE_ANSIBLE_TOKEN_SECRET') }}"
@@ -32,17 +32,21 @@ keyed_groups:
   - key: proxmox_tags_parsed
     separator: "_"
     prefix: proxmox
-  # un groupe par nœud : node_pve3
+  # un groupe par nœud : node_pve (jours 1-3), node_pve3… en cluster
   - key: proxmox_node
     prefix: node
-  # un groupe par pool : pool_eleve3
+  # un groupe par pool : pool_lab
   - key: proxmox_pool
     prefix: pool
 
 groups:
+  # ⭐ « linux » = les VM déployées par Terraform (tag « terraform »), celles que
+  #   cloud-init a préparées pour Ansible (compte eleve + clé). Les machines faites à
+  #   la main (srv01, cloud01, win01, pbs) n'y sont pas — elles restent dans leurs
+  #   groupes par tag (proxmox_web…) si on leur en pose un.
   linux: >-
     proxmox_vmtype == 'qemu' and
-    'windows' not in (proxmox_tags | default(''))
+    'terraform' in (proxmox_tags | default(''))
   conteneurs: "proxmox_vmtype == 'lxc'"
   windows: "'windows' in (proxmox_tags | default(''))"
 

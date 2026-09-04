@@ -2,11 +2,12 @@
 
 ⏱️ **1 h 15** · Jour 3
 
-Objectif : installer PBS, le brancher à chaque nœud, sauvegarder, restaurer, et
+Objectif : installer PBS, le brancher à votre nœud, sauvegarder, restaurer, et
 comprendre pourquoi la déduplication change complètement l'économie de la sauvegarde.
 
-🎯 **C'est le TP le plus important de la formation** : c'est lui qui rend les deux
-suivants — mise en cluster et Ceph — réalisables sans perdre votre travail.
+🎯 **C'est le TP le plus important de la formation** : une sauvegarde qu'on n'a jamais
+restaurée n'est pas une sauvegarde. Ici, on détruit une VM pour de vrai et on la
+remonte.
 
 📖 Doc : <https://pbs.proxmox.com/docs/>
 
@@ -49,27 +50,27 @@ déduplication dépasse couramment 10:1.
 
 ## 2. Installer PBS dans une VM 🏗️
 
-> 🤝 **Un seul PBS pour la salle, hébergé sur `pve1`.** Le formateur (ou l'élève 1) le
-> monte, les autres suivent la construction, puis chacun effectue l'étape 5
-> (branchement) sur son propre nœud.
+> 🤝 **Chaque stagiaire installe sa propre VM PBS, sur son nœud.** Comme tout le reste
+> des jours 1-3 : vous êtes seul chez vous, la VM s'appelle `pbs` et porte le VMID `901`
+> pour tout le monde. Seule son adresse IP, attribuée par le formateur, vous est propre.
 >
-> 🧠 **Pourquoi `pve1` ?** Au TP 16, seuls les nœuds qui **rejoignent** le cluster
-> doivent être vides de tout guest. `pve1`, qui *crée* le cluster, garde les siens.
-> PBS survivra donc à la mise en cluster — et c'est précisément lui qui permettra de
-> restaurer les VM de tous les autres.
+> 🎯 **Pourquoi PBS maintenant, en fin de jour 3 ?** Parce que c'est l'aboutissement de
+> l'industrialisation : vous savez fabriquer, déployer et configurer des machines, il
+> reste à savoir les **sauvegarder, vérifier et restaurer** — et on le fait pour de
+> vrai. Ce TP n'a **pas** pour but de conserver vos VM d'un jour à l'autre : le jour 4
+> commence par une **réinstallation complète** de tous les nœuds (TP 16), PBS compris.
+> Une VM PBS pour toute la salle sera alors recréée sur `pve1`, pour le cluster.
 >
-> 🎯 **Et pourquoi PBS avant le cluster et avant Ceph ?** Parce que les deux étapes
-> suivantes sont destructives : la mise en cluster (TP 16) exige de supprimer vos
-> guests, et la chirurgie LVM pour Ceph (TP 18) exige de détruire le pool `local-lvm`.
-> Sans sauvegarde fiable, vous perdez tout votre travail des jours 1 à 3.
+> 🧠 Ce qui survit à la réinstallation, c'est l'export NFS de votre poste (TP 14) : si
+> vous tenez à une machine, un `vzdump … --storage nfs-pc` la mettra à l'abri.
 
 ### Créer la VM
 
-**Sur `pve1`** :
+**Sur votre nœud** :
 
 ```bash
 qm create 901 \
-  --name pbs-lab --pool eleve1 \
+  --name pbs \
   --ostype l26 --machine q35 --bios ovmf \
   --efidisk0 local-lvm:1,efitype=4m,pre-enrolled-keys=0 \
   --scsihw virtio-scsi-single \
@@ -91,8 +92,13 @@ deviennent fragiles — Proxmox le déconseille explicitement. On reste donc en 
 `local-lvm` étant *thin*, les 120 Go annoncés ne consomment que ce qui est réellement
 écrit.
 
-🧠 **`--protection 1`** : cette VM contient les sauvegardes de toute la salle. Un
-`qm destroy` distrait serait catastrophique.
+🧠 **`--protection 1`** : cette VM contient vos sauvegardes. Un `qm destroy` distrait
+effacerait d'un coup les originaux… et leurs copies.
+
+🧠 **Pas de `--pool lab`, et c'est voulu.** Le job de sauvegarde du §6 est *pool based* :
+si `pbs` était dans le pool, PBS se sauvegarderait **vers lui-même** — une copie qui
+disparaît avec l'original, l'exact contraire d'une sauvegarde. La machine qui porte les
+sauvegardes ne fait jamais partie du périmètre sauvegardé.
 
 🔗 ISO : <https://www.proxmox.com/en/downloads> → *Proxmox Backup Server*
 
@@ -101,8 +107,8 @@ deviennent fragiles — Proxmox le déconseille explicitement. On reste donc en 
 | Disque système | 32 Go (`scsi0`) |
 | **Disque datastore** | 120 Go (`scsi1`) — **séparé du système, toujours** |
 | RAM | 4 Go minimum (la déduplication est gourmande en index) |
-| IP | **fixée par le formateur**, `/24`, gw `172.30.30.2` — notez-la, c'est votre `$PBS` |
-| Nœud hôte | **pve1** (celui qui créera le cluster) |
+| IP | **attribuée par le formateur** (dans `.200`–`.250`), `/24`, gw `172.30.30.2` — notez-la, c'est votre `$PBS` |
+| Nœud hôte | le vôtre |
 | FQDN | `pbs.lab.local` |
 
 L'installateur est le même que celui de PVE. Après le premier démarrage :
@@ -115,8 +121,8 @@ proxmox-backup-manager version
 
 Interface web : **`https://$PBS:8007`** (port **8007**, pas 8006).
 
-📌 **Gardez `$PBS` sous la main** : ce TP et les TP 16 et 20 la réutilisent. Une VM
-PBS pour toute la salle, une seule adresse à retenir.
+📌 **Gardez `$PBS` sous la main** pour tout ce TP. Au jour 4, la variable désignera la
+VM PBS de la salle (sur `pve1`, TP 16) : vous la mettrez à jour à ce moment-là.
 
 ### Dépôts sans abonnement
 
@@ -159,39 +165,37 @@ proxmox-backup-manager datastore list
 
 ### Les namespaces 📂
 
-Un datastore peut être cloisonné en **namespaces** (jusqu'à 8 niveaux). Idéal ici :
-chaque élève a le sien, sans voir ceux des autres.
+Un datastore peut être cloisonné en **namespaces** (jusqu'à 8 niveaux) : un par
+client, par équipe ou par environnement, chacun avec ses propres droits. On en crée un,
+`lab`, pour prendre l'habitude de ne jamais écrire à la racine.
 
 ```bash
-for i in 1 2 3 4 5 6; do
-  proxmox-backup-manager namespace create --store lab-store --ns eleve$i
-done
+proxmox-backup-manager namespace create --store lab-store --ns lab
 proxmox-backup-manager namespace list --store lab-store
 ```
 
 ```
    lab-store/
-   ├── eleve1/     vm/301  vm/302  ct/311
-   ├── eleve2/     vm/201  vm/202  ct/211
-   └── eleve3/     ...
+   └── lab/        vm/101  vm/120  ct/111 …
 ```
 
-🧠 **La déduplication reste globale au datastore**, même entre namespaces. On gagne
-l'isolation des droits sans perdre l'économie d'espace. C'est très élégant.
+🧠 **La déduplication reste globale au datastore**, même entre namespaces. Sur un PBS
+mutualisé entre six équipes, on gagnerait l'isolation des droits sans perdre l'économie
+d'espace. C'est très élégant.
 
 ---
 
 ## 4. Utilisateurs, droits et empreinte 🔑
 
 ```bash
-# Un compte par élève, limité à son namespace
-for i in 1 2 3 4 5 6; do
-  proxmox-backup-manager user create eleve$i@pbs --password 'Formation2026!'
-  proxmox-backup-manager acl update /datastore/lab-store/eleve$i \
-      DatastoreAdmin --auth-id eleve$i@pbs
-done
+# Un compte dédié, plutôt que root@pam, pour brancher Proxmox VE
+proxmox-backup-manager user create eleve@pbs --password 'Formation2026!'
+proxmox-backup-manager acl update /datastore/lab-store DatastoreAdmin --auth-id eleve@pbs
 proxmox-backup-manager acl list
 ```
+
+> 💡 Sur un PBS partagé, on limiterait chaque compte à **son** namespace :
+> `acl update /datastore/lab-store/<ns> DatastoreBackup --auth-id <compte>`.
 
 | Rôle PBS | Donne |
 |---|---|
@@ -217,9 +221,9 @@ Fingerprint (sha256): AB:CD:EF:...:12:34
 
 ## 5. Brancher PBS sur son nœud ⚡
 
-**Chaque élève le fait sur son nœud** — on n'est pas encore en cluster.
-Au TP 16, une fois le cluster monté, cette déclaration deviendra automatiquement
-commune aux six nœuds (merci pmxcfs) : il faudra alors la refaire **une seule fois**.
+**Chacun le fait sur son nœud.** Au TP 16, une fois le cluster monté, la déclaration
+du stockage sera automatiquement commune aux six nœuds (merci pmxcfs) : on la fera
+**une seule fois**, vers la VM PBS de la salle.
 
 🌐 `Datacenter → Storage → Add → Proxmox Backup Server`
 
@@ -227,10 +231,10 @@ commune aux six nœuds (merci pmxcfs) : il faudra alors la refaire **une seule f
 |---|---|
 | ID | `pbs-lab` |
 | Server | votre `$PBS` |
-| Username | `eleveN@pbs` |
+| Username | `eleve@pbs` |
 | Password | `Formation2026!` |
 | Datastore | `lab-store` |
-| Namespace | `eleveN` |
+| Namespace | `lab` |
 | Fingerprint | *(collez l'empreinte)* |
 | Encryption Key | *(voir §8)* |
 
@@ -239,8 +243,8 @@ PBS=172.30.30.___            # ⚠ l'adresse de la VM PBS
 pvesm add pbs pbs-lab \
   --server $PBS \
   --datastore lab-store \
-  --namespace eleve3 \
-  --username eleve3@pbs \
+  --namespace lab \
+  --username eleve@pbs \
   --password 'Formation2026!' \
   --fingerprint 'AB:CD:EF:...:12:34' \
   --content backup
@@ -259,9 +263,12 @@ parasites**, avec les deux-points.
 ### À la main
 
 ```bash
-N=3
-vzdump ${N}60 --storage pbs-lab --mode snapshot --notes-template '{{guestname}} — {{node}}'
+vzdump 120 --storage pbs-lab --mode snapshot --notes-template '{{guestname}} — {{node}}'
 ```
+
+> `120`, c'est `cloud01`, la VM cloud-init du TP 10 — elle a l'agent QEMU, ce qui compte
+> pour la suite. Son disque est sur `nfs-pc` depuis le TP 14 : PBS sauvegarde
+> indifféremment un volume LVM ou un `.qcow2` sur NFS.
 
 Les trois modes :
 
@@ -287,17 +294,17 @@ sauvegarde dont on prie qu'elle marche.
 | Node | `-- All --` |
 | Storage | `pbs-lab` |
 | Schedule | `02:30` (ou `mon..fri 02:30`) |
-| Selection mode | **Pool based** → `eleveN` ⭐ |
+| Selection mode | **Pool based** → `lab` ⭐ |
 | Mode | `snapshot` |
 | Notification mode | `Notification system` |
 | **Retention** | `keep-daily=7, keep-weekly=4, keep-monthly=6` |
 
 ```bash
 pvesh create /cluster/backup \
-  --id backup-eleve3 \
+  --id backup-lab \
   --schedule '02:30' \
   --storage pbs-lab \
-  --pool eleve3 \
+  --pool lab \
   --mode snapshot \
   --enabled 1 \
   --prune-backups 'keep-daily=7,keep-weekly=4,keep-monthly=6' \
@@ -314,15 +321,14 @@ moment de la restaurer.
 ### Voir la déduplication à l'œuvre 🎯
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
 # Sauvegarde 1
-vzdump ${N}60 --storage pbs-lab --mode snapshot
+vzdump 120 --storage pbs-lab --mode snapshot
 
-# On modifie un peu la VM
-ssh -J root@172.30.30.151 eleve@10.60.10.<ip> 'sudo apt install -y cowsay'
+# On modifie un peu la VM (depuis votre PC ou le nœud)
+ssh eleve@10.10.10.50 'sudo apt install -y cowsay'
 
 # Sauvegarde 2
-vzdump ${N}60 --storage pbs-lab --mode snapshot
+vzdump 120 --storage pbs-lab --mode snapshot
 ```
 
 🌐 Sur PBS : `Datastore → lab-store → Content`. Comparez la taille annoncée de chaque
@@ -333,7 +339,7 @@ sauvegarde avec l'espace réellement consommé.
 proxmox-backup-manager datastore list --output-format json | jq
 df -h /mnt/datastore/data
 PBS=172.30.30.___            # ⚠ l'adresse de la VM PBS
-proxmox-backup-client snapshot list --repository eleve3@pbs@$PBS:lab-store
+proxmox-backup-client snapshot list --ns lab --repository eleve@pbs@$PBS:lab-store
 ```
 
 ---
@@ -347,11 +353,19 @@ une sauvegarde, c'est une croyance.
 
 ```bash
 pvesm list pbs-lab
-qm restore 365 pbs-lab:backup/vm/360/2026-08-02T02:30:00Z --storage local-lvm
-qm start 365
+qm restore 125 pbs-lab:backup/vm/120/2026-08-02T02:30:00Z --storage local-lvm
+qm start 125
 ```
 
 🌐 `Storage pbs-lab → Backups → sélectionner → Restore`, en changeant le VMID.
+
+🧠 `--storage local-lvm` : le disque était sur `nfs-pc` (TP 14), la copie revient sur
+`local-lvm`. C'est voulu — le stockage cible d'une restauration est **libre**, c'est même
+ce qui permet de restaurer une machine ailleurs que là où elle vivait.
+
+🪤 La copie `125` a la **même IP fixe** (`10.10.10.50`) que l'original : ne laissez pas
+les deux tourner en même temps. Une fois le principe vu, `qm stop 125 && qm destroy 125
+--purge`.
 
 ### 7.2 Restauration d'un seul fichier ⭐
 
@@ -366,13 +380,13 @@ téléchargez le fichier ou le dossier.
 ```bash
 # En CLI, depuis n'importe quelle machine avec proxmox-backup-client
 PBS=172.30.30.___            # ⚠ l'adresse de la VM PBS
-export PBS_REPOSITORY="eleve3@pbs@$PBS:lab-store"
+export PBS_REPOSITORY="eleve@pbs@$PBS:lab-store"
 export PBS_PASSWORD='Formation2026!'
 
-proxmox-backup-client snapshot list --ns eleve3
-proxmox-backup-client list --ns eleve3 vm/360/2026-08-02T02:30:00Z
-proxmox-backup-client restore --ns eleve3 \
-  vm/360/2026-08-02T02:30:00Z drive-scsi0.img.fidx /tmp/restore/
+proxmox-backup-client snapshot list --ns lab
+proxmox-backup-client list --ns lab vm/120/2026-08-02T02:30:00Z
+proxmox-backup-client restore --ns lab \
+  vm/120/2026-08-02T02:30:00Z drive-scsi0.img.fidx /tmp/restore/
 ```
 
 ### 7.3 Live-restore 🚀
@@ -397,21 +411,20 @@ récupération, mais le service est **rendu**.
 ### 7.4 Exercice obligatoire 🎯
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
 # 1. Sauvegarder
-vzdump ${N}60 --storage pbs-lab --mode snapshot
+vzdump 120 --storage pbs-lab --mode snapshot
 
 # 2. Détruire pour de vrai
-qm stop ${N}60 && qm destroy ${N}60 --purge
-qm list | grep ${N}60      # plus rien
+qm stop 120 && qm destroy 120 --purge
+qm list | grep 120         # plus rien
 
-# 3. Restaurer
-qm restore ${N}60 pbs-lab:backup/vm/${N}60/<timestamp> --storage local-lvm
-qm start ${N}60
+# 3. Restaurer (sur local-lvm : la VM revient sur le stockage local, c'est voulu)
+qm restore 120 pbs-lab:backup/vm/120/<timestamp> --storage local-lvm
+qm start 120
 
 # 4. Vérifier que la VM est fonctionnelle
-qm agent ${N}60 ping
-ssh -J root@172.30.30.151 eleve@10.60.10.<ip> 'hostname; uptime'
+qm agent 120 ping
+ssh eleve@10.10.10.50 'hostname; uptime'
 ```
 
 ✅ **Tant que vous n'avez pas fait ça, vous n'avez pas de sauvegarde.**
@@ -425,17 +438,22 @@ inintelligibles.
 
 ```bash
 # Sur le nœud PVE
-proxmox-backup-client key create /etc/pve/priv/pbs-eleve3.enc --kdf none
-proxmox-backup-client key show /etc/pve/priv/pbs-eleve3.enc
+proxmox-backup-client key create /etc/pve/priv/pbs-lab.enc --kdf none
+proxmox-backup-client key show /etc/pve/priv/pbs-lab.enc
 ```
 
-🌐 `Storage pbs-lab → Edit → Encryption Key`
+🌐 `Storage pbs-lab → Edit → Encryption Key` — ou en CLI :
+
+```bash
+pvesm set pbs-lab --encryption-key /etc/pve/priv/pbs-lab.enc
+grep -A1 encryption /etc/pve/storage.cfg
+```
 
 🚨 **Perdez la clé, perdez les sauvegardes. Définitivement.** Il n'y a pas de porte
 dérobée. Générez une **clé papier** :
 
 ```bash
-proxmox-backup-client key paperkey /etc/pve/priv/pbs-eleve3.enc --output-format text
+proxmox-backup-client key paperkey /etc/pve/priv/pbs-lab.enc --output-format text
 ```
 
 Imprimez-la, mettez-la dans un coffre. Ce n'est pas une plaisanterie : c'est la
@@ -454,8 +472,8 @@ attaquant.
 ### Prune — supprimer les index anciens
 
 ```bash
-proxmox-backup-manager prune-job create prune-eleve3 \
-  --store lab-store --ns eleve3 --schedule 'daily' \
+proxmox-backup-manager prune-job create prune-lab \
+  --store lab-store --ns lab --schedule 'daily' \
   --keep-daily 7 --keep-weekly 4 --keep-monthly 6
 proxmox-backup-manager prune-job list
 ```
@@ -532,10 +550,10 @@ données au lieu de les recevoir, et idéalement une bande ou un stockage WORM.
 
 - [ ] PBS est installé et accessible sur `https://$PBS:8007`
 - [ ] Un datastore `lab-store` existe sur un disque dédié
-- [ ] Un namespace par élève existe
+- [ ] Un namespace `lab` existe, et le stockage y pointe
 - [ ] Le stockage `pbs-lab` est actif sur mon nœud (`pvesm status`)
 - [ ] Une sauvegarde manuelle réussit
-- [ ] Un job planifié existe, **basé sur un pool**
+- [ ] Un job planifié existe, **basé sur un pool** — et la VM `pbs` n'est pas dans ce pool
 - [ ] La deuxième sauvegarde d'une même VM consomme bien moins d'espace 🎯
 - [ ] **J'ai détruit une VM et je l'ai restaurée entièrement** 🎯
 - [ ] J'ai restauré un fichier isolé avec File Restore
@@ -553,14 +571,16 @@ données au lieu de les recevoir, et idéalement une bande ou un stockage WORM.
 2. **`proxmox-backup-client` sur une machine quelconque** : sauvegardez le `/etc` d'une
    VM directement vers PBS, sans passer par Proxmox. PBS n'est pas réservé aux VM.
    ```bash
-   proxmox-backup-client backup etc.pxar:/etc --repository eleve3@pbs@<IP-PBS>:lab-store
+   proxmox-backup-client backup etc.pxar:/etc --ns lab --repository eleve@pbs@$PBS:lab-store
    ```
-3. **Restauration croisée** : restaurez une sauvegarde faite depuis `pve3` sur `pve5`.
-   Que faut-il pour que ça marche ? (Indice : le stockage cible et le VNet.)
+3. **Restauration vers un autre stockage** : restaurez `120` avec `--storage nfs-pc`
+   au lieu de `local-lvm`. Que change le format du disque ? Et au jour 4, pour
+   restaurer sur un **autre nœud** du cluster, que faudra-t-il ? (Indice : le stockage
+   cible et le VNet doivent exister là-bas.)
 4. **Simuler la corruption** : modifiez un chunk à la main sur PBS
    (`/mnt/datastore/data/.chunks/...`), lancez un `verify`, et observez la détection.
    Puis restaurez le chunk. 😈
 5. **Tape backup** : lisez la documentation de la sauvegarde sur bande. Pourquoi la
    bande revient-elle à la mode à l'ère du ransomware ?
 
-➡️ Fin du jour 3 🎉 · Suite : [TP 16 — Mise en cluster des 6 nœuds](16-cluster-proxmox.md)
+➡️ Fin du jour 3 🎉 · Suite : [TP 16 — Réinstallation et mise en cluster des 6 nœuds](16-cluster-proxmox.md)

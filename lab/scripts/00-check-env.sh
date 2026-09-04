@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Vérifie que le poste de l'élève dispose des outils nécessaires.
+# Vérifie que le poste du stagiaire dispose des outils nécessaires.
 # Usage : bash lab/scripts/00-check-env.sh
 set -uo pipefail
 
@@ -37,7 +37,7 @@ if command -v terraform >/dev/null 2>&1; then
 elif command -v tofu >/dev/null 2>&1; then
   ok "opentofu — $(tofu version | head -1)"
 else
-  ko "ni terraform ni tofu — voir TP 00 §6"
+  ko "ni terraform ni tofu — voir TP 00 §7"
 fi
 check_cmd ansible ansible
 if command -v ansible-galaxy >/dev/null 2>&1; then
@@ -88,7 +88,7 @@ if [ -f "$HOME/.ssh/id_ed25519.pub" ]; then
 elif [ -f "$HOME/.ssh/id_rsa.pub" ]; then
   warn "clé RSA trouvée — préférez ed25519 : ssh-keygen -t ed25519"
 else
-  ko "aucune clé SSH — ssh-keygen -t ed25519 -C \"eleve@formation\" -N ''"
+  ko "aucune clé SSH — ssh-keygen -t ed25519 -C \"eleve@formation-proxmox\" -N ''"
 fi
 
 titre "Secrets du lab"
@@ -101,13 +101,16 @@ else
 fi
 
 titre "Connectivité de la salle"
-for h in 172.30.30.2 172.30.30.151; do
-  if ping -c1 -W1 "$h" >/dev/null 2>&1; then ok "ping $h"; else warn "pas de réponse de $h (normal si le lab n'est pas encore monté)"; fi
-done
-if curl -sk --max-time 3 https://172.30.30.151:8006 >/dev/null 2>&1; then
-  ok "interface web de pve1 joignable"
+if ping -c1 -W1 172.30.30.2 >/dev/null 2>&1; then ok "ping 172.30.30.2 (passerelle)"; else warn "pas de réponse de la passerelle 172.30.30.2"; fi
+if [ -n "${PVE:-}" ]; then
+  if ping -c1 -W1 "$PVE" >/dev/null 2>&1; then ok "ping $PVE (votre nœud)"; else warn "pas de réponse de $PVE (normal avant le TP 01)"; fi
+  if curl -sk --max-time 3 "https://$PVE:8006" >/dev/null 2>&1; then
+    ok "interface web https://$PVE:8006 joignable"
+  else
+    warn "https://$PVE:8006 injoignable (normal avant le TP 01)"
+  fi
 else
-  warn "pve1:8006 injoignable (normal avant le TP 01)"
+  warn "variable PVE non définie — export PVE=172.30.30.___ (l'IP de VOTRE nœud, TP 00 §2)"
 fi
 
 printf "\n${BLU}== Résultat ==${NC}\n"

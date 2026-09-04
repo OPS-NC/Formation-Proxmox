@@ -42,9 +42,14 @@ cloud-init, régénéré à chaque modification.
 ## 2. Fabriquer le template Debian 13 🐧
 
 ```bash
-N=3                               # ⚠ VOTRE numéro d'élève
-VMID=${N}90                       # ex. 390
+VMID=190                          # le template Debian, cf. plan de VMID du TP 00
 IMG=/var/lib/vz/template/cloudimg/debian-13-genericcloud-amd64.qcow2
+
+# Récupérer la cloud-image officielle (≈ 350 Mo)
+mkdir -p $(dirname $IMG)
+curl -fL --progress-bar -o $IMG \
+  https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2
+qemu-img info $IMG | head -3
 ```
 
 ### 2.1 Personnaliser l'image avant même de la démarrer 🎩
@@ -77,7 +82,7 @@ le **même bail** :
 
 ```
    clone A   MAC aa:bb:...:01   DUID dérivé de machine-id XYZ  ─┐
-                                                                ├─► même bail → 10.3.10.100
+                                                                ├─► même bail → 10.10.10.100
    clone B   MAC aa:bb:...:02   DUID dérivé de machine-id XYZ  ─┘
 ```
 
@@ -92,8 +97,8 @@ de conteneur : cherchez toujours `machine-id` avant de soupçonner le DHCP.
 
 ```bash
 qm create $VMID \
-  --name tpl-debian13-e$N \
-  --pool eleve$N \
+  --name tpl-debian13 \
+  --pool lab \
   --ostype l26 \
   --machine q35 \
   --cpu x86-64-v2-AES \
@@ -182,21 +187,24 @@ qm config $VMID
 Tout ceci est industrialisé dans `lab/scripts/build-template.sh`.
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-# Sur le nœud Proxmox
-cd /root
-git clone <url-du-depot> formation
-cd formation
+# Sur le nœud Proxmox — le dépôt y est depuis le TP 08 §2
+[ -d /root/formation ] || git clone <url-du-depot> /root/formation
+cd /root/formation
 
 ./lab/scripts/build-template.sh --help
 
 # Les trois templates de la formation, d'un coup
-./lab/scripts/build-template.sh --eleve $N --os debian13 --vmid ${N}90
-./lab/scripts/build-template.sh --eleve $N --os ubuntu2604 --vmid ${N}91
-./lab/scripts/build-template.sh --eleve $N --os rocky10 --vmid ${N}92
+./lab/scripts/build-template.sh --os debian13   --vmid 190
+./lab/scripts/build-template.sh --os ubuntu2604 --vmid 191
+./lab/scripts/build-template.sh --os rocky10    --vmid 192
 
 qm list | grep -i tpl
 ```
+
+> Le script place les templates dans le pool `lab` (`--pool` pour changer) et les
+> branche sur `vint` par défaut (`--bridge` pour changer), comme au §2.2. Au jour 4, en
+> cluster, on lui passera `--vmid $(pvesh get /cluster/nextid)` pour laisser le cluster
+> choisir le numéro.
 
 Lisez le script : il ne fait rien de plus que ce que vous venez de taper, avec la
 gestion d'erreurs en plus.
@@ -240,34 +248,36 @@ Commandes d'installation de l'agent :
 ## 5. Cloner et tester ⚡
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
 # Clone lié (linked clone) : instantané, ne duplique pas le disque
-qm clone ${N}90 ${N}20 --name app01-e$N --pool eleve$N
+qm clone 190 120 --name cloud01 --pool lab
 
 # On le branche dans la zone interne créée au TP 08, en IP statique cette fois
-qm set ${N}20 --net0 virtio,bridge=vint,firewall=1,mtu=1
-qm set ${N}20 --ipconfig0 ip=10.$N.10.50/24,gw=10.$N.10.1
-qm set ${N}20 --nameserver 10.$N.10.1 --searchdomain lab.local
-qm set ${N}20 --ciuser eleve --sshkeys /root/.ssh/authorized_keys
-qm set ${N}20 --tags "debian,interne,app"
+qm set 120 --net0 virtio,bridge=vint,firewall=1,mtu=1
+qm set 120 --ipconfig0 ip=10.10.10.50/24,gw=10.10.10.1
+qm set 120 --nameserver 1.1.1.1 --searchdomain lab.local
+qm set 120 --ciuser eleve --sshkeys /root/.ssh/authorized_keys
+qm set 120 --tags "manuel,debian,interne,app"
 
-time qm start ${N}20
+time qm start 120
 ```
+
+🧠 **`cloud01`, pas `app01`** : le TP 11 déploiera par Terraform une VM nommée `app01`.
+Deux guests du même nom ne gênent pas Proxmox (seul le VMID doit être unique), mais
+l'inventaire Ansible du TP 13 indexe **par nom** — l'un écraserait l'autre. Le tag
+`manuel` marque l'origine, comme `terraform` marquera celles du TP 11.
 
 Suivez le boot en direct sur la console série :
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-qm terminal ${N}20        # Ctrl+O pour sortir
+qm terminal 120           # Ctrl+O pour sortir
 ```
 
 Puis :
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-qm agent ${N}20 network-get-interfaces | jq -r '.[]|select(.name=="eth0")|."ip-addresses"[]."ip-address"'
-# depuis srv01 (déjà dans la zone interne) ou depuis le nœud
-ssh eleve@10.$N.10.50 'hostname; cloud-init status --long; df -h /'
+qm agent 120 network-get-interfaces | jq -r '.[]|select(.name=="eth0")|."ip-addresses"[]."ip-address"'
+# depuis votre PC (route 10.10.0.0/16 via le nœud, TP 07), depuis srv01 ou depuis le nœud
+ssh eleve@10.10.10.50 'hostname; cloud-init status --long; df -h /'
 ```
 
 ✅ `cloud-init status` doit renvoyer `status: done`.
@@ -294,7 +304,7 @@ ssh eleve@10.$N.10.50 'hostname; cloud-init status --long; df -h /'
 🚨 **Et surtout : un clone lié sur stockage local ne migre pas.** Proxmox refuse net :
 
 ```
-can't migrate 'local-lvm:base-390-disk-0/vm-320-disk-0' as it's a clone of 'base-390-disk-0'
+can't migrate 'local-lvm:base-190-disk-0/vm-120-disk-0' as it's a clone of 'base-190-disk-0'
 ```
 
 L'image de base n'existe pas sur le nœud cible, et Proxmox ne va pas la copier au
@@ -308,10 +318,9 @@ passage. **Retenez-le pour le jour 4** : les VM des TP 17 et 19 sont clonées en
 Le CD-ROM cloud-init généré est visible :
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-qm cloudinit dump ${N}20 user
-qm cloudinit dump ${N}20 network
-qm cloudinit dump ${N}20 meta
+qm cloudinit dump 120 user
+qm cloudinit dump 120 network
+qm cloudinit dump 120 meta
 ```
 
 Dans la VM :
@@ -345,13 +354,12 @@ démarrée**, pas juste redémarrée depuis l'intérieur).
 
 | VMID | Nom | OS | Rôle dans la suite |
 |---|---|---|---|
-| `N90` | `tpl-debian13-eN` | Debian 13 | serveurs internes |
-| `N91` | `tpl-ubuntu2604-eN` | Ubuntu 26.04 | serveurs web / DMZ |
-| `N92` | `tpl-rocky10-eN` | Rocky Linux 10 | pour varier, et souffrir un peu 🪨 |
+| `190` | `tpl-debian13` | Debian 13 | serveurs internes |
+| `191` | `tpl-ubuntu2604` | Ubuntu 26.04 | serveurs web / DMZ |
+| `192` | `tpl-rocky10` | Rocky Linux 10 | pour varier, et souffrir un peu 🪨 |
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-qm list | grep -E "${N}9[0-2]"
+qm list | grep -E '19[0-2]'
 ```
 
 ---
@@ -359,7 +367,7 @@ qm list | grep -E "${N}9[0-2]"
 ## ✅ Checklist de validation
 
 - [ ] Les 3 templates existent et sont bien marqués « template »
-- [ ] Un clone de `N90` démarre en moins de 30 secondes
+- [ ] Le clone `cloud01` (120) de `190` démarre en moins de 30 secondes
 - [ ] `cloud-init status` renvoie `done` dans le clone
 - [ ] SSH par clé fonctionne sans mot de passe
 - [ ] Le disque est bien à 20 Go (partition étendue automatiquement)
@@ -377,7 +385,7 @@ qm list | grep -E "${N}9[0-2]"
 2. Ajoutez un **vendor-data** commun à toutes vos VM
    (`/var/lib/vz/snippets/vendor-common.yaml`) qui installe systématiquement
    `node_exporter`. Appliquez avec `qm set <vmid> --cicustom "vendor=local:snippets/vendor-common.yaml"`.
-3. Mesurez : `time qm clone N90 N29 --full 0` vs `--full 1`. Puis `lvs` pour voir
+3. Mesurez : `time qm clone 190 129 --full 0` vs `--full 1`. Puis `lvs` pour voir
    la différence d'occupation.
 
 ➡️ Suite : [TP 11 — Terraform : déployer dans les réseaux SDN](11-terraform-vms-sdn.md)

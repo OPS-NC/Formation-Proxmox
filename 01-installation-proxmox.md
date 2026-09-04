@@ -130,22 +130,28 @@ chirurgie au jour 4.
 ### 3.3 Mot de passe et e-mail
 
 Mot de passe root : **`Formation2026!`** (identique pour tous, c'est un lab).
-E-mail : `eleveN@formation.local` — il doit être syntaxiquement valide, pas réel.
+E-mail : `eleve@formation.local` — il doit être syntaxiquement valide, pas réel.
 
 ### 3.4 Réseau — ⚠️ l'étape à ne pas rater
 
-| Champ | Valeur (élève N) |
+| Champ | Valeur |
 |---|---|
 | Management interface | votre carte Ethernet (`enp1s0`, `eno1`…) |
-| Hostname (FQDN) | `pveN.lab.local` ← **le FQDN est obligatoire** |
-| IP address (CIDR) | `172.30.30.15N/24` |
+| Hostname (FQDN) | `pve.lab.local` ← **le FQDN est obligatoire** |
+| IP address (CIDR) | **`$PVE/24`** — l'adresse que le formateur vous a attribuée (`.151` à `.156`) |
 | Gateway | `172.30.30.2` |
 | DNS server | `1.1.1.1` |
 
+🧠 **Tout le monde s'appelle `pve`, et c'est voulu.** Pendant trois jours, chacun est
+seul sur son nœud : le nom n'a pas besoin d'être unique, seule l'IP l'est. Ce nœud
+sera **réinstallé au TP 16**, juste avant la mise en cluster, avec cette fois un
+hostname distinct (`pve1` … `pve6`) — voilà pourquoi on ne s'embarrasse d'aucune
+convention de numérotation d'ici là.
+
 🪤 **Pièges classiques :**
-- Un hostname sans domaine (`pve3` au lieu de `pve3.lab.local`) → refusé.
-- Une IP en DHCP → au reboot elle change, l'interface web devient introuvable, et la
-  mise en cluster du jour 4 casse.
+- Un hostname sans domaine (`pve` au lieu de `pve.lab.local`) → refusé.
+- Une IP en DHCP → au reboot elle change et l'interface web devient introuvable.
+  Toujours en **statique** sur un hyperviseur.
 - Se tromper de carte réseau (Wi-Fi, IPMI) → pas de réseau au reboot.
 
 Validez, **Install**, patientez, retirez la clé au reboot.
@@ -157,7 +163,7 @@ Validez, **Install**, patientez, retirez la clé au reboot.
 ### 4.1 Interface web 🌐
 
 ```
-https://172.30.30.15N:8006
+https://$PVE:8006
 ```
 
 Le certificat est auto-signé → « Avancé » → « Continuer ».
@@ -171,8 +177,9 @@ n'a pas d'abonnement. On le traite au TP 02.
 Depuis votre PC :
 
 ```bash
-ssh-copy-id root@172.30.30.15N     # injecte votre clé publique
-ssh root@172.30.30.15N
+PVE=172.30.30.___          # ⚠ l'IP de VOTRE nœud (TP 00 §2)
+ssh-copy-id root@$PVE      # injecte votre clé publique
+ssh root@$PVE
 ```
 
 Vérifiez immédiatement :
@@ -185,7 +192,7 @@ ip route
 cat /etc/network/interfaces
 ```
 
-Vous devez voir un bridge `vmbr0` de ce genre :
+Vous devez voir un bridge `vmbr0` de ce genre (ici avec `.151` en exemple) :
 
 ```
 auto lo
@@ -195,7 +202,7 @@ iface enp1s0 inet manual
 
 auto vmbr0
 iface vmbr0 inet static
-        address 172.30.30.153/24
+        address 172.30.30.151/24
         gateway 172.30.30.2
         bridge-ports enp1s0
         bridge-stp off
@@ -209,7 +216,7 @@ L'hôte et les VM sont branchés sur le même switch, donc sur le même LAN.
 ```
                        ┌──────── vmbr0 (switch virtuel) ────────┐
                        │                                        │
-   LAN ─── enp1s0 ─────┤  IP hôte 172.30.30.153/24              │
+   LAN ─── enp1s0 ─────┤  IP hôte $PVE/24                       │
                        │                                        │
                        │   ┌──────┐   ┌──────┐   ┌──────┐       │
                        └───┤ VM 1 ├───┤ VM 2 ├───┤ CT 1 ├───────┘
@@ -245,7 +252,7 @@ EOF
 apt update && apt full-upgrade -y
 ```
 
-> 💡 Tout ceci est faisable en clic-clic : `Datacenter → pveN → Updates → Repositories`.
+> 💡 Tout ceci est faisable en clic-clic : `Datacenter → pve → Updates → Repositories`.
 > On le fait en CLI pour comprendre ce qui se passe réellement.
 
 ### Retirer le bandeau d'abonnement (facultatif, lab uniquement)
@@ -271,9 +278,9 @@ apt install -y vim tmux htop iftop tcpdump ethtool bridge-utils \
 ```
 
 🧠 On installe **`frr` + `frr-pythontools`** dès maintenant : ce sont les prérequis de
-la zone EVPN du jour 4. Les installer à froid évite un « pourquoi mon BGP ne monte
-pas » à J+2. Et **`dnsmasq`** pour le DHCP du SDN, qu'il faut désactiver en tant que
-service système :
+la zone EVPN du jour 4, et prendre l'habitude à froid évite un « pourquoi mon BGP ne
+monte pas » à J+2 (la réinstallation du TP 16 reprendra exactement ces étapes). Et
+**`dnsmasq`** pour le DHCP du SDN, qu'il faut désactiver en tant que service système :
 
 ```bash
 systemctl disable --now dnsmasq
@@ -296,27 +303,23 @@ Un décalage de quelques secondes entre nœuds = des perturbations de quorum.
 
 ### Résolution de noms locale
 
-Éditez `/etc/hosts` pour y mettre **tous les nœuds** de la salle. On prépare le jour 4.
+Regardez ce que l'installateur a écrit dans `/etc/hosts` :
 
 ```
 127.0.0.1       localhost.localdomain localhost
-172.30.30.151   pve1.lab.local pve1
-172.30.30.152   pve2.lab.local pve2
-172.30.30.153   pve3.lab.local pve3
-172.30.30.154   pve4.lab.local pve4
-172.30.30.155   pve5.lab.local pve5
-172.30.30.156   pve6.lab.local pve6
-# Les deux lignes suivantes : adressez-les quand vous connaîtrez les IP.
-#172.30.30.__   nfs.lab.local nfs      # votre poste Ubuntu   (TP 14)
-#172.30.30.__   pbs.lab.local pbs      # la VM PBS            (TP 15)
+172.30.30.151   pve.lab.local pve      ← votre IP, votre hostname
 ```
 
 🪤 **La ligne de votre propre nœud doit contenir votre vraie IP**, pas `127.0.1.1`.
-Sinon Corosync s'annonce sur la loopback et le cluster ne se forme pas.
+Proxmox s'en sert pour savoir sur quelle adresse s'annoncer ; au jour 4, un nœud dont
+le nom résout sur la loopback ne rejoint pas le cluster. Vérifiez dès maintenant :
 
 ```bash
-hostname --ip-address     # doit renvoyer 172.30.30.15N, pas 127.x
+hostname --ip-address     # doit renvoyer votre IP ($PVE), pas 127.x
 ```
+
+> Les entrées des **six nœuds** de la salle viendront au TP 16, après la
+> réinstallation — pour l'instant, vous êtes seul.
 
 ---
 
@@ -345,7 +348,7 @@ reboot
 Après le redémarrage :
 
 ```bash
-ssh root@172.30.30.15N
+ssh root@$PVE
 pveversion
 systemctl --failed
 ip -br a
@@ -358,11 +361,10 @@ ping -c2 1.1.1.1
 ## ✅ Checklist de validation
 
 - [ ] `pveversion` renvoie une version **9.x**
-- [ ] L'interface web répond en `https://172.30.30.15N:8006`
+- [ ] L'interface web répond en `https://$PVE:8006`
 - [ ] SSH par clé fonctionne (pas de mot de passe demandé)
 - [ ] `apt update` ne renvoie **aucune** erreur 401
-- [ ] `hostname --ip-address` renvoie `172.30.30.15N`
-- [ ] `ping pve1` … `ping pve6` fonctionnent (au fur et à mesure des installs)
+- [ ] `hostname --ip-address` renvoie l'IP de mon nœud, pas `127.x`
 - [ ] `dpkg -l | grep frr-pythontools` renvoie une ligne
 - [ ] `systemctl is-enabled dnsmasq` renvoie `disabled`
 - [ ] `systemctl --failed` est vide

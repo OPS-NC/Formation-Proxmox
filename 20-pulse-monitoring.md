@@ -47,7 +47,7 @@ pveum user token add pulse@pve mon --privsep 0
 Et côté PBS :
 
 ```bash
-# Sur pbs-lab
+# Sur la VM PBS de la salle (pve1)
 proxmox-backup-manager user create pulse@pbs --password 'Formation2026!'
 proxmox-backup-manager acl update /datastore Audit --auth-id pulse@pbs
 proxmox-backup-manager user generate-token pulse@pbs mon
@@ -63,11 +63,13 @@ Trois méthodes, choisissez selon votre goût.
 ### A — Conteneur LXC via le script communautaire ⭐ le plus rapide
 
 ```bash
-# Dans le shell d'un nœud Proxmox
+# Sur pve1 — le stagiaire de pve1, ou le formateur
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/pulse.sh)"
 ```
 
-Le script crée un CT Debian, installe Pulse et affiche l'URL finale.
+Le script crée un CT Debian, installe Pulse et affiche l'URL finale. Choisissez les
+**options avancées** pour fixer le CT ID à `902` (celui du plan, TP 00 §5) ; en mode
+par défaut il prend le prochain libre, et c'est acceptable aussi.
 
 🪤 **Lisez toujours un script avant de le passer à `bash`**, surtout en root, surtout
 depuis Internet. `curl -fsSL <url> | less` d'abord. C'est un réflexe, pas de la
@@ -144,7 +146,7 @@ nœud comme point d'entrée de secours, sinon la supervision tombe avec `pve1`.
    │   pve3  █████░░░░░  52 %             pve6  ███░░░░  35 %   │
    │                                                            │
    │   ⚠️  pve1 · CPU > 75 % depuis 12 min                       │
-   │   ⚠️  db01-e2 · dernière sauvegarde il y a 9 jours          │
+   │   ⚠️  db01 · dernière sauvegarde il y a 9 jours             │
    │   🔴 vm-store (Ceph) · un OSD à 88 % — nearfull              │
    └────────────────────────────────────────────────────────────┘
 ```
@@ -248,7 +250,7 @@ PME, ou comme second regard rapide à côté d'une stack plus lourde.
 ## 🎁 Bonus
 
 1. **Provoquer une alerte** : remplissez un stockage à plus de 85 %
-   (`fallocate -l 30G /srv/nfs-e3/gros` sur votre poste) et vérifiez qu'elle part.
+   (`fallocate -l 30G /srv/nfs/gros` sur votre poste) et vérifiez qu'elle part.
    Puis nettoyez.
 2. **Webhook maison** : pointez les alertes vers un petit serveur HTTP
    (`python3 -m http.server`) et observez le JSON envoyé.

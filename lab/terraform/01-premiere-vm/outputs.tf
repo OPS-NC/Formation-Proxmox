@@ -13,6 +13,6 @@ output "ipv4_addresses" {
 }
 
 output "ssh_hint" {
-  description = "Comment se connecter, via le nœud en rebond"
-  value       = "ssh -J root@${var.pve_host} eleve@<ip-obtenue>"
+  description = "Comment se connecter (route vers 10.10.0.0/16 via le nœud, cf. TP 07)"
+  value       = "ssh eleve@<ip-obtenue>"
 }

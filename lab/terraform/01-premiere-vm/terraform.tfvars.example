@@ -1,16 +1,18 @@
 # Copiez en terraform.tfvars et renseignez VOS valeurs.
 # ⚠ terraform.tfvars ne doit JAMAIS être commité (voir .gitignore).
 
-pve_endpoint  = "https://172.30.30.153:8006/"
-pve_host      = "172.30.30.153"
-pve_node      = "pve3"
+pve_endpoint  = "https://172.30.30.151:8006/" # ⚠ l'IP de VOTRE nœud ($PVE)
+pve_host      = "172.30.30.151"               # ⚠ idem
 pve_api_token = "terraform@pve!tf=12345678-90ab-cdef-1234-567890abcdef"
 
-eleve = 3
+ssh_public_key = "ssh-ed25519 AAAAC3Nza... eleve@formation"
 
-ssh_public_key = "ssh-ed25519 AAAAC3Nza... eleve3@formation"
+# Nom du nœud : « pve » aux jours 1-3 (valeur par défaut).
+# En cluster (jour 4), indiquez le vôtre : pve1 … pve6.
+# pve_node = "pve3"
 
-# Optionnel : par défaut, VMID du template = eleve * 100 + 90
-# template_debian = 390
+# Optionnel : VMID du template Debian (190 par défaut, cf. TP 10).
+# Le VMID de la VM elle-même n'est pas fixé : Proxmox attribue le prochain libre.
+# template_debian = 190
 
 vnet = "vint"

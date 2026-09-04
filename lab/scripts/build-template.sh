@@ -2,15 +2,19 @@
 # Fabrique un template Proxmox à partir d'une cloud-image.
 # À exécuter SUR LE NŒUD PROXMOX, en root.
 #
-#   ./build-template.sh --eleve 3 --os debian13   --vmid 390
-#   ./build-template.sh --eleve 3 --os ubuntu2604 --vmid 391
-#   ./build-template.sh --eleve 3 --os rocky10    --vmid 392
+#   ./build-template.sh --os debian13   --vmid 190
+#   ./build-template.sh --os ubuntu2604 --vmid 191
+#   ./build-template.sh --os rocky10    --vmid 192
+#
+# En cluster (jour 4), laissez le cluster choisir le VMID :
+#   ./build-template.sh --os debian13 --vmid $(pvesh get /cluster/nextid)
 set -euo pipefail
 
 # ─── Valeurs par défaut ──────────────────────────────────────────────────────
-ELEVE=""; OS=""; VMID=""
+OS=""; VMID=""
+POOL="lab"
 STORAGE="local-lvm"
-BRIDGE="vmbr0"
+BRIDGE="vint"        # le VNet interne du TP 08 ; --bridge vmbr0 avant le SDN
 DISK_SIZE="20G"
 CORES=2
 MEMORY=2048
@@ -28,12 +32,12 @@ die()  { printf "${RED}ERREUR:${NC} %s\n" "$*" >&2; exit 1; }
 
 usage() {
   cat <<EOF
-Usage: $0 --eleve $N --os <debian13|ubuntu2604|rocky10> --vmid ID [options]
+Usage: $0 --os <debian13|ubuntu2604|rocky10> --vmid ID [options]
 
 Options :
-  --eleve $N          numéro d'élève (1-6)              [requis]
   --os NAME          debian13 | ubuntu2604 | rocky10   [requis]
   --vmid ID          identifiant du template           [requis]
+  --pool NAME        pool de ressources                [$POOL]
   --storage NAME     stockage des disques              [$STORAGE]
   --bridge NAME      bridge ou VNet                    [$BRIDGE]
   --disk-size SIZE   taille finale du disque           [$DISK_SIZE]
@@ -47,8 +51,8 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --eleve) ELEVE="$2"; shift 2 ;;
     --os) OS="$2"; shift 2 ;;
+    --pool) POOL="$2"; shift 2 ;;
     --vmid) VMID="$2"; shift 2 ;;
     --storage) STORAGE="$2"; shift 2 ;;
     --bridge) BRIDGE="$2"; shift 2 ;;
@@ -61,7 +65,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -n "$ELEVE" && -n "$OS" && -n "$VMID" ]] || usage
+[[ -n "$OS" && -n "$VMID" ]] || usage
 [[ $EUID -eq 0 ]] || die "à exécuter en root sur le nœud Proxmox"
 command -v qm >/dev/null || die "commande qm introuvable — êtes-vous bien sur un nœud Proxmox ?"
 
@@ -69,17 +73,17 @@ command -v qm >/dev/null || die "commande qm introuvable — êtes-vous bien sur
 case "$OS" in
   debian13)
     URL="https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2"
-    FILE="debian-13-genericcloud-amd64.qcow2"; NAME="tpl-debian13-e${ELEVE}"
+    FILE="debian-13-genericcloud-amd64.qcow2"; NAME="tpl-debian13"
     PKGS="qemu-guest-agent,curl,vim,htop,ca-certificates,python3"
     EXTRA_CMD="systemctl enable qemu-guest-agent" ;;
   ubuntu2604)
     URL="https://cloud-images.ubuntu.com/releases/26.04/release/ubuntu-26.04-server-cloudimg-amd64.img"
-    FILE="ubuntu-26.04-server-cloudimg-amd64.img"; NAME="tpl-ubuntu2604-e${ELEVE}"
+    FILE="ubuntu-26.04-server-cloudimg-amd64.img"; NAME="tpl-ubuntu2604"
     PKGS="qemu-guest-agent,curl,vim,htop,ca-certificates,python3"
     EXTRA_CMD="systemctl enable qemu-guest-agent" ;;
   rocky10)
     URL="https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2"
-    FILE="Rocky-10-GenericCloud-Base.latest.x86_64.qcow2"; NAME="tpl-rocky10-e${ELEVE}"
+    FILE="Rocky-10-GenericCloud-Base.latest.x86_64.qcow2"; NAME="tpl-rocky10"
     PKGS="qemu-guest-agent,curl,vim,python3"
     # firewalld est actif par défaut sur Rocky : on filtre côté Proxmox (TP 09)
     EXTRA_CMD="systemctl enable qemu-guest-agent; systemctl disable firewalld || true" ;;
@@ -122,7 +126,7 @@ virt-customize -a "$WORK" \
 info "création de la VM $VMID ($NAME)"
 qm create "$VMID" \
   --name "$NAME" \
-  --pool "eleve${ELEVE}" \
+  --pool "$POOL" \
   --ostype l26 \
   --machine q35 \
   --cpu x86-64-v2-AES \
@@ -133,7 +137,7 @@ qm create "$VMID" \
   --agent enabled=1,fstrim_cloned_disks=1 \
   --serial0 socket --vga serial0 \
   --numa 1 \
-  --description "Template ${OS} — élève ${ELEVE} — généré par build-template.sh"
+  --description "Template ${OS} — généré par build-template.sh"
 
 # ─── 4. Importer le disque ───────────────────────────────────────────────────
 info "import du disque dans $STORAGE"
@@ -163,7 +167,7 @@ qm config "$VMID" | grep -E '^(name|cores|memory|scsi0|ide2|net0|cpu|agent)'
 cat <<EOF
 
 Pour cloner :
-  qm clone $VMID <nouveau-vmid> --name <nom> --pool eleve${ELEVE}
+  qm clone $VMID <nouveau-vmid> --name <nom> --pool $POOL
   qm set <nouveau-vmid> --net0 virtio,bridge=vint,firewall=1,mtu=1 --ipconfig0 ip=dhcp
   qm start <nouveau-vmid>
 EOF

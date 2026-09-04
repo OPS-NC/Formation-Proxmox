@@ -4,14 +4,10 @@ variable "pve_api_token" {
   sensitive = true
 }
 variable "pve_host" { type = string }
-variable "pve_node" { type = string }
-
-variable "eleve" {
-  type = number
-  validation {
-    condition     = var.eleve >= 1 && var.eleve <= 6
-    error_message = "Le numéro d'élève doit être compris entre 1 et 6."
-  }
+variable "pve_node" {
+  description = "Nom du nœud : « pve » aux jours 1-3, « pve1 »…« pve6 » en cluster"
+  type        = string
+  default     = "pve"
 }
 
 variable "ssh_public_key" { type = string }
@@ -19,7 +15,11 @@ variable "ssh_public_key" { type = string }
 variable "templates" {
   description = "VMID des templates fabriqués au TP 10, par système"
   type        = map(number)
-  default     = {}
+  default = {
+    debian = 190
+    ubuntu = 191
+    rocky  = 192
+  }
 }
 
 variable "lxc_template_alpine" {

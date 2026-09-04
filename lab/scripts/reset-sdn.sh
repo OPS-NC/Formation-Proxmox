@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Supprime TOUTE la configuration SDN (subnets → vnets → zones → controllers).
-# Utile avant une mise en cluster ou pour repartir de zéro.
+# Utile pour repartir de zéro sur un nœud isolé (jours 2-3).
 #
 #   ./reset-sdn.sh            # demande confirmation
 #   ./reset-sdn.sh --yes      # sans confirmation

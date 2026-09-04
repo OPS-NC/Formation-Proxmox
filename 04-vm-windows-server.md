@@ -42,7 +42,7 @@ Deux options :
 Inscription rapide, puis choisissez **ISO – 64-bit edition**, langue *English* ou
 *French*. Le fichier fait ~5 Go.
 
-Téléversez-le : 🌐 `pveN → local → ISO Images → Upload`.
+Téléversez-le : 🌐 `pve → local → ISO Images → Upload`.
 Ou, si le lien direct de votre session le permet :
 
 ```bash
@@ -67,14 +67,15 @@ ls -lh virtio-win.iso
 
 ## 3. Créer la VM 🌐
 
-`pveN → Create VM`
+`pve → Create VM`
 
 ### General
 | Champ | Valeur |
 |---|---|
-| VM ID | `N02` (ex. `302`) |
-| Name | `win01-eN` |
-| Resource Pool | `eleveN` |
+| Node | `pve` |
+| VM ID | `102` |
+| Name | `win01` |
+| Resource Pool | `lab` |
 
 ### OS
 | Champ | Valeur |
@@ -139,12 +140,12 @@ Prévoyez 6 Go, 8 si votre hôte le permet.
 
 Une VM peut avoir plusieurs lecteurs. On ajoute le second sur `ide0`.
 
-🌐 `win01-eN → Hardware → Add → CD/DVD Drive` → `IDE 0` → `virtio-win.iso`
+🌐 `win01 → Hardware → Add → CD/DVD Drive` → `IDE 0` → `virtio-win.iso`
 
 Ou en CLI, ce qui permet aussi de relire la configuration complète :
 
 ```bash
-N=3 ; VMID=${N}02
+VMID=102
 
 qm set $VMID --ide0 local:iso/virtio-win.iso,media=cdrom
 qm config $VMID
@@ -154,7 +155,7 @@ Configuration complète en une seule commande (pour référence) :
 
 ```bash
 qm create $VMID \
-  --name win01-e$N --pool eleve$N \
+  --name win01 --pool lab \
   --ostype win11 \
   --machine q35 --bios ovmf \
   --efidisk0 local-lvm:1,efitype=4m,pre-enrolled-keys=1 \
@@ -179,7 +180,7 @@ qm create $VMID \
 qm start $VMID
 ```
 
-🌐 `win01-eN → Console`. **Appuyez sur une touche rapidement** quand s'affiche
+🌐 `win01 → Console`. **Appuyez sur une touche rapidement** quand s'affiche
 *Press any key to boot from CD* — sinon vous atterrissez dans le shell UEFI.
 
 > 🪤 Coincé dans le shell UEFI ? Tapez `exit`, puis `Boot Manager` →
@@ -243,26 +244,32 @@ qm guest cmd $VMID get-osinfo
 🧠 Sans l'agent, `qm shutdown` envoie un signal ACPI que Windows peut ignorer
 (« une application empêche l'arrêt »). Avec l'agent, c'est un vrai arrêt propre.
 
-### 6.3 Configurer le réseau
+### 6.3 Vérifier le réseau
 
-Dans Windows : `Paramètres → Réseau → Ethernet → Modifier`
+Une fois le pilote `NetKVM` installé, Windows obtient son adresse **en DHCP** sur le
+LAN de la salle, comme `srv01`. Rien à saisir : relevez-la.
 
-| Champ | Valeur |
+| Où | Comment |
 |---|---|
-| IP | `172.30.30.<B+3>` où `B = 195 + N × 5` (élève 3 → `172.30.30.213`) |
-| Masque | `255.255.255.0` |
-| Passerelle | `172.30.30.2` |
-| DNS | `1.1.1.1`, `8.8.8.8` |
-
-En PowerShell, c'est plus rapide :
+| Dans Windows | `ipconfig` dans un PowerShell |
+| Côté Proxmox | Summary de la VM (grâce à l'agent, §6.2) |
 
 ```powershell
-$if = (Get-NetAdapter | Where-Object Status -eq 'Up').ifIndex
-New-NetIPAddress -InterfaceIndex $if -IPAddress 172.30.30.213 `
-                 -PrefixLength 24 -DefaultGateway 172.30.30.2
-Set-DnsClientServerAddress -InterfaceIndex $if -ServerAddresses 1.1.1.1,8.8.8.8
-Rename-Computer -NewName "WIN01-E3" -Restart
+ipconfig
+Test-NetConnection 1.1.1.1
+Rename-Computer -NewName "WIN01" -Restart
 ```
+
+> Si la salle n'a pas de DHCP, le formateur vous attribue une adresse dans `.200`–`.250` :
+> ```powershell
+> $if = (Get-NetAdapter | Where-Object Status -eq 'Up').ifIndex
+> New-NetIPAddress -InterfaceIndex $if -IPAddress 172.30.30.___ `
+>                  -PrefixLength 24 -DefaultGateway 172.30.30.2
+> Set-DnsClientServerAddress -InterfaceIndex $if -ServerAddresses 1.1.1.1,8.8.8.8
+> ```
+
+📌 **Notez l'IP de `win01`** : le RDP (§8) et les tests de firewall du TP 09 en auront
+besoin.
 
 ### 6.4 Activer RDP
 
@@ -310,7 +317,7 @@ Sur votre PC Ubuntu :
 sudo apt install -y virt-viewer
 ```
 
-🌐 `win01-eN → Console → dropdown → SPICE` → un fichier `.vv` est téléchargé, votre
+🌐 `win01 → Console → dropdown → SPICE` → un fichier `.vv` est téléchargé, votre
 navigateur l'ouvre avec `remote-viewer`.
 
 Dans Windows, installez ensuite les **SPICE guest tools** pour la résolution dynamique
@@ -334,7 +341,7 @@ Depuis votre PC Ubuntu :
 ```bash
 sudo apt install -y freerdp3-x11    # ou remmina, plus graphique
 
-xfreerdp3 /v:172.30.30.213 /u:Administrateur /p:'Formation2026!' \
+xfreerdp3 /v:<IP-de-win01> /u:Administrateur /p:'Formation2026!' \
           /size:1600x900 /dynamic-resolution /clipboard /cert:ignore
 ```
 
@@ -406,8 +413,8 @@ formation, mais vous savez maintenant où ça se branche.
 
 - [ ] Windows Server 2025 est installé sur un disque **VirtIO SCSI**
 - [ ] La carte réseau est en **VirtIO** et fonctionne
-- [ ] `qm agent N02 ping` répond
-- [ ] Le Summary de la VM affiche l'IP de Windows
+- [ ] `qm agent 102 ping` répond
+- [ ] Le Summary de la VM affiche l'IP de Windows, et je l'ai notée
 - [ ] La console noVNC fonctionne et j'ai envoyé un Ctrl+Alt+Suppr
 - [ ] SPICE fonctionne avec `remote-viewer`
 - [ ] `xfreerdp3` ouvre une session RDP depuis mon PC
@@ -422,12 +429,12 @@ formation, mais vous savez maintenant où ça se branche.
    CrystalDiskMark ou `winsat disk` sur chacun. L'écart est spectaculaire.
 2. **Snapshot avant Windows Update** :
    ```bash
-   qm snapshot N02 avant-wu --vmstate 1
+   qm snapshot 102 avant-wu --vmstate 1
    ```
-   Lancez les mises à jour, puis `qm rollback N02 avant-wu`. Un réflexe qui sauve
+   Lancez les mises à jour, puis `qm rollback 102 avant-wu`. Un réflexe qui sauve
    des week-ends entiers.
 3. **Sysprep** : généralisez l'image (`C:\Windows\System32\Sysprep\sysprep.exe`
-   → *OOBE* + *Généraliser* + *Arrêter*), puis `qm template N02`. Vous avez un
+   → *OOBE* + *Généraliser* + *Arrêter*), puis `qm template 102`. Vous avez un
    template Windows clonable. Attention : un clone non sysprepé partage le même SID.
 4. Comparez la consommation RAM affichée par Proxmox et par le Gestionnaire des tâches
    Windows, ballooning activé puis désactivé.

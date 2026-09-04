@@ -10,67 +10,75 @@ La référence unique. En cas de doute, c'est ce document qui fait foi.
 |---|---|---|
 | Passerelle / Internet | `172.30.30.2` | box, aucun accès admin |
 | DNS | `1.1.1.1` (primaire) et `8.8.8.8` (secours) | résolveurs publics |
-| **Nœud pve1** | `172.30.30.151` | élève 1 · **exit node primaire** · héberge PBS et Pulse · crée le cluster · MON + MGR Ceph |
-| **Nœud pve2** | `172.30.30.152` | élève 2 · exit node secondaire · MON + MGR Ceph |
-| **Nœud pve3** | `172.30.30.153` | élève 3 · MON Ceph |
-| **Nœud pve4** | `172.30.30.154` | élève 4 |
-| **Nœud pve5** | `172.30.30.155` | élève 5 |
-| **Nœud pve6** | `172.30.30.156` | élève 6 |
-| PC élève 1 → 6 | **`$PC`** | postes de pilotage · adresse fournie par le formateur |
-| **Serveur NFS de chaque élève** | son **PC Ubuntu**, donc `$PC` | TP 14 |
-| **VM `pbs-lab`** | **`$PBS`** | TP 15 · **hébergée sur pve1** · UI sur `:8007` |
+| **Nœud pve1** | `172.30.30.151` | **exit node primaire** · héberge PBS et Pulse · crée le cluster · MON + MGR Ceph |
+| **Nœud pve2** | `172.30.30.152` | exit node secondaire · MON + MGR Ceph |
+| **Nœud pve3** | `172.30.30.153` | MON Ceph |
+| **Nœud pve4** | `172.30.30.154` | |
+| **Nœud pve5** | `172.30.30.155` | |
+| **Nœud pve6** | `172.30.30.156` | |
+| PC Ubuntu (un par stagiaire) | **`$PC`** | postes de pilotage · adresse relevée sur le poste |
+| **Serveur NFS de chaque stagiaire** | son **PC Ubuntu**, donc `$PC` | TP 14 |
+| **VM `pbs`** | **`$PBS`** | TP 15 : une par nœud · TP 16 : celle de la salle sur **pve1** · UI sur `:8007` |
 | **CT `pulse`** | **`$PULSE`** | TP 20 · sur pve1 · UI sur `:7655` |
-| VM du jour 1 sur `vmbr0` | `172.30.30.200` → `.229` | bloc de 5 par élève, voir plus bas |
-| Pot commun VM `vmbr0` | `172.30.30.230` → `.250` | VM ajoutées au besoin |
+| VM du jour 1 sur `vmbr0` | **DHCP de la salle** | on relève l'IP obtenue |
+| Adresses statiques sur `vmbr0` | `172.30.30.200` → `.250` | attribuées par le formateur : PBS, Pulse, secours sans DHCP |
 
-> ⚠️ **`$PC`, `$PBS` et `$PULSE` ne sont pas figés dans ce document** : seules les
-> plages `.151`–`.156` (nœuds) et `.200`–`.250` (VM sur `vmbr0`) le sont. Relevez
-> l'adresse de votre poste avec `hostname -I`, et notez celles de PBS et Pulse au
-> moment où le formateur les annonce (TP 15 et TP 20).
+### Les nœuds : deux vies
 
-> 🧠 Le serveur NFS n'est **pas** une VM : c'est le PC Ubuntu de chaque élève, qui
-> exporte `/srv/nfs-eN` vers son propre nœud (TP 14).
+| | Jours 1-3 | Jour 4 (après réinstallation, TP 16) |
+|---|---|---|
+| Hostname | **`pve`** (`pve.lab.local`), le même pour tous | `pve1` … `pve6` selon le tableau ci-dessus |
+| IP | `$PVE` — celle attribuée par le formateur, dans `.151`–`.156` | **la même** |
+| Contexte | nœud isolé, aucun cluster | cluster à six |
+
+🧠 Chaque stagiaire est **seul** sur son nœud pendant trois jours : rien de ce qu'il crée
+ne peut entrer en collision avec le voisin. Et comme tout est réinstallé avant la mise
+en cluster, les VMID, réseaux SDN et noms de ce document sont **identiques pour tout le
+monde**. Seules quatre adresses varient : `$PVE`, `$PC`, `$PBS`, `$PULSE`.
+
+> ⚠️ **Ces quatre adresses ne sont pas figées dans ce document** : seule la plage
+> `.151`–`.156` des nœuds l'est. Relevez l'adresse de votre poste avec `hostname -I`,
+> notez celle de votre nœud quand le formateur vous l'attribue, et celles de PBS et
+> Pulse au moment où elles sont fixées (TP 15/16 et TP 20).
+
+> 🧠 Le serveur NFS n'est **pas** une VM : c'est le PC Ubuntu de chaque stagiaire, qui
+> exporte `/srv/nfs` vers son propre nœud (TP 14).
 
 ### Les VM du jour 1 (sur `vmbr0`, avant le passage au SDN)
 
-Plage `.200` → `.250`, un **bloc de 5 adresses par élève** :
-**`B = 195 + N × 5`** (élève 3 → `B = 210`).
+Elles sont en **DHCP** sur le LAN de la salle. On relève l'adresse obtenue :
 
-| Machine | Adresse | Élève 3 |
+| Machine | VMID | Où lire l'IP |
 |---|---|---|
-| `srv01-eN` (Debian ISO) | `172.30.30.<B+1>` | `.211` |
-| `ct-alpine-eN` | `172.30.30.<B+2>` | `.212` |
-| `win01-eN` (Windows) | `172.30.30.<B+3>` | `.213` |
-| `ct-rocky-eN` | `172.30.30.<B+4>` | `.214` |
+| `srv01` (Debian ISO) | `101` | Summary de la VM (agent QEMU) · `qm agent 101 network-get-interfaces` |
+| `ct-alpine` | `111` | `pct exec 111 -- ip -4 -br a show eth0` |
+| `win01` (Windows) | `102` | Summary de la VM · `ipconfig` |
+| `ct-rocky` | `112` | `pct exec 112 -- ip -4 -br a show eth0` |
 
-| Élève | 1 | 2 | 3 | 4 | 5 | 6 |
-|---|---|---|---|---|---|---|
-| **Bloc** | `.200`–`.204` | `.205`–`.209` | `.210`–`.214` | `.215`–`.219` | `.220`–`.224` | `.225`–`.229` |
+Sans DHCP dans la salle : le formateur attribue des adresses dans `.200`–`.250`.
 
-`.230` → `.250` : pot commun, pour toute VM supplémentaire branchée sur `vmbr0`.
-
-⚠️ À partir du TP 08, ces machines déménagent dans les VNets SDN et repassent en DHCP.
+⚠️ À partir du TP 08, ces machines déménagent dans les VNets SDN.
 
 ---
 
 ## 🕸️ Réseaux SDN — jour 2 (nœud isolé, zones `Simple`)
 
-Chaque élève a **ses propres** subnets, préfixés par son numéro.
+**Les mêmes pour tout le monde** : ces réseaux vivent derrière le NAT de chaque nœud,
+comme six réseaux domestiques en `192.168.1.0/24` derrière six box.
 
 | VNet | Zone | Subnet | Gateway | DHCP | SNAT | Créé au |
 |---|---|---|---|---|---|---|
-| `vint` | `zint` | `10.N.10.0/24` | `10.N.10.1` | `.100`–`.200` | ✅ | TP 08 |
-| `vdmz` | `zdmz` | `10.N.20.0/24` | `10.N.20.1` | `.100`–`.200` | ✅ | TP 08 |
-| `vsrv` | `zsrv` | `10.N.30.0/24` | `10.N.30.1` | `.100`–`.200` | ✅ | TP 12 (Terraform) |
-| *(temporaire)* `vmbr1` | — | `10.N.99.0/24` | `10.N.99.1` | `.100`–`.200` | ✅ | TP 07, supprimé ensuite |
+| `vint` | `zint` | `10.10.10.0/24` | `10.10.10.1` | `.100`–`.200` | ✅ | TP 08 |
+| `vdmz` | `zdmz` | `10.10.20.0/24` | `10.10.20.1` | `.100`–`.200` | ✅ | TP 08 |
+| `vsrv` | `zsrv` | `10.10.30.0/24` | `10.10.30.1` | `.100`–`.200` | ✅ | TP 12 (Terraform) |
+| *(temporaire)* `vmbr1` | — | `10.10.99.0/24` | `10.10.99.1` | `.100`–`.200` | ✅ | TP 07, supprimé ensuite |
 
-**Exemple, élève 3** : `10.3.10.0/24`, `10.3.20.0/24`, `10.3.30.0/24`.
+Adresse fixe notable : `cloud01` (TP 10, VMID 120) en `10.10.10.50`.
 
-```
-   Élève 1 → 10.1.x.x     Élève 4 → 10.4.x.x
-   Élève 2 → 10.2.x.x     Élève 5 → 10.5.x.x
-   Élève 3 → 10.3.x.x     Élève 6 → 10.6.x.x
-```
+Depuis le PC, ces réseaux se joignent **directement**, par une route statique posée au
+TP 07 : `sudo ip route add 10.10.0.0/16 via $PVE`. Au jour 4, même principe pour l'EVPN
+via l'exit node : `sudo ip route add 10.60.0.0/16 via 172.30.30.151`. **Aucun rebond
+SSH** dans cette formation.
 
 ---
 
@@ -100,7 +108,7 @@ Chaque élève a **ses propres** subnets, préfixés par son numéro.
 | `5405`–`5412` | UDP | Corosync |
 | `8006` | TCP | interface web PVE |
 | `8007` | TCP | interface web PBS |
-| `2049` | TCP | NFS v4 (nœud → PC de l'élève) |
+| `2049` | TCP | NFS v4 (nœud → PC du stagiaire) |
 | `6789`, `3300` | TCP | Ceph monitors |
 | `6800`–`7300` | TCP | Ceph OSD et MDS |
 | `3128` | TCP | proxy SPICE |
@@ -111,50 +119,63 @@ Chaque élève a **ses propres** subnets, préfixés par son numéro.
 
 ## 🔢 Plan de VMID
 
-**Règle absolue : élève N ⇒ VMID de `N00` à `N99`.**
-
-| Élève | Plage |
-|---|---|
-| 1 | `100` – `199` |
-| 2 | `200` – `299` |
-| 3 | `300` – `399` |
-| 4 | `400` – `499` |
-| 5 | `500` – `599` |
-| 6 | `600` – `699` |
-| **Commun** | `900` – `949` (infra partagée) |
-
-### Sous-découpage à l'intérieur de votre plage
-
-| Sous-plage | Contenu | TP |
-|---|---|---|
-| `N01` | `srv01-eN` — Debian, ISO | 03 |
-| `N02` | `win01-eN` — Windows Server 2025 | 04 |
-| `N11` | `ct-alpine-eN` | 05 |
-| `N12` | `ct-rocky-eN` | 05 |
-| `N14`–`N19` | conteneurs jetables | 05, 07 |
-| `N20` | `app01-eN` — clone cloud-init manuel | 10 |
-| `N21`–`N29` | déployés par Terraform | 11 |
-| `N50`–`N59` | zone `vsrv` (Terraform) | 12 |
-| `N60`–`N69` | VNets EVPN | 17 |
-| `N70`–`N79` | VM sur Ceph (`vm-store`) | 18 |
-| `N90` | `tpl-debian13-eN` | 10 |
-| `N91` | `tpl-ubuntu2604-eN` | 10 |
-| `N92` | `tpl-rocky10-eN` | 10 |
-
-### VMID communs — tous sur **pve1**
+### Jours 1-3 : fixes, identiques pour tous
 
 | VMID | Machine | TP |
 |---|---|---|
-| `901` | `pbs-lab` | 15 |
+| `101` | `srv01` — Debian, ISO | 03 |
+| `102` | `win01` — Windows Server 2025 | 04 |
+| `103` | VM jetable — clone de test de `srv01`, détruit aussitôt | 03 |
+| `111` | `ct-alpine` | 05 |
+| `112` | `ct-rocky` | 05 |
+| `113`–`115` | conteneurs jetables (`ct-restore`, `ct-tpl`, `ct-clone`) | 05 |
+| `119` | `ct-nat` — test sur `vmbr1` | 07 |
+| `120` | `cloud01` — clone cloud-init **manuel**, IP fixe `10.10.10.50` | 10 |
+| *auto* | `web01`, `app01`, `db01`, `ct-cache` (stacks Terraform 01 et 02) | 11 |
+| *auto* | `mon01`, `log01` (stack Terraform 03) | 12 |
+| `180`–`189` | bonus : dix Alpine | 05 |
+| `190` | `tpl-debian13` | 10 |
+| `191` | `tpl-ubuntu2604` | 10 |
+| `192` | `tpl-rocky10` | 10 |
+| `901` | `pbs` — la VM Proxmox Backup Server, **hors pool** | 15 |
 | `902` | `pulse` (CT) | 20 |
 
-🧠 **Pourquoi sur `pve1` ?** C'est le nœud qui *crée* le cluster au TP 16 : il conserve
-ses guests, alors que les cinq autres doivent être vidés pour pouvoir le rejoindre.
-Le serveur NFS, lui, n'est pas une VM — c'est le PC de chaque élève.
+`pbs` n'est dans aucun pool : le job de sauvegarde `backup-lab` est « pool based », et
+PBS ne doit pas se sauvegarder lui-même.
 
-🧠 **Pourquoi c'est critique** : un VMID est unique dans **tout** le cluster. Deux
-élèves avec une VM 100 ⇒ la mise en cluster du TP 16 échoue. Réglez `Next Free VMID
-Range` dans `Datacenter → Options` (TP 06) pour que l'interface propose le bon numéro.
+🪤 `app01` (Terraform, stack 02) et `cloud01` (manuel, 120) sont deux machines
+distinctes. Le clone manuel ne s'appelle **pas** `app01` : Ansible indexe par nom, et
+deux homonymes s'écraseraient dans l'inventaire.
+
+*auto* : le provider Terraform ne fixe jamais de `vm_id`, Proxmox attribue le prochain
+libre. On retrouve ces machines par leur **nom** (`qm list`, `terraform output`).
+
+### Jour 4 : le cluster attribue
+
+Un VMID est unique dans **tout** le cluster, et six stagiaires y créent des machines en
+même temps. On ne calcule rien :
+
+```bash
+VMID=$(pvesh get /cluster/nextid)        # CLI
+```
+
+L'interface web propose ce numéro d'elle-même ; Terraform fait de même (aucune stack ne fixe de `vm_id`).
+Les machines du jour 4 portent le **nom de leur nœud** en suffixe (`evpn-prod-pve3`).
+
+| Machine (jour 4) | VMID | TP |
+|---|---|---|
+| `evpn-prod-<nœud>`, `evpn-pub-<nœud>` | `nextid` | 17 |
+| `ceph-vm-<nœud>` | `nextid` | 18 |
+| `tpl-*` reconstruits sur chaque nœud | `nextid` | 16 |
+| `front-<nœud>`, `app-<nœud>`, `data-<nœud>`, `cache-<nœud>`, `adm-<nœud>` | `nextid` (Terraform) | 21 |
+| `pbs` sur **pve1** | `901` | 16 |
+| `pulse` sur **pve1** | `902` | 20 |
+
+🧠 **Pourquoi sur `pve1` ?** C'est le nœud qui *crée* le cluster et l'exit node primaire
+de l'EVPN : c'est là que vivent naturellement les services de la salle.
+
+🪤 Deux `pvesh get /cluster/nextid` à la même seconde peuvent renvoyer le même
+numéro : le second `qm create` échoue avec `VM already exists`. Relancez.
 
 ---
 
@@ -168,7 +189,7 @@ Les tags pilotent l'inventaire Ansible (TP 13). Ils ne sont **pas** décoratifs.
 |---|---|---|
 | `web` | `web` | nginx + vhost + page générée |
 | `db` | `db` | PostgreSQL + `pg_hba` restreint |
-| `monitoring` | `monitoring` | Prometheus / node exporter (bonus) |
+| `monitoring` | `monitoring` | Prometheus / node exporter — rôle **à écrire**, bonus du TP 13 |
 
 > Le rôle `nfs` ne passe pas par un tag : il s'applique à **votre poste Ubuntu**, via
 > l'inventaire statique `lab/ansible/inventory/local.yml` (TP 14).
@@ -181,18 +202,18 @@ Les tags pilotent l'inventaire Ansible (TP 13). Ils ne sont **pas** décoratifs.
 
 `debian` · `ubuntu` · `rocky` · `alpine` · `windows`
 
-### Tags d'origine et de propriété
+### Tags d'origine
 
-`terraform` · `manuel` · `eleve1` … `eleve6`
+`terraform` · `manuel`
 
 ### Exemples
 
 ```bash
-qm set 320 --tags "terraform,web,dmz,ubuntu,eleve3"
-qm set 322 --tags "terraform,db,interne,rocky,eleve3"
-pct set 311 --tags "manuel,web,dmz,alpine,eleve3"
-qm set 302 --tags "manuel,interne,windows,eleve3"
-qm set 370 --tags "manuel,ceph,prod,eleve3"      # VM dont le disque est sur vm-store
+qm set 120 --tags "manuel,debian,interne,app"     # cloud01
+qm set $(qm list | awk '/ web01 /{print $1}') --tags "terraform,web,dmz,ubuntu"   # VMID Terraform : par le nom
+pct set 111 --tags "manuel,web,dmz,alpine"
+qm set 102 --tags "manuel,interne,windows"
+qm set <vmid> --tags "manuel,ceph,prod"           # VM dont le disque est sur vm-store (jour 4)
 ```
 
 ### Couleurs (`Datacenter → Options → Tag Style Override`)
@@ -209,11 +230,11 @@ prod:CC2222:FFFFFF;dmz:EE7700:000000;interne:2277CC:FFFFFF;services:22AA55:FFFFF
 |---|---|---|---|
 | `root@pam` | PAM | — | administration du nœud |
 | `eleve@pve` | PVE | `PVEAdmin` | travail quotidien |
-| `stagiaireN@pve` | PVE | `PVEVMUser` sur `/pool/eleveN` | démonstration de délégation |
+| `stagiaire@pve` | PVE | `PVEVMUser` sur `/pool/lab` (groupe `stagiaires`) | démonstration de délégation |
 | `terraform@pve!tf` | token | `TerraformProv` | Terraform |
 | `ansible@pve!inv` | token | `PVEAuditor` | inventaire Ansible |
 | `pulse@pve!mon` | token | `Monitoring` | supervision (lecture seule) |
-| `eleveN@pbs` | PBS | `DatastoreAdmin` sur `/datastore/lab-store/eleveN` | sauvegardes |
+| `eleve@pbs` | PBS | `DatastoreAdmin` sur `/datastore/lab-store` (namespace `lab`) | sauvegardes |
 | `client.admin` | Ceph | — | administration Ceph (clé dans `/etc/pve/priv/`) |
 | `pulse@pbs!mon` | PBS | `Audit` | supervision PBS |
 
@@ -230,8 +251,8 @@ prod:CC2222:FFFFFF;dmz:EE7700:000000;interne:2277CC:FFFFFF;services:22AA55:FFFFF
 |---|---|---|---|---|
 | `local` | `dir` | installation | nœud | iso, vztmpl, backup, snippets |
 | **`local-lvm`** | `lvmthin` | installation | nœud | ⭐ **images, rootdir — le défaut** |
-| `nfs-eN` | `nfs` | TP 14 | nœud (`--nodes pveN`) | iso, backup, snippets, images |
-| `pbs-lab` | `pbs` | TP 15 | cluster | backup |
+| `nfs-pc` | `nfs` | TP 14 | nœud | images, rootdir, iso, backup, snippets — export `/srv/nfs` du poste. En cluster : `nfs-<nœud>` avec `--nodes <nœud>` |
+| `pbs-lab` | `pbs` | TP 15 | nœud (TP 15) · cluster (TP 16) | backup |
 | **`vm-store`** | `rbd` (Ceph) | TP 18 | **cluster ×3 copies** | images, rootdir |
 | `cephfs` | `cephfs` | TP 18 | **cluster ×3 copies** | iso, vztmpl, snippets, backup |
 
@@ -277,7 +298,7 @@ Voir [TP 01 §3.1](../01-installation-proxmox.md) et [TP 18 §3](../18-ceph-clus
 
 | Tâche | Horaire | Portée |
 |---|---|---|
-| Sauvegarde PBS | `02:30` quotidien | par pool `eleveN` |
+| Sauvegarde PBS | `02:30` quotidien | par pool `lab` |
 | Prune PBS | `daily` | par namespace |
 | Garbage collection PBS | `daily 05:00` | datastore |
 | Verify PBS | `sat 03:00` | datastore |
@@ -286,41 +307,42 @@ Voir [TP 01 §3.1](../01-installation-proxmox.md) et [TP 18 §3](../18-ceph-clus
 
 ---
 
-## 🧾 Fiche récapitulative — élève 3
+## 🧾 Fiche récapitulative
 
-À adapter à votre numéro. Imprimez-la, collez-la sur votre écran.
+Imprimez-la, collez-la sur votre écran. Quatre trous à remplir, le reste est commun.
 
 ```
    ┌────────────────────────────────────────────────────────┐
-   │  ÉLÈVE 3                                               │
+   │  MON POSTE                                             │
    ├────────────────────────────────────────────────────────┤
-   │  Nœud        pve3          172.30.30.153:8006          │
-   │  PC          $PC  (hostname -I sur le poste)           │
-   │  VMID        300 → 399                                 │
-   │  Pool        eleve3                                    │
+   │  Nœud        pve           $PVE = 172.30.30.___ :8006  │
+   │              (jour 4 : pve__  — même IP)               │
+   │  PC          $PC  = 172.30.30.___  (hostname -I)       │
+   │  PBS         $PBS = 172.30.30.___  :8007  (TP 15/16)   │
+   │  Pulse       $PULSE = 172.30.30.___ :7655 (TP 20)      │
+   │  Pool        lab                                       │
    │                                                        │
-   │  SDN jour 2  vint  10.3.10.0/24   gw 10.3.10.1         │
-   │              vdmz  10.3.20.0/24   gw 10.3.20.1         │
-   │              vsrv  10.3.30.0/24   gw 10.3.30.1         │
+   │  SDN jour 2  vint  10.10.10.0/24  gw 10.10.10.1        │
+   │              vdmz  10.10.20.0/24  gw 10.10.20.1        │
+   │              vsrv  10.10.30.0/24  gw 10.10.30.1        │
    │                                                        │
    │  SDN jour 4  vprod 10.60.10.0/24  (partagé)            │
    │              vpub  10.60.20.0/24  (partagé)            │
    │              vdb   10.60.30.0/24  (partagé, sans NAT)  │
    │                                                        │
-   │  Machines    301 srv01    302 win01                    │
-   │              311 alpine   312 rocky                    │
-   │              390 tpl-debian13  391 tpl-ubuntu          │
-   │              392 tpl-rocky10                           │
+   │  Machines    101 srv01    102 win01                    │
+   │              111 alpine   112 rocky    120 cloud01     │
+   │              190 tpl-debian13  191 tpl-ubuntu2604      │
+   │              192 tpl-rocky10   901 pbs                 │
+   │  Jour 4      VMID = pvesh get /cluster/nextid          │
    │                                                        │
    │  LVM         pve/data     200 Go  → local-lvm          │
    │              pve/ceph-osd 120 Go  → OSD Ceph           │
    │                                                        │
    │  Stockages   local-lvm   (défaut, local)               │
-   │              nfs-e3      export de mon poste ($PC)     │
+   │              nfs-pc      export /srv/nfs de mon poste  │
    │              pbs-lab     $PBS:8007                     │
    │              vm-store    Ceph, ×3 copies (J4)          │
    │              cephfs      Ceph, fichiers  (J4)          │
-   │                                                        │
-   │  Services    Pulse  $PULSE:7655                        │
    └────────────────────────────────────────────────────────┘
 ```

@@ -22,7 +22,7 @@ préparer le terrain (ISO, templates, pools, snippets) pour tous les TP suivants
    ├── SDN         ← Zones / VNets / Options / IPAM / DNS / Fabrics ★ jours 2-4
    ├── Firewall    ├ Options ├ Rules ├ Security Group ├ Alias ├ IPSet
    ├── Ceph
-   └── pveN                         ← ce qui est PROPRE AU NŒUD
+   └── pve                          ← ce qui est PROPRE AU NŒUD
        ├── Summary / Notes
        ├── Shell            ← console root dans le navigateur
        ├── System           ← Network, Certificates, DNS, Hosts, Time, Syslog
@@ -48,11 +48,11 @@ migrer une VM d'un nœud à l'autre : les deux nœuds connaissent un stockage du
 | `lvm` | non | non** | disques VM/CT | Rapide, brut |
 | `lvmthin` | non | **oui** | disques VM/CT | Le défaut d'une install ext4 |
 | `zfspool` | non | **oui** | disques VM/CT | Snapshots + réplication `zfs send` — **non utilisé dans cette formation** |
-| `nfs` | **oui** | via qcow2 | tout | ⭐ jour 4 |
+| `nfs` | **oui** | via qcow2 | tout | ⭐ jour 3 (TP 14) |
 | `cifs` | **oui** | via qcow2 | tout | SMB |
 | `iscsi` / `iscsidirect` | **oui** | non | disques VM | SAN bloc |
 | `cephfs` / `rbd` | **oui** | **oui** | tout / disques | Le stockage distribué de référence |
-| `pbs` | **oui** | n/a | backup | ⭐ jour 4 |
+| `pbs` | **oui** | n/a | backup | ⭐ jour 3 (TP 15) |
 
 \* sauf s'il pointe vers un montage partagé, avec l'option `shared`.
 \** PVE 9 a introduit les snapshots sur LVM épais partagé (via volume chain) —
@@ -176,7 +176,7 @@ réglé `maxvz` à l'installation. 👏
 
 ### 6.1 ISO Debian 13 (pour le TP 03)
 
-🌐 `pveN → local → ISO Images → Download from URL` puis :
+🌐 `pve → local → ISO Images → Download from URL` puis :
 
 ```
 https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-13.x.0-amd64-netinst.iso
@@ -244,12 +244,13 @@ ls -lh
 Un **pool** regroupe VM, CT et stockages pour déléguer des droits d'un bloc.
 
 ```bash
-pvesh create /pools --poolid eleveN --comment "Ressources de l'élève N"
+pvesh create /pools --poolid lab --comment "Ressources du lab"
 pvesh get /pools
 ```
 
-Toutes vos VM iront dans ce pool. Au jour 4, dans un cluster à 6, vous verrez
-immédiatement ce qui vous appartient.
+Toutes vos VM iront dans ce pool. C'est sur lui qu'on posera des droits (TP 06) et
+qu'on basera le job de sauvegarde (TP 15) : une VM ajoutée au pool est couverte
+automatiquement.
 
 ---
 
@@ -260,7 +261,7 @@ Trois façons de faire la même chose. Sachez basculer entre les trois.
 ```bash
 # Navigation interactive dans l'API, comme un système de fichiers
 pvesh ls /nodes
-pvesh get /nodes/pveN/status --output-format yaml
+pvesh get /nodes/pve/status --output-format yaml
 pvesh get /cluster/resources --type vm
 
 # Les commandes métier
@@ -288,7 +289,9 @@ ls -lh /root/pve-config-*.tgz
 Récupérez-la sur votre PC :
 
 ```bash
-scp root@172.30.30.15N:/root/pve-config-*.tgz ~/ProxmoxFormation/backup-conf/
+PVE=172.30.30.___          # ⚠ l'IP de VOTRE nœud
+mkdir -p ~/ProxmoxFormation/backup-conf
+scp root@$PVE:/root/pve-config-*.tgz ~/ProxmoxFormation/backup-conf/
 ```
 
 ---
@@ -300,7 +303,7 @@ scp root@172.30.30.15N:/root/pve-config-*.tgz ~/ProxmoxFormation/backup-conf/
 - [ ] L'ISO Debian 13 est visible dans `local → ISO Images`
 - [ ] Au moins un template LXC Alpine est téléchargé (`pveam list local`)
 - [ ] Les 3 cloud-images sont dans `/var/lib/vz/template/cloudimg`
-- [ ] Le pool `eleveN` existe
+- [ ] Le pool `lab` existe
 - [ ] `pvesh ls /nodes` et `qm list` répondent
 - [ ] La sauvegarde de config est sur mon PC
 

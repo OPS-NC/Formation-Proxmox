@@ -44,16 +44,23 @@ Objectif : partir d'une machine nue et arriver à un **cluster de 6 nœuds**, av
   ═══════════════════════ LAN SALLE  172.30.30.0/24 ════════════════════════
         │           │           │           │           │           │
    ┌────┴───┐  ┌────┴───┐  ┌────┴───┐  ┌────┴───┐  ┌────┴───┐  ┌────┴───┐
-   │  pve1  │  │  pve2  │  │  pve3  │  │  pve4  │  │  pve5  │  │  pve6  │
+   │  nœud  │  │  nœud  │  │  nœud  │  │  nœud  │  │  nœud  │  │  nœud  │
    │  .151  │  │  .152  │  │  .153  │  │  .154  │  │  .155  │  │  .156  │
    └────────┘  └────────┘  └────────┘  └────────┘  └────────┘  └────────┘
-     élève 1     élève 2     élève 3     élève 4     élève 5     élève 6
+    un nœud Proxmox par stagiaire — jours 1-3 : hostname « pve », seul
+    jour 4 : réinstallés en pve1 … pve6 et mis en cluster
 
-   ┌──────────┐  Chaque élève dispose aussi d'un PC Ubuntu 26.04
-   │ PC Ubuntu│  (adresse fournie par le formateur) : navigateur,
-   │  élève N │  terraform, ansible. C'est votre poste de pilotage.
+   ┌──────────┐  Chaque stagiaire dispose aussi d'un PC Ubuntu 26.04
+   │ PC Ubuntu│  (adresse relevée sur la machine) : navigateur,
+   │          │  terraform, ansible. C'est votre poste de pilotage.
    └──────────┘
 ```
+
+Chaque stagiaire reçoit du formateur **un nœud** (une IP dans `.151`–`.156`) et
+travaille dessus **seul** pendant trois jours. Le jour 4 commence par une
+**réinstallation** de tous les nœuds, avec les noms `pve1` … `pve6`, avant la mise en
+cluster. Conséquence : aux jours 1-3, **tout est identique pour tout le monde** —
+mêmes VMID, mêmes réseaux, mêmes noms de machines. Aucun risque de collision.
 
 **Contrainte structurante du lab** : les nœuds sont tous sur **un seul LAN plat**, et
 vous n'avez **aucun accès au switch ni au routeur**. Impossible de créer des VLAN en
@@ -102,18 +109,21 @@ vrai **cluster Ceph** (jour 4).
 ### Jour 4 — Cluster, SDN distribué, Ceph et exploitation 🚀
 | TP | Fichier | Durée |
 |---|---|---|
-| 16 | [Mise en cluster des 6 nœuds](16-cluster-proxmox.md) | 1 h 15 |
+| 16 | [Réinstallation et mise en cluster des 6 nœuds](16-cluster-proxmox.md) | 2 h 30 |
 | 17 | [SDN en cluster : EVPN/VXLAN et limites du LAN plat](17-sdn-evpn-cluster.md) | 2 h |
 | 18 | [**Cluster Ceph intégré à Proxmox** 🐙](18-ceph-cluster.md) | 1 h 45 |
 | 19 | [Migration à chaud et Haute Disponibilité](19-migration-ha.md) | 1 h |
 | 20 | [Pulse : une autre UI de supervision](20-pulse-monitoring.md) | 30 min |
 | 21 | [Challenge final 🏁](21-challenge-final.md) | 45 min |
 
-> 🧠 **Pourquoi PBS avant le cluster ?** Les deux TP suivants sont destructifs : la mise
-> en cluster exige de supprimer vos guests, et la chirurgie LVM pour Ceph exige de
-> détruire le pool `local-lvm`. Sans sauvegarde vérifiée, vous perdez trois jours de
-> travail. C'est aussi la seule façon honnête d'apprendre la restauration : en s'en
-> servant pour de vrai.
+> 🧠 **Pourquoi PBS en fin de jour 3 ?** Parce que c'est l'aboutissement de
+> l'industrialisation : on sait fabriquer, déployer et configurer des machines, il
+> reste à savoir les **sauvegarder, vérifier et restaurer** — et on le fait pour de
+> vrai, en détruisant une VM pour la remonter. Le jour 4 repart d'une **réinstallation
+> complète** des nœuds (TP 16) : tout ce qui vit sur votre nœud disparaît, PBS compris.
+> Ce qui survit, c'est votre **poste Ubuntu** — le dépôt Git, Terraform, Ansible — et
+> son **export NFS** (TP 14), où vous pouvez déposer un `vzdump` de ce que vous voulez
+> garder. Le reste se reconstruit en quelques commandes : c'est tout l'intérêt du jour 3.
 
 ---
 
@@ -178,14 +188,24 @@ Puis ouvrez [`00-prerequis-topologie.md`](00-prerequis-topologie.md).
 |---|---|
 | 💻 | Commande à taper sur **votre PC Ubuntu** |
 | 🖥️ | Commande à taper sur **le nœud Proxmox** (shell / SSH) |
-| 🌐 | Action à faire dans **l'interface web** `https://172.30.30.15N:8006` |
+| 🌐 | Action à faire dans **l'interface web** `https://$PVE:8006` |
 | ✅ | Point de validation : ça doit marcher avant de continuer |
 | 🧠 | Explication de fond, à lire (ce n'est pas du remplissage) |
 | 🪤 | Piège classique |
 | 🎁 | Bonus si vous avez de l'avance |
 
-Dans tous les fichiers, `N` = **votre numéro d'élève** (1 à 6).
-Si vous êtes l'élève 3 : `pve3`, `172.30.30.153`, VMID `300-399`, subnets `10.3.x.0/24`.
+Quatre adresses ne sont pas connues à l'avance ; dans les blocs de commandes, ce sont
+de vraies **variables shell**, à définir au début de chaque session (TP 00 §2) :
+
+| Variable | Ce que c'est | Comment l'obtenir |
+|---|---|---|
+| `$PVE` | l'IP de **votre nœud** Proxmox | attribuée par le formateur (`.151`–`.156`) |
+| `$PC` | l'IP de **votre poste** Ubuntu | `hostname -I \| awk '{print $1}'` sur le PC |
+| `$PBS` | l'IP de la VM Proxmox Backup Server | TP 15 (la vôtre), TP 16 (celle de la salle) |
+| `$PULSE` | l'IP du conteneur Pulse | TP 20 |
+
+Tout le reste — VMID, noms de machines, réseaux SDN, pool — est **identique pour tous**
+aux jours 1-3 : le plan est dans [`annexes/E-plan-adressage.md`](annexes/E-plan-adressage.md).
 
 ---
 

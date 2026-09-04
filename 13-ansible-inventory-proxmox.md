@@ -8,6 +8,11 @@ rôle correspondant. Zéro inventaire à maintenir à la main.
 
 📖 Plugin d'inventaire : <https://docs.ansible.com/ansible/latest/collections/community/proxmox/proxmox_inventory.html>
 
+> ⚠️ **Prérequis** : la stack Terraform `02-parc-multi-os` (TP 11) doit être **appliquée** —
+> `web01`, `app01`, `db01` et `ct-cache` tournent. Si vous l'aviez détruite en fin de
+> TP 11, relancez `terraform apply` dans `lab/terraform/02-parc-multi-os/` avant de
+> commencer.
+
 ---
 
 ## 1. Terraform et Ansible : qui fait quoi ? 🧠
@@ -41,7 +46,7 @@ conformité une machine qui a dérivé six mois plus tard. Ansible, si.
    TP 11               Proxmox                TP 13                TP 13
    ─────               ───────                ─────                ─────
    tags = ["web"] ──► tag "web" sur ──► groupe Ansible ──► rôle « web »
-                       la VM 320          proxmox_web            appliqué
+                       la VM web01        proxmox_web            appliqué
                                              │
    tags = ["db"]  ──► tag "db"  ──► groupe proxmox_db ──► rôle « db »
 ```
@@ -86,28 +91,41 @@ s'il n'a pas simplement changé de collection.
 lab/ansible/
 ├── ansible.cfg
 ├── inventory/
-│   └── proxmox.yml           ← ★ l'inventaire dynamique
+│   ├── proxmox.yml           ← ★ l'inventaire dynamique
+│   └── local.yml             ← inventaire statique : votre poste (TP 14)
 ├── group_vars/
-│   ├── all.yml
-│   ├── proxmox_web.yml
-│   └── proxmox_db.yml
+│   ├── all.yml               options SSH, variables globales
+│   ├── proxmox_web.yml       variables du groupe « web »
+│   └── proxmox_db.yml        variables du groupe « db »
 ├── roles/
-│   ├── common/               ← appliqué partout
+│   ├── common/               ← appliqué aux VM Terraform
+│   │   ├── defaults/main.yml
 │   │   ├── tasks/main.yml
 │   │   ├── handlers/main.yml
 │   │   └── templates/motd.j2
 │   ├── web/                  ← machines taguées « web »
+│   │   ├── defaults/main.yml
 │   │   ├── tasks/main.yml
 │   │   ├── handlers/main.yml
-│   │   └── templates/index.html.j2
-│   └── db/                   ← machines taguées « db »
+│   │   └── templates/{index.html.j2,site.conf.j2}
+│   ├── db/                   ← machines taguées « db »
+│   │   ├── defaults/main.yml
+│   │   ├── tasks/main.yml
+│   │   └── handlers/main.yml
+│   └── nfs/                  ← serveur NFS sur votre poste (TP 14)
+│       ├── defaults/main.yml
 │       ├── tasks/main.yml
 │       ├── handlers/main.yml
-│       └── defaults/main.yml
+│       └── templates/exports.j2
 ├── site.yml                  ← le playbook principal (les VM)
 ├── alpine.yml                ← amorçage des LXC Alpine (module raw)
+├── nfs-local.yml             ← le serveur NFS sur votre poste (TP 14)
 └── ping.yml                  ← test de connectivité
 ```
+
+> Les extraits de rôles cités dans ce TP sont **abrégés** pour la lecture : le code
+> complet (retries, sudoers, `nginx -t`, `flush_handlers`, `no_log`…) est dans
+> `lab/ansible/roles/`. C'est lui qui fait foi.
 
 ```bash
 cd ~/ProxmoxFormation/lab/ansible
@@ -123,16 +141,16 @@ ls -R | head -40
 ```yaml
 ---
 plugin: community.proxmox.proxmox     # ⚠ PAS community.general.proxmox (déprécié)
-url: "https://172.30.30.153:8006"
+url: "https://172.30.30.151:8006"          # ⚠ l'IP de VOTRE nœud ($PVE)
 user: ansible@pve
 token_id: inv
 token_secret: "{{ lookup('env', 'PVE_ANSIBLE_TOKEN_SECRET') }}"
 validate_certs: false
 
-# On ne veut que les machines démarrées
+# Les IP viennent de l'agent QEMU (VM) ou de l'API LXC : il faut les facts,
+# et un guest DÉMARRÉ
 want_facts: true
 qemu_extended_statuses: true
-exclude_nodes: false
 
 # Les groupes construits automatiquement
 keyed_groups:
@@ -140,16 +158,23 @@ keyed_groups:
   - key: proxmox_tags_parsed
     separator: "_"
     prefix: proxmox
-  # un groupe par nœud          →  node_pve3
+  # un groupe par nœud          →  node_pve (jours 1-3), node_pve3… en cluster
   - key: proxmox_node
     prefix: node
-  # un groupe par pool          →  pool_eleve3
+  # un groupe par pool          →  pool_lab
   - key: proxmox_pool
     prefix: pool
 
 groups:
-  linux: "proxmox_vmtype == 'qemu' and 'windows' not in (proxmox_tags | default(''))"
+  # ⭐ « linux » = les VM déployées par Terraform (tag « terraform »), celles que
+  #   cloud-init a préparées pour Ansible (compte eleve + clé). Les machines faites à
+  #   la main (srv01, cloud01, win01, pbs) n'y sont pas — elles restent dans leurs
+  #   groupes par tag (proxmox_web…) si on leur en pose un.
+  linux: >-
+    proxmox_vmtype == 'qemu' and
+    'terraform' in (proxmox_tags | default(''))
   conteneurs: "proxmox_vmtype == 'lxc'"
+  windows: "'windows' in (proxmox_tags | default(''))"
 
 # L'IP de connexion : DEUX sources selon le type de guest
 compose:
@@ -179,6 +204,14 @@ Chaque tag Proxmox devient un groupe Ansible préfixé `proxmox_`. Ajoutez un ta
 l'interface → le groupe apparaît à la prochaine exécution. Aucune synchronisation à
 gérer.
 
+🧠 **Pourquoi `linux` ne contient que les VM taguées `terraform` ?** Parce que ce sont
+les seules qu'Ansible peut joindre sans préparation : cloud-init y a créé le compte
+`eleve` avec votre clé. `srv01` (installée à la main, mot de passe seulement), `win01`,
+`cloud01` (120) ou la VM `pbs` (901) y remonteraient en `UNREACHABLE` et pollueraient
+chaque `PLAY RECAP`. Elles ne sont pas exclues pour autant : posez-leur un tag de rôle
+(`web`, `db`) et elles entrent dans `proxmox_web` / `proxmox_db` — c'est exactement ce
+qu'on fera au §11.
+
 ### Tester l'inventaire
 
 ```bash
@@ -188,31 +221,37 @@ source ~/.config/pve/token.env
 ansible-inventory -i inventory/proxmox.yml --graph
 ```
 
-Sortie attendue :
+Sortie attendue (extrait — vos guests manuels `srv01`, `win01`, `cloud01`, `pbs` et
+les CT apparaissent aussi dans `proxmox_all_qemu` / `proxmox_all_lxc` et leurs groupes
+par tag) :
 
 ```
 @all:
   |--@ungrouped:
-  |--@proxmox_all_qemu:
-  |  |--web01-e3
-  |  |--app01-e3
-  |  |--db01-e3
+  |--@linux:
+  |  |--web01
+  |  |--app01
+  |  |--db01
   |--@proxmox_web:
-  |  |--web01-e3
+  |  |--web01
   |--@proxmox_db:
-  |  |--db01-e3
+  |  |--db01
   |--@proxmox_interne:
-  |  |--app01-e3
-  |  |--db01-e3
-  |--@node_pve3:
-  |  |--web01-e3
-  |  |--app01-e3
-  |  |--db01-e3
+  |  |--app01
+  |  |--db01
+  |--@node_pve:
+  |  |--web01
+  |  |--app01
+  |  |--db01
+  |--@pool_lab:
+  |  |--web01
+  |  |--app01
+  |  |--db01
 ```
 
 ```bash
 # Le détail d'un hôte
-ansible-inventory -i inventory/proxmox.yml --host web01-e3 | jq
+ansible-inventory -i inventory/proxmox.yml --host web01 | jq
 
 # Toutes les variables disponibles
 ansible-inventory -i inventory/proxmox.yml --list | jq '._meta.hostvars | keys'
@@ -229,8 +268,8 @@ avec une **structure différente** :
 
 | Type | Variable | Champ de l'IP | Format |
 |---|---|---|---|
-| VM QEMU | `proxmox_agent_interfaces` | `ip-addresses[].ip-address` | `10.3.20.104` |
-| LXC | `proxmox_lxc_interfaces` | `inet` | `10.3.20.117/24` ⚠️ **avec le masque** |
+| VM QEMU | `proxmox_agent_interfaces` | `ip-addresses[].ip-address` | `10.10.20.104` |
+| LXC | `proxmox_lxc_interfaces` | `inet` | `10.10.20.117/24` ⚠️ **avec le masque** |
 
 D'où le `regex_replace('/.*$', '')` qui retire le `/24`, et la concaténation des deux
 listes. Sans la branche LXC, `ansible_host` retomberait sur `proxmox_name` — le nom du
@@ -240,8 +279,8 @@ Les deux exigent `want_facts: true` **et** un guest démarré.
 
 ```bash
 # Vérifier ce que l'inventaire a réellement trouvé
-ansible-inventory --host ct-cache-e3 | jq '.ansible_host, .proxmox_lxc_interfaces'
-ansible-inventory --host web01-e3   | jq '.ansible_host, .proxmox_agent_interfaces'
+ansible-inventory --host ct-cache | jq '.ansible_host, .proxmox_lxc_interfaces'
+ansible-inventory --host web01    | jq '.ansible_host, .proxmox_agent_interfaces'
 ```
 
 ---
@@ -250,54 +289,73 @@ ansible-inventory --host web01-e3   | jq '.ansible_host, .proxmox_agent_interfac
 
 ```ini
 [defaults]
-inventory            = inventory/proxmox.yml
-host_key_checking    = False
-remote_user          = eleve
-private_key_file     = ~/.ssh/id_ed25519
-interpreter_python   = auto_silent
-stdout_callback      = yaml
-callbacks_enabled    = profile_tasks
-retry_files_enabled  = False
+inventory              = inventory/proxmox.yml
+host_key_checking      = False
+remote_user            = eleve
+private_key_file       = ~/.ssh/id_ed25519
+interpreter_python     = auto_silent
+# ⚠ « stdout_callback = yaml » (community.general) a été SUPPRIMÉ en
+#   community.general 12.0.0. Le rendu YAML est désormais une option du
+#   callback « default » d'ansible-core, depuis la 2.13.
+stdout_callback        = default
+callback_result_format = yaml
+callbacks_enabled      = ansible.posix.profile_tasks
+retry_files_enabled    = False
+forks                  = 10
+timeout                = 30
+roles_path             = roles
+
+[privilege_escalation]
+become                 = True
+become_method          = sudo
+become_user            = root
+become_ask_pass        = False
 
 [ssh_connection]
-pipelining = True
-ssh_args   = -o ControlMaster=auto -o ControlPersist=60s
+pipelining             = True
+ssh_args               = -o ControlMaster=auto -o ControlPersist=60s -o StrictHostKeyChecking=no
 ```
 
-🪤 **Le problème du lab** : vos VM sont dans les VNets `10.N.x.0/24`, **derrière le
-NAT du nœud**. Votre PC Ubuntu ne peut pas les joindre directement. Deux solutions :
+🪤 **`stdout_callback = yaml` ne marche plus.** Ce callback vivait dans
+`community.general` et a été retiré ; si vous le copiez d'un vieux tutoriel, Ansible
+refuse de démarrer. Le rendu YAML est désormais une option du callback `default`.
 
-### Solution A — rebond SSH par le nœud Proxmox ⭐
+### Joindre les VM : la route du TP 07 ⭐
 
-Dans `group_vars/all.yml` :
+Vos VM sont dans les VNets `10.10.x.0/24`, dont la gateway est votre nœud. Depuis le
+TP 07, votre PC a une route pour y aller. Vérifiez qu'elle est toujours là :
+
+```bash
+PVE=172.30.30.___          # ⚠ l'IP de VOTRE nœud
+ip route | grep 10.10.0.0 || sudo ip route add 10.10.0.0/16 via $PVE
+ssh eleve@10.10.20.<ip-web01> hostname      # ✅ direct
+```
+
+Le PC joint les VM **directement** : Ansible leur parle comme à n'importe quel serveur,
+sans bastion ni `ProxyCommand`. `group_vars/all.yml` ne porte que les options SSH
+communes :
 
 ```yaml
 ---
 ansible_ssh_common_args: >-
-  -o ProxyCommand="ssh -W %h:%p -q root@{{ pve_host }}"
   -o StrictHostKeyChecking=no
-pve_host: 172.30.30.153
+  -o UserKnownHostsFile=/dev/null
 ```
 
-Le nœud Proxmox devient votre bastion. C'est exactement ce qu'on fait en production.
+🧠 Les clés d'hôte des VM changent à chaque `terraform destroy/apply` : on ne les
+épingle pas. En production, on les gérerait (SSH CA, ou inventaire des empreintes).
 
-### Solution B — une route statique sur votre PC
-
-```bash
-sudo ip route add 10.3.0.0/16 via 172.30.30.153
-```
-
-⚠️ Ne fonctionne que si le firewall du nœud accepte le forward depuis le LAN.
-La solution A est plus propre et ne dépend de rien.
+⚠️ Le firewall du nœud doit laisser passer le forward LAN → VNets vers les ports
+qu'Ansible utilise (SSH) — c'est l'affaire des règles du TP 09.
 
 ### Vérifier
 
 ```bash
 ansible -i inventory/proxmox.yml linux -m ping
-ansible -i inventory/proxmox.yml all -m setup -a 'filter=ansible_distribution*'
+ansible -i inventory/proxmox.yml linux -m setup -a 'filter=ansible_distribution*'
 ```
 
-✅ Vous devez obtenir des `pong` de toutes vos VM Linux.
+✅ Vous devez obtenir des `pong` de toutes vos VM Terraform (`web01`, `app01`, `db01`).
 
 ---
 
@@ -385,10 +443,10 @@ ansible -i inventory/proxmox.yml all -m setup -a 'filter=ansible_distribution*'
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
-`group_vars/all.yml` :
+`group_vars/all.yml` (suite du fichier, après les options SSH du §6) :
 
 ```yaml
----
+# ── Rôle common ──
 common_timezone: "Pacific/Noumea"
 common_admin_user: "eleve"
 common_packages:
@@ -397,6 +455,7 @@ common_packages:
   - htop
   - git
   - rsync
+  - ca-certificates
 ```
 
 🧠 **Le rôle est multi-OS.** `ansible.builtin.package` s'adapte à `apt` ou `dnf`,
@@ -435,7 +494,6 @@ portable au lieu d'empiler des `apt install`.
     src: site.conf.j2
     dest: "{{ web_conf_dir }}/lab.conf"
     mode: "0644"
-    validate: 'nginx -t -c /etc/nginx/nginx.conf'
   notify: recharger nginx
 
 - name: Démarrer et activer nginx
@@ -554,7 +612,7 @@ web_conf_dir: "{{ '/etc/nginx/sites-enabled' if ansible_os_family == 'Debian' el
 db_name: applab
 db_user: applab
 db_password: "Formation2026!"     # 🪤 en production : ansible-vault
-db_allowed_network: "10.{{ eleve | default(3) }}.10.0/24"
+db_allowed_network: "10.10.10.0/24"
 db_conf_path: >-
   {{ '/etc/postgresql/17/main/postgresql.conf' if ansible_os_family == 'Debian'
      else '/var/lib/pgsql/data/postgresql.conf' }}
@@ -640,7 +698,6 @@ ansible-playbook site.yml
 
 # 4. Une seule catégorie
 ansible-playbook site.yml --limit proxmox_web
-ansible-playbook site.yml --tags web
 ```
 
 ### La preuve de l'idempotence 🎯
@@ -653,9 +710,9 @@ Relancez immédiatement :
 
 ```
 PLAY RECAP ****************************************************
-web01-e3  : ok=14  changed=0  unreachable=0  failed=0
-app01-e3  : ok=11  changed=0  unreachable=0  failed=0
-db01-e3   : ok=16  changed=0  unreachable=0  failed=0
+web01     : ok=14  changed=0  unreachable=0  failed=0
+app01     : ok=11  changed=0  unreachable=0  failed=0
+db01      : ok=16  changed=0  unreachable=0  failed=0
 ```
 
 🧠 **`changed=0` au second passage : c'est LE critère de qualité d'un playbook.**
@@ -687,35 +744,44 @@ signer un fichier généré, `{{ ansible_managed }}` suffit : il est stable.
 
 ```bash
 # La page web générée
-ssh -J root@172.30.30.153 eleve@10.3.20.<ip-web01> 'curl -s localhost | grep h1'
+ssh eleve@10.10.20.<ip-web01> 'curl -s localhost | grep h1'
 
 # La base
-ssh -J root@172.30.30.153 eleve@10.3.10.<ip-db01> \
+ssh eleve@10.10.10.<ip-db01> \
   'sudo -u postgres psql -c "\l" | grep applab'
 
 # Le motd
-ssh -J root@172.30.30.153 eleve@10.3.10.<ip-app01>
+ssh eleve@10.10.10.<ip-app01>
 ```
 
 ---
 
 ## 11. Le test qui boucle la boucle 🔁
 
-Ajoutez le tag `web` à une machine qui ne l'avait pas :
+Ajoutez le tag `web` à une machine qui ne l'avait pas — et qui n'est même pas dans le
+groupe `linux` : `cloud01`, la VM cloud-init clonée à la main au TP 10 (VMID `120`).
 
 ```bash
-ssh root@172.30.30.153 'qm set 321 --tags "terraform,app,interne,web"'
+PVE=172.30.30.___          # ⚠ l'IP de VOTRE nœud
+ssh root@$PVE 'qm set 120 --tags "manuel,debian,interne,app,web"'
 ```
 
 Puis, **sans toucher à l'inventaire** :
 
 ```bash
 rm -rf /tmp/ansible-pve-cache          # on vide le cache
-ansible-inventory -i inventory/proxmox.yml --graph | grep -A3 proxmox_web
+ansible-inventory -i inventory/proxmox.yml --graph | grep -A4 proxmox_web
 ansible-playbook site.yml --limit proxmox_web
 ```
 
-✅ La machine apparaît dans le groupe et reçoit nginx.
+✅ `cloud01` apparaît dans `proxmox_web` et reçoit nginx : le play « Serveurs web »
+s'applique à **tout** le groupe, qu'il vienne de Terraform ou pas. Elle n'est pas
+dans `linux`, donc le rôle `common` ne l'a pas touchée — c'est le tag, et lui seul, qui
+a déclenché le rôle `web`.
+
+```bash
+ssh eleve@10.10.10.50 'curl -s localhost | grep h1'     # la page générée sur cloud01
+```
 
 🧠 **Vous venez de faire de la configuration pilotée par étiquette.** C'est le modèle
 utilisé par Kubernetes (labels/selectors), par AWS (tags/ASG), par tous les
@@ -725,7 +791,8 @@ orchestrateurs modernes. Vous l'avez implémenté sur Proxmox en trente lignes d
 
 ## 12. Aller plus loin : Terraform appelle Ansible 🔗
 
-Dans `lab/terraform/02-parc-multi-os/ansible.tf` :
+À créer, si vous voulez l'essayer : `lab/terraform/02-parc-multi-os/ansible.tf`
+(il n'est pas fourni dans le dépôt).
 
 ```hcl
 resource "terraform_data" "ansible" {
@@ -761,15 +828,15 @@ resource "terraform_data" "ansible" {
 ## ✅ Checklist de validation
 
 - [ ] `ansible-inventory --graph` liste mes machines, groupées par tag
-- [ ] `ansible linux -m ping` renvoie `pong` partout
-- [ ] Le rebond SSH par le nœud Proxmox fonctionne
+- [ ] `ansible linux -m ping` renvoie `pong` sur toutes les VM Terraform
+- [ ] Mon PC joint les VM directement (route `10.10.0.0/16 via $PVE`)
 - [ ] `ansible-playbook site.yml` se termine sans échec
 - [ ] Un **second** passage renvoie `changed=0` partout
 - [ ] La page web générée affiche le bon hostname, la bonne IP et les bons groupes
 - [ ] PostgreSQL tourne sur la machine taguée `db`, écoute sur le réseau interne
 - [ ] Le rôle `common` fonctionne **à la fois** sur Debian/Ubuntu et sur Rocky
 - [ ] `ansible-playbook alpine.yml` amorce les LXC Alpine (Python installé par `raw`)
-- [ ] Ajouter un tag dans Proxmox suffit à faire appliquer le rôle correspondant
+- [ ] Ajouter le tag `web` à `cloud01` (120) a suffi à lui faire appliquer le rôle `web`
 
 ---
 

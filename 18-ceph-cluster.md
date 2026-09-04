@@ -146,7 +146,7 @@ vgs -o vg_name,vg_size,vg_free
 ```
    ┌─────────────────────────────────────────────────────────────┐
    │ ① VG_FREE ≥ 60 Go          → chemin A : lvcreate direct 🎉  │
-   │    (vous avez réduit maxvz à l'installation, TP 01 §3.1)     │
+   │    (vous avez réduit maxvz à l'installation, TP 01 §3.1 bis) │
    ├─────────────────────────────────────────────────────────────┤
    │ ② VG_FREE ≈ 0              → chemin B : recréer le thin pool │
    │    (le cas par défaut)        ⚠ destructif, sauvegarde requise│
@@ -176,6 +176,11 @@ les métadonnées, mais on ne joue pas à ça sur des données réelles.
 
 **La seule voie propre : sauvegarder, détruire, recréer plus petit, restaurer.**
 C'est exactement pour cette raison que le TP 15 (PBS) vient **avant** celui-ci.
+
+> 💡 Si vous avez réglé `maxvz` en réinstallant votre nœud au TP 16 (c'était la seconde
+> chance), vous êtes en **chemin A** : trois commandes. Le chemin B reste documenté,
+> parce que c'est le cas que vous rencontrerez sur une machine installée par quelqu'un
+> d'autre.
 
 ---
 
@@ -226,14 +231,13 @@ Passez directement au §6.
 ### 5.1 Sauvegarder — et vérifier
 
 ```bash
-N=3
-# Tout le pool de l'élève, vers PBS
-vzdump --pool eleve$N --storage pbs-lab --mode snapshot --compress zstd
+# Tous les guests de CE nœud, vers PBS
+vzdump --all --storage pbs-lab --mode snapshot --compress zstd
 
 pvesm list pbs-lab
 ```
 
-🌐 Sur PBS : `Datastore → lab-store → <votre namespace> → Verify`.
+🌐 Sur PBS : `Datastore → lab-store → lab → Verify`.
 
 🚨 **Ne passez à l'étape suivante que si la vérification est verte.** Vous êtes sur le
 point d'effacer les originaux.
@@ -266,7 +270,7 @@ Si des volumes `vm-*-disk-*` subsistent (templates, disques orphelins) :
 
 ```bash
 lvs -o lv_name,pool_lv | grep data
-lvremove pve/vm-390-disk-0        # un par un, en connaissance de cause
+lvremove pve/vm-<vmid>-disk-0     # ex. — un par un, en connaissance de cause
 ```
 
 ### 5.3 La chirurgie
@@ -310,11 +314,9 @@ pvesm status
 ### 5.4 Restaurer les guests
 
 ```bash
-N=3
-pvesm list pbs-lab
-qm restore ${N}01 pbs-lab:backup/vm/${N}01/<timestamp> --storage local-lvm
-qm restore ${N}02 pbs-lab:backup/vm/${N}02/<timestamp> --storage local-lvm
-pct restore ${N}11 pbs-lab:backup/ct/${N}11/<timestamp> --storage local-lvm
+pvesm list pbs-lab                  # les sauvegardes de vos guests, avec leur VMID
+qm restore <vmid>  pbs-lab:backup/vm/<vmid>/<timestamp> --storage local-lvm
+pct restore <ctid> pbs-lab:backup/ct/<ctid>/<timestamp> --storage local-lvm
 qm list ; pct list
 ```
 
@@ -326,7 +328,7 @@ qm list ; pct list
 
 ### 6.1 Installer les paquets — sur les 6 nœuds
 
-🌐 `pveN → Ceph` : un assistant s'ouvre au premier accès. Ou en CLI :
+🌐 `votre nœud → Ceph` : un assistant s'ouvre au premier accès. Ou en CLI :
 
 ```bash
 pveceph install --repository no-subscription
@@ -381,7 +383,7 @@ ceph -s | grep -A2 services
 
 ### 6.5 Les OSD — ⭐ le moment où l'interface web ne suffit pas
 
-🌐 `pveN → Ceph → OSD → Create: OSD` : la liste déroulante **est vide**.
+🌐 `votre nœud → Ceph → OSD → Create: OSD` : la liste déroulante **est vide**.
 L'interface ne propose que les disques entiers non utilisés, et votre volume LVM n'en
 est pas un. C'est normal, et c'est pour cela qu'on passe en CLI.
 
@@ -528,7 +530,7 @@ ceph fs status
 | `vm-store` | `rbd` | disques de VM et de conteneurs |
 | `cephfs` | `cephfs` | ISO, templates, snippets, sauvegardes |
 | `local-lvm` | `lvmthin` | disques locaux (rapides, non partagés) |
-| `nfs-eN` | `nfs` | le partage de votre poste (TP 14) |
+| `nfs-<nœud>` | `nfs` | le partage de votre poste (TP 14, redéclaré au TP 16) |
 | `pbs-lab` | `pbs` | sauvegardes (TP 15) |
 
 ---
@@ -536,33 +538,34 @@ ceph fs status
 ## 9. L'utiliser 🚀
 
 ```bash
-N=3
+VMID=$(qm list | awk '/evpn-prod/{print $1}')     # votre VM du TP 17 — depuis le nœud où elle tourne
 # Déplacer un disque vers Ceph, à chaud
-qm move-disk ${N}01 scsi0 vm-store --delete 1
-qm config ${N}01 | grep scsi0
+qm move-disk $VMID scsi0 vm-store --delete 1
+qm config $VMID | grep scsi0
 rbd -p vm-store ls
-rbd -p vm-store info vm-${N}01-disk-0
+rbd -p vm-store info vm-$VMID-disk-0
 ```
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
 # Créer directement sur Ceph
-qm clone ${N}90 ${N}70 --name ceph-vm-e$N --pool eleve$N
-qm move-disk ${N}70 scsi0 vm-store --delete 1
-qm set ${N}70 --net0 virtio,bridge=vprod,firewall=1,mtu=1 --ipconfig0 ip=dhcp
-qm start ${N}70
+TPL=$(qm list | awk '/tpl-debian13/{print $1}')
+NEW=$(pvesh get /cluster/nextid)
+qm clone $TPL $NEW --name ceph-vm-$(hostname) --pool lab --full 1
+qm move-disk $NEW scsi0 vm-store --delete 1
+qm set $NEW --net0 virtio,bridge=vprod,firewall=1,mtu=1 --ipconfig0 ip=dhcp
+qm start $NEW
 ```
 
 ```bash
 # Copier les ISO sur CephFS : une seule copie pour tout le cluster
-cp /mnt/pve/nfs-e3/template/iso/debian-13*.iso /mnt/pve/cephfs/template/iso/
+cp /mnt/pve/nfs-$(hostname)/template/iso/debian-13*.iso /mnt/pve/cephfs/template/iso/
 pvesm list cephfs
 ```
 
 ### Observer la répartition
 
 ```bash
-ceph osd map vm-store vm-301-disk-0
+ceph osd map vm-store vm-$VMID-disk-0
 ceph pg ls-by-pool vm-store | head -5
 ceph df
 ceph osd df
@@ -583,7 +586,7 @@ et hôte de PBS) ni un monitor si vous voulez rester simple.
 watch -n2 'ceph -s; echo; ceph osd tree | head -20'
 
 # Terminal 2 — une VM sur Ceph, avec des écritures continues
-ssh -J root@172.30.30.151 eleve@10.60.10.<ip> \
+ssh eleve@10.60.10.<ip> \
   'while true; do dd if=/dev/urandom of=/tmp/t bs=1M count=20 2>/dev/null; sync; date; done'
 ```
 
@@ -672,7 +675,7 @@ comme vous surveillez `df -h`. Un Ceph plein, c'est une production à l'arrêt.
 
 ## 12. Comparaison finale des stockages 📊
 
-| | `local-lvm` | `nfs-eN` | **`vm-store` (Ceph)** |
+| | `local-lvm` | `nfs-<nœud>` | **`vm-store` (Ceph)** |
 |---|---|---|---|
 | Performance | ⭐⭐⭐ | ⭐ | ⭐⭐ (⭐⭐⭐ avec du 10 G) |
 | Partagé | ❌ | ✅ | ✅ |

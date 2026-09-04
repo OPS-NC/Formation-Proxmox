@@ -15,7 +15,7 @@ Jusqu'ici, toutes vos VM sont sur `vmbr0`, donc **directement sur le LAN de la s
 Conséquences :
 
 - elles consomment des IP du réseau `172.30.30.0/24`,
-- elles voient les machines des autres élèves,
+- elles voient les machines des autres stagiaires,
 - rien ne les protège,
 - vous ne pouvez pas rejouer un plan d'adressage sans conflit.
 
@@ -30,10 +30,10 @@ Ce qu'on veut :
        ┌────┴────┐                          ┌────┴────┐
       VM        VM                        (hôte seul)
                                               │ NAT + ip_forward
-                                            vmbr1  10.N.99.1/24
+                                            vmbr1  10.10.99.1/24
                                           ┌───┴───┐
                                          VM       VM
-                                     10.N.99.x  (DHCP)
+                                    10.10.99.x  (DHCP)
 ```
 
 ---
@@ -44,19 +44,19 @@ Un bridge **sans `bridge-ports`** n'est relié à aucune carte physique : c'est 
 purement virtuel, interne au nœud.
 
 ### Via l'interface web 🌐
-`pveN → System → Network → Create → Linux Bridge`
+`pve → System → Network → Create → Linux Bridge`
 
 | Champ | Valeur |
 |---|---|
 | Name | `vmbr1` |
-| IPv4/CIDR | `10.N.99.1/24` |
+| IPv4/CIDR | `10.10.99.1/24` |
 | Gateway | **vide** ⚠️ |
 | Bridge ports | **vide** |
 | Autostart | ✅ |
 | Comment | `LAN NAT manuel - TP07` |
 
 🪤 **Ne mettez pas de gateway** sur `vmbr1`. Un système Linux n'a qu'une seule route par
-défaut ; en mettre une seconde ici casserait l'accès au nœud. La gateway `10.N.99.1`,
+défaut ; en mettre une seconde ici casserait l'accès au nœud. La gateway `10.10.99.1`,
 c'est l'IP du bridge lui-même, vue **depuis les VM**.
 
 Cliquez **Apply Configuration** (PVE 9 applique à chaud grâce à `ifupdown2`, sans reboot).
@@ -68,7 +68,7 @@ Cliquez **Apply Configuration** (PVE 9 applique à chaud grâce à `ifupdown2`, 
 ```
 auto vmbr1
 iface vmbr1 inet static
-        address 10.3.99.1/24
+        address 10.10.99.1/24
         bridge-ports none
         bridge-stp off
         bridge-fd 0
@@ -97,14 +97,13 @@ sysctl net.ipv4.ip_forward
 ### 3.2 SNAT (masquerade)
 
 ```bash
-N=3     # votre numéro
-iptables -t nat -A POSTROUTING -s 10.$N.99.0/24 -o vmbr0 -j MASQUERADE
+iptables -t nat -A POSTROUTING -s 10.10.99.0/24 -o vmbr0 -j MASQUERADE
 iptables -t nat -L POSTROUTING -n -v
 ```
 
 🧠 **MASQUERADE vs SNAT** : `MASQUERADE` détermine l'IP source dynamiquement à partir de
 l'interface de sortie (utile en DHCP/PPP, un peu plus coûteux). `SNAT --to-source
-172.30.30.153` est statique et plus rapide. Sur un serveur à IP fixe, `SNAT` est le
+<IP-de-votre-nœud>` est statique et plus rapide. Sur un serveur à IP fixe, `SNAT` est le
 choix correct.
 
 ### 🧠 « Debian 13, ce n'est pas nftables ? » — si, et vous venez d'en écrire
@@ -150,8 +149,8 @@ Les règles iptables disparaissent au reboot. Deux approches :
 cat >> /etc/network/interfaces <<'EOF'
 
 # NAT pour vmbr1 (TP07)
-        post-up   iptables -t nat -A POSTROUTING -s 10.3.99.0/24 -o vmbr0 -j MASQUERADE
-        post-down iptables -t nat -D POSTROUTING -s 10.3.99.0/24 -o vmbr0 -j MASQUERADE
+        post-up   iptables -t nat -A POSTROUTING -s 10.10.99.0/24 -o vmbr0 -j MASQUERADE
+        post-down iptables -t nat -D POSTROUTING -s 10.10.99.0/24 -o vmbr0 -j MASQUERADE
 EOF
 # ⚠ ces lignes doivent être INDENTÉES sous la strophe « iface vmbr1 »
 ```
@@ -166,7 +165,7 @@ netfilter-persistent save
 # Option C — nftables natif, sans couche de compatibilité
 nft add table ip lab-nat
 nft add chain ip lab-nat postrouting '{ type nat hook postrouting priority srcnat; policy accept; }'
-nft add rule  ip lab-nat postrouting ip saddr 10.$N.99.0/24 oifname vmbr0 masquerade
+nft add rule  ip lab-nat postrouting ip saddr 10.10.99.0/24 oifname vmbr0 masquerade
 
 nft list ruleset > /etc/nftables.conf     # persistance
 systemctl enable --now nftables
@@ -196,8 +195,8 @@ cat > /etc/dnsmasq.d/vmbr1-tp07.conf <<'EOF'
 interface=vmbr1
 bind-interfaces
 except-interface=lo
-dhcp-range=10.3.99.100,10.3.99.200,12h
-dhcp-option=option:router,10.3.99.1
+dhcp-range=10.10.99.100,10.10.99.200,12h
+dhcp-option=option:router,10.10.99.1
 dhcp-option=option:dns-server,1.1.1.1,8.8.8.8
 log-dhcp
 EOF
@@ -216,27 +215,25 @@ instances `dnsmasq@<zone>` gérées par le SDN.
 Le plus rapide : un conteneur Alpine jetable, créé en dix secondes.
 
 ```bash
-N=3
 TPL=$(pveam list local | awk '/alpine/ {print $1}' | head -1)
 
-pct create ${N}19 $TPL --hostname ct-nat-e$N --pool eleve$N \
+pct create 119 $TPL --hostname ct-nat --pool lab \
   --unprivileged 1 --password 'Formation2026!' \
   --rootfs local-lvm:2 --cores 1 --memory 256 \
   --net0 name=eth0,bridge=vmbr1,ip=dhcp \
   --start 1
 
 sleep 5
-pct exec ${N}19 -- ip -4 -br a show eth0
+pct exec 119 -- ip -4 -br a show eth0
 ```
 
 Dans le conteneur :
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-pct exec ${N}19 -- sh -c '
+pct exec 119 -- sh -c '
   ip -br a
   ip route
-  ping -c2 10.3.99.1        # la gateway = l'"'"'hôte
+  ping -c2 10.10.99.1       # la gateway = l'"'"'hôte
   ping -c2 172.30.30.2   # le routeur de la salle → passe grâce au NAT
   ping -c2 1.1.1.1          # Internet
   apk update
@@ -246,10 +243,9 @@ pct exec ${N}19 -- sh -c '
 🎁 Refaites le même test avec votre VM Debian du TP 03 :
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-qm set ${N}01 --net0 virtio,bridge=vmbr1,firewall=1
-qm reboot ${N}01
-# dans la VM : configurez 10.3.99.50/24, gw 10.3.99.1
+qm set 101 --net0 virtio,bridge=vmbr1,firewall=1
+qm reboot 101
+# la VM est en DHCP depuis le TP 03 : elle prend une adresse en 10.10.99.x
 # … puis remettez-la sur vmbr0 à la fin du TP
 ```
 
@@ -257,9 +253,31 @@ Sur l'hôte, observez le NAT en action :
 
 ```bash
 watch -n1 'iptables -t nat -L POSTROUTING -n -v | tail -3'
-conntrack -L 2>/dev/null | grep 10.3.99 | head
+conntrack -L 2>/dev/null | grep 10.10.99 | head
 tcpdump -ni vmbr1 -c 10
 ```
+
+### Et depuis votre PC ? 💻
+
+Le NAT fait sortir les guests ; il ne fait pas **entrer**. Votre PC ne connaît pas
+`10.10.99.0/24` : sa table de routage n'a qu'une route par défaut, vers la box. Or la
+gateway de ce réseau, c'est votre nœud — il suffit de le dire au PC :
+
+```bash
+PVE=172.30.30.___                 # ⚠ l'IP de VOTRE nœud
+sudo ip route add 10.10.0.0/16 via $PVE
+ip route | grep 10.10
+ping -c2 <IP-du-CT-119>           # ✅ le PC joint le conteneur, sans passer par le nœud
+```
+
+🧠 **Un `/16` plutôt qu'un `/24`, et une seule fois pour toute la formation** : tous
+les réseaux privés de votre nœud — `vmbr1` aujourd'hui, les VNets SDN `10.10.10/20/30`
+dès le TP 08 — sont dans `10.10.0.0/16`. Cette route restera en place jusqu'au jour 4 :
+**on ne rebondit jamais par le nœud en SSH** dans cette formation, on route.
+
+🪤 La route n'est pas persistante : elle disparaît au redémarrage du PC. Relancez la
+commande, ou rendez-la permanente (netplan, NetworkManager). Le réflexe à avoir quand
+« ça ne répond plus » : `ip route | grep 10.10`.
 
 ---
 
@@ -269,7 +287,7 @@ tcpdump -ni vmbr1 -c 10
 |---|---|
 | Configuration **locale au nœud** | Il faut la refaire, identique, sur les 6 nœuds |
 | Le nom `vmbr1` doit exister partout | Sinon la migration d'une VM échoue |
-| Pas de L2 entre nœuds | Deux VM `10.N.99.x` sur deux nœuds ne se voient pas |
+| Pas de L2 entre nœuds | Deux VM `10.10.99.x` sur deux nœuds ne se voient pas |
 | Règles iptables à la main | Non versionnées, non auditées, oubliées au prochain reboot |
 | Pas d'IPAM | Qui a quelle IP ? Personne ne sait |
 | Pas de firewall inter-réseaux structuré | Tout est à écrire soi-même |
@@ -292,21 +310,23 @@ tcpdump -ni vmbr1 -c 10
 
 ## 7. Nettoyage avant le TP 08 🧹
 
+> 💡 **Ne supprimez pas la route `10.10.0.0/16` ajoutée sur votre PC** : elle sert dès
+> le TP 08 pour joindre les VNets SDN.
+
 **Important** : on remet le nœud dans un état propre pour que le SDN travaille sans
 interférence.
 
 ```bash
-N=3
 # 1. Supprimer le conteneur de test, et remettre srv01 sur vmbr0 si vous l'avez déplacé
-pct stop ${N}19 ; sleep 2 ; pct destroy ${N}19 --purge
-qm set ${N}01 --net0 virtio,bridge=vmbr0,firewall=1
+pct stop 119 ; sleep 2 ; pct destroy 119 --purge
+qm set 101 --net0 virtio,bridge=vmbr0,firewall=1
 
 # 2. Rendre dnsmasq au SDN
 systemctl disable --now dnsmasq
 rm -f /etc/dnsmasq.d/vmbr1-tp07.conf
 
 # 3. Retirer la règle NAT
-iptables -t nat -D POSTROUTING -s 10.$N.99.0/24 -o vmbr0 -j MASQUERADE
+iptables -t nat -D POSTROUTING -s 10.10.99.0/24 -o vmbr0 -j MASQUERADE
 iptables -t nat -S POSTROUTING
 nft delete table ip lab-nat 2>/dev/null || true   # si vous aviez pris l'option C
 
@@ -322,10 +342,11 @@ On garde `net.ipv4.ip_forward = 1` : le SDN en a besoin de toute façon.
 
 ## ✅ Checklist de validation
 
-- [ ] `vmbr1` existe avec `10.N.99.1/24` et **aucun** port physique
+- [ ] `vmbr1` existe avec `10.10.99.1/24` et **aucun** port physique
 - [ ] Un guest sur `vmbr1` obtient une IP par DHCP
 - [ ] Ce guest ping `1.1.1.1` et met à jour ses paquets
 - [ ] Je vois les compteurs de la règle MASQUERADE augmenter
+- [ ] Mon PC a la route `10.10.0.0/16 via $PVE` et ping le conteneur directement
 - [ ] Je sais citer **trois** limites de cette approche manuelle
 - [ ] Je sais expliquer pourquoi `iptables` sur Debian 13 écrit en réalité du nftables
 - [ ] Le nettoyage est fait : plus de `vmbr1`, plus de règle NAT, dnsmasq désactivé
@@ -338,10 +359,10 @@ On garde `net.ipv4.ip_forward = 1` : le SDN en a besoin de toute façon.
    sur le port 8080 de l'hôte.
    ```bash
    iptables -t nat -A PREROUTING -i vmbr0 -p tcp --dport 8080 \
-            -j DNAT --to-destination 10.3.99.100:80
-   iptables -A FORWARD -d 10.3.99.100 -p tcp --dport 80 -j ACCEPT
+            -j DNAT --to-destination 10.10.99.100:80
+   iptables -A FORWARD -d 10.10.99.100 -p tcp --dport 80 -j ACCEPT
    ```
-   Testez depuis votre PC : `curl http://172.30.30.153:8080/`. Puis supprimez les règles.
+   Testez depuis votre PC : `curl http://$PVE:8080/`. Puis supprimez les règles.
 2. Refaites le bridge en **OVS** (`apt install openvswitch-switch`, type
    *OVS Bridge*). Comparez `ovs-vsctl show` avec `brctl show`.
 3. Créez un **bond** LACP fictif (`bond0` en `balance-alb` sur une seule NIC, pour voir

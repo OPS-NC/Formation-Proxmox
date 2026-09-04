@@ -15,14 +15,13 @@
 #      · le gestionnaire de paquets est apk, pas apt
 
 - name: Amorcer les conteneurs Alpine
-  hosts: conteneurs
+  hosts: proxmox_alpine     # les LXC tagués « alpine » — pas ct-rocky (dnf, pas apk)
   gather_facts: false
   remote_user: root
   become: false
 
   vars:
     ansible_ssh_common_args: >-
-      -o ProxyCommand="ssh -W %h:%p -q root@{{ pve_host }}"
       -o StrictHostKeyChecking=no
       -o UserKnownHostsFile=/dev/null
 
@@ -43,14 +42,13 @@
       ansible.builtin.setup:
 
 - name: Socle minimal sur les conteneurs Alpine
-  hosts: conteneurs
+  hosts: proxmox_alpine     # les LXC tagués « alpine » — pas ct-rocky (dnf, pas apk)
   gather_facts: true
   remote_user: root
   become: false
 
   vars:
     ansible_ssh_common_args: >-
-      -o ProxyCommand="ssh -W %h:%p -q root@{{ pve_host }}"
       -o StrictHostKeyChecking=no
       -o UserKnownHostsFile=/dev/null
 

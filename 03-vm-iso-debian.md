@@ -13,39 +13,39 @@ la brancher sur `vmbr0` (le LAN de la salle).
 
 ```
    ┌──────────── vmbr0 ─────────────┐
-   │  hôte 172.30.30.15N/24         │
+   │  hôte $PVE/24                  │
    │                                │
    │   ┌────────────────────────┐   │
-   │   │ VM  srv01-eN           │   │
-   │   │ VMID  N01              │   │
+   │   │ VM  srv01              │   │
+   │   │ VMID  101              │   │
    │   │ Debian 13              │   │
    │   │ 2 vCPU / 2 Go / 20 Go  │   │
-   │   │ IP 172.30.30.<B+1>     │   │  ← ex. élève 3 → 172.30.30.211
+   │   │ IP : DHCP de la salle  │   │  ← on la relève après l'install
    │   └────────────────────────┘   │
    └────────────────────────────────┘
                   │
              172.30.30.2 ──→ ☁
 ```
 
-> IP de la VM = **`B + 1`**, où `B = 195 + N × 5` est la base de votre bloc.
-> Élève 1 → `.201`, élève 2 → `.206`, élève 3 → `.211`, …, élève 6 → `.226`.
-> Le bloc `.200`-`.229` ne chevauche ni les nœuds (`.151`-`.156`) ni les PC (`.101`-`.106`).
-> Tableau complet : [TP 00 §4](00-prerequis-topologie.md).
+> La VM est branchée **directement sur le LAN de la salle** et prend son adresse **en
+> DHCP**, comme votre PC. On la relèvera dans le Summary de la VM une fois l'agent
+> installé (§5). Si la salle n'a pas de DHCP, le formateur vous attribue une adresse
+> statique dans la plage `.200`–`.250` — voir [TP 00 §4](00-prerequis-topologie.md).
 
 ---
 
 ## 2. Création via l'interface web 🌐
 
-`pveN → Create VM` (bouton bleu en haut à droite).
+`pve → Create VM` (bouton bleu en haut à droite).
 
 ### Onglet **General**
 
 | Champ | Valeur |
 |---|---|
-| Node | `pveN` |
-| VM ID | `N01` (ex. `301`) |
-| Name | `srv01-eN` |
-| Resource Pool | `eleveN` |
+| Node | `pve` |
+| VM ID | `101` |
+| Name | `srv01` |
+| Resource Pool | `lab` |
 | Start at boot | décoché pour l'instant |
 
 ### Onglet **OS**
@@ -116,7 +116,7 @@ quand il en manque. Utile en lab surchargé, à éviter pour les bases de donné
 | Bridge | `vmbr0` |
 | Model | `VirtIO (paravirtualized)` |
 | VLAN Tag | vide |
-| Firewall | ✅ (décoché par défaut : cochez-le, on s'en sert au TP 09) |
+| Firewall | ✅ (cochez la case si elle ne l'est pas : on s'en sert au TP 09) |
 
 ⚠️ **Ne cochez pas** « Start after created » : on veut d'abord vérifier la config.
 
@@ -127,13 +127,12 @@ quand il en manque. Utile en lab surchargé, à éviter pour les bases de donné
 Parce que c'est ce que vous ferez en vrai, et parce que c'est reproductible.
 
 ```bash
-VMID=${N}01                 # ex. 301
-N=N                      # votre numéro
+VMID=101
 ISO=$(ls /var/lib/vz/template/iso/debian-13*-amd64-netinst.iso | head -1 | xargs basename)
 
 qm create $VMID \
-  --name srv01-e$N \
-  --pool eleve$N \
+  --name srv01 \
+  --pool lab \
   --ostype l26 \
   --machine q35 \
   --bios ovmf \
@@ -169,29 +168,26 @@ n'importe comment.
 qm start $VMID
 ```
 
-Puis 🌐 `VM N01 → Console` (noVNC).
+Puis 🌐 `VM 101 → Console` (noVNC).
 
 ### Réponses de l'installateur
 
 | Écran | Réponse |
 |---|---|
 | Langue / pays / clavier | Français |
-| Hostname | `srv01-eN` |
+| Hostname | `srv01` |
 | Domain | `lab.local` |
 | Root password | `Formation2026!` |
 | Utilisateur | `eleve` / `Formation2026!` |
-| Réseau | **Configurer manuellement** ⬇ |
+| Réseau | **DHCP** (l'installateur le fait tout seul) ⬇ |
 | Partitionnement | Assisté – tout dans une seule partition |
 | Sélection de logiciels | **décocher** « Environnement de bureau » ; **cocher** « serveur SSH » et « utilitaires usuels du système » |
 | GRUB | oui, sur `/dev/sda` |
 
-**Réseau manuel** (le DHCP échouera ou vous donnera une IP non maîtrisée) :
-
-```
-Adresse IP  : 172.30.30.<B+1>/24     ← ex. élève 3 : 172.30.30.211
-Passerelle  : 172.30.30.2
-DNS         : 1.1.1.1 8.8.8.8
-```
+**Réseau** : l'installateur détecte la carte VirtIO et demande un bail au DHCP de la
+salle. Laissez faire. Si la salle n'a pas de DHCP, choisissez « Configurer manuellement »
+avec l'adresse fournie par le formateur, la passerelle `172.30.30.2` et les DNS
+`1.1.1.1 8.8.8.8`.
 
 ☕ L'installation prend 10-15 min. Profitez-en pour lire le §5.
 
@@ -234,7 +230,15 @@ qm agent $VMID network-get-interfaces | jq -r '.[] | "\(.name) \(."ip-addresses"
 qm guest cmd $VMID get-osinfo
 ```
 
-✅ Le Summary de la VM dans l'interface web affiche maintenant son IP.
+✅ Le Summary de la VM dans l'interface web affiche maintenant son IP. **Notez-la** :
+c'est celle que vous utiliserez pour `ssh eleve@<IP-de-srv01>` depuis votre PC.
+
+```bash
+# La même chose en une ligne, pour la coller dans une variable
+IP=$(qm agent $VMID network-get-interfaces \
+     | jq -r '.[]|select(.name!="lo")|."ip-addresses"[]?|select(."ip-address-type"=="ipv4")."ip-address"' | head -1)
+echo $IP
+```
 
 ---
 
@@ -282,16 +286,15 @@ vzdump $VMID --storage local --mode snapshot --compress zstd --notes-template '{
 ls -lh /var/lib/vz/dump/
 ```
 
-🧠 Gardez cette archive : au **jour 4**, avant de rejoindre le cluster, il faudra
-supprimer toutes vos VM. Cette sauvegarde vous permettra de restaurer `srv01-eN`
-une fois le cluster monté.
+🧠 Gardez ce réflexe : au **jour 4**, les nœuds sont réinstallés avant la mise en
+cluster. Une archive `vzdump` déposée sur un stockage **externe** au nœud (le NFS de
+votre poste, TP 14) est ce qui permet de retrouver une VM de l'autre côté.
 
 ### Cloner
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-qm clone $VMID ${N}02 --name srv02-eN --full 1
-qm destroy ${N}02 --purge     # on nettoie, c'était juste pour voir
+qm clone $VMID 103 --name srv02 --full 1
+qm destroy 103 --purge        # on nettoie, c'était juste pour voir
 ```
 
 ---
@@ -315,7 +318,7 @@ ip -br link | grep "tap$VMID"
 bridge link show | grep "tap$VMID"
 ```
 
-🧠 **`tapN01i0`** = interface TAP de la VM `N01`, carte `net0`, branchée sur `vmbr0`.
+🧠 **`tap101i0`** = interface TAP de la VM `101`, carte `net0`, branchée sur `vmbr0`.
 Cette nomenclature vous sauvera au TP 08 quand il faudra tracer un paquet.
 
 ```bash
@@ -327,23 +330,23 @@ tcpdump -ni tap${VMID}i0 -c 20
 
 ## ✅ Checklist de validation
 
-- [ ] La VM `srv01-eN` démarre et affiche un login
-- [ ] Depuis mon PC : `ssh eleve@172.30.30.<B+1>` fonctionne (élève 3 : `.211`)
+- [ ] La VM `srv01` démarre et affiche un login
+- [ ] Depuis mon PC : `ssh eleve@<IP-de-srv01>` fonctionne
 - [ ] Depuis la VM : `ping 1.1.1.1` et `apt update` fonctionnent
-- [ ] `qm agent N01 ping` répond
-- [ ] Le Summary de la VM affiche son IP
+- [ ] `qm agent 101 ping` répond
+- [ ] Le Summary de la VM affiche son IP, et je l'ai notée
 - [ ] Un snapshot existe et le rollback a été testé
 - [ ] Une sauvegarde `vzdump` est présente dans `/var/lib/vz/dump/`
-- [ ] Je sais retrouver l'interface `tapN01i0` et capturer dessus
+- [ ] Je sais retrouver l'interface `tap101i0` et capturer dessus
 
 ---
 
 ## 🎁 Bonus
 
-1. **Boot UEFI** : `qm set N01 --bios seabios` puis démarrez. Que se passe-t-il ?
+1. **Boot UEFI** : `qm set 101 --bios seabios` puis démarrez. Que se passe-t-il ?
    (Indice : le disque EFI ne sert plus, le bootloader n'est pas trouvé.) Remettez `ovmf`.
-2. **Hotplug** : `qm set N01 --hotplug disk,network,usb,memory,cpu` puis ajoutez un
-   disque à chaud avec `qm set N01 --scsi1 local-lvm:5`. Vérifiez avec `lsblk` dans la VM.
+2. **Hotplug** : `qm set 101 --hotplug disk,network,usb,memory,cpu` puis ajoutez un
+   disque à chaud avec `qm set 101 --scsi1 local-lvm:5`. Vérifiez avec `lsblk` dans la VM.
 3. **Comparez les modèles de carte réseau** : passez `net0` en `e1000` et refaites un
    `iperf3` contre l'hôte. Mesurez l'écart avec `virtio`. Vous comprendrez pourquoi on ne
    met jamais `e1000` par défaut.

@@ -72,8 +72,8 @@ qm set <vmid> --cpu x86-64-v2-AES    # nécessite un arrêt/démarrage
 ### Sans stockage partagé (disque local)
 
 ```bash
-N=3
-time qm migrate ${N}60 pve5 --online --with-local-disks
+VMID=$(qm list | awk '/evpn-prod/{print $1}')     # votre VM du TP 17 — depuis le nœud où elle tourne
+time qm migrate $VMID pve5 --online --with-local-disks    # vers un nœud autre que le vôtre
 ```
 
 Observez la tâche : Proxmox copie le disque **puis** la RAM. Sur 20 Go, comptez
@@ -85,10 +85,10 @@ l'image du template, laquelle n'existe pas sur le nœud cible. Deux sorties :
 
 ```bash
 # A. la convertir en clone complet, sur place
-qm move-disk ${N}60 scsi0 local-lvm --delete 1
+qm move-disk $VMID scsi0 local-lvm --delete 1
 
 # B. mieux : l'envoyer directement sur Ceph — c'est l'objet du paragraphe suivant
-qm move-disk ${N}60 scsi0 vm-store --delete 1
+qm move-disk $VMID scsi0 vm-store --delete 1
 ```
 
 🧠 **`qm move-disk` casse le lien vers l'image de base** : il écrit un disque complet
@@ -98,12 +98,12 @@ c'est aussi ce qui explique pourquoi le TP 17 clone en `--full 1`.
 ### Avec Ceph
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
+VMID=$(qm list | awk '/evpn-prod/{print $1}')     # votre VM du TP 17 — depuis le nœud où elle tourne
 # Déplacer d'abord le disque sur le pool Ceph
-qm move-disk ${N}60 scsi0 vm-store --delete 1
-qm config ${N}60 | grep scsi0
+qm move-disk $VMID scsi0 vm-store --delete 1
+qm config $VMID | grep scsi0
 
-time qm migrate ${N}60 pve2 --online
+time qm migrate $VMID pve2 --online                 # un autre nœud que le vôtre
 ```
 
 🎯 **Comparez les deux chronos.** Avec un stockage partagé, seule la RAM transite :
@@ -111,10 +111,9 @@ quelques secondes au lieu de plusieurs minutes. Le disque, lui, ne bouge pas d'u
 octet — il n'a jamais appartenu à un nœud en particulier.
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
 # La preuve : l'image RBD est inchangée, seule la VM a changé de nœud
-rbd -p vm-store info vm-${N}60-disk-0
-ceph osd map vm-store vm-${N}60-disk-0
+rbd -p vm-store info vm-$VMID-disk-0
+ceph osd map vm-store vm-$VMID-disk-0
 ```
 
 ### Le test qui prouve
@@ -125,8 +124,8 @@ ping 10.60.10.<ip-de-la-vm>
 ```
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-qm migrate ${N}60 pve4 --online
+# ⚠ la VM a changé de nœud : lancez ceci depuis le nœud où elle tourne (qm list)
+qm migrate $VMID pve4 --online
 ```
 
 ✅ Zéro ou un paquet perdu, grâce à la gateway anycast EVPN.
@@ -143,7 +142,7 @@ for id in $(qm list | awk 'NR>1 && $3=="running" {print $1}'); do
 done
 ```
 
-🌐 Équivalent graphique : `pveN → clic droit → Bulk Migrate`.
+🌐 Équivalent graphique : `votre nœud → clic droit → Bulk Migrate`.
 
 ---
 
@@ -247,9 +246,9 @@ plus caresser son watchdog, qui le redémarre de force.
 ailleurs.
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-qm config ${N}60 | grep -E 'scsi0|virtio0'    # doit pointer sur vm-store
-qm move-disk ${N}60 scsi0 vm-store --delete 1  # si ce n'est pas le cas
+VMID=$(qm list | awk '/evpn-prod/{print $1}')   # votre VM du TP 17 (sur son nœud actuel)
+qm config $VMID | grep -E 'scsi0|virtio0'       # doit pointer sur vm-store
+qm move-disk $VMID scsi0 vm-store --delete 1    # si ce n'est pas le cas
 ```
 
 ### Configurer
@@ -272,11 +271,14 @@ pvesh create /cluster/ha/groups --group grp-prod \
 
 Les chiffres sont des **priorités** : la valeur la plus élevée gagne.
 
+⚠️ Le groupe est `restricted` : si votre VM tourne ailleurs que sur `pve2`, `pve3` ou
+`pve4` (vous êtes sur `pve5`/`pve6`, ou elle n'est pas rentrée du TP 17 §9), le CRM la
+**migre** dès la déclaration de la ressource. C'est attendu — regardez-le faire.
+
 **② Déclarer la ressource**
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-pvesh create /cluster/ha/resources --sid vm:${N}60 --group grp-prod \
+pvesh create /cluster/ha/resources --sid vm:$VMID --group grp-prod \
   --state started --max_restart 2 --max_relocate 2
 pvesh get /cluster/ha/resources
 ha-manager status

@@ -1,5 +1,5 @@
 variable "pve_endpoint" {
-  description = "URL de l'API Proxmox, ex. https://172.30.30.153:8006/"
+  description = "URL de l'API Proxmox, ex. https://172.30.30.151:8006/ (l'IP de VOTRE nœud)"
   type        = string
 }
 
@@ -15,18 +15,9 @@ variable "pve_host" {
 }
 
 variable "pve_node" {
-  description = "Nom du nœud, ex. pve3"
+  description = "Nom du nœud : « pve » aux jours 1-3, « pve1 »…« pve6 » une fois en cluster"
   type        = string
-}
-
-variable "eleve" {
-  description = "Numéro d'élève (1-6) — détermine VMID et subnets"
-  type        = number
-
-  validation {
-    condition     = var.eleve >= 1 && var.eleve <= 6
-    error_message = "Le numéro d'élève doit être compris entre 1 et 6."
-  }
+  default     = "pve"
 }
 
 variable "ssh_public_key" {
@@ -37,7 +28,7 @@ variable "ssh_public_key" {
 variable "template_debian" {
   description = "VMID du template Debian 13 (TP 10)"
   type        = number
-  default     = null
+  default     = 190
 }
 
 variable "vnet" {

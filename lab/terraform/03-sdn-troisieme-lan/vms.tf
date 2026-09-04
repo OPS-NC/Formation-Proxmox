@@ -6,15 +6,14 @@
 resource "proxmox_virtual_environment_vm" "mon" {
   depends_on = [proxmox_sdn_applier.apply]
 
-  name        = "mon01-e${var.eleve}"
+  name        = "mon01"
   description = "Supervision — zone services — TP 12"
   node_name   = var.pve_node
-  vm_id       = var.eleve * 100 + 50
-  pool_id     = "eleve${var.eleve}"
-  tags        = ["terraform", "services", "monitoring", "debian", "eleve${var.eleve}"]
+  pool_id     = "lab"
+  tags        = ["terraform", "services", "monitoring", "debian"]
 
   clone {
-    vm_id = local.template_id
+    vm_id = var.template_debian
     # 🪤 linked clone = non migrable entre nœuds sur stockage local (cf. TP 10 §5).
     full = false
   }
@@ -56,13 +55,12 @@ resource "proxmox_virtual_environment_container" "log" {
   depends_on = [proxmox_sdn_applier.apply]
 
   node_name   = var.pve_node
-  vm_id       = var.eleve * 100 + 51
-  pool_id     = "eleve${var.eleve}"
-  tags        = ["terraform", "services", "logs", "alpine", "eleve${var.eleve}"]
+  pool_id     = "lab"
+  tags        = ["terraform", "services", "logs", "alpine"]
   description = "Collecteur de journaux — TP 12"
 
   initialization {
-    hostname = "log01-e${var.eleve}"
+    hostname = "log01"
     ip_config {
       ipv4 { address = "dhcp" }
     }

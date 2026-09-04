@@ -61,14 +61,23 @@ Matrice de flux attendue :
 
 ### Machines
 
+Le cluster est partagé par six stagiaires : suffixez vos machines du **nom de votre
+nœud** (`<nœud>` = `pve3` → `front-pve3`) pour vous y retrouver dans la vue globale.
+
 | Nom | OS | Zone | Rôle | Contrainte |
 |---|---|---|---|---|
-| `front-eN` | Ubuntu 26.04 | `vpub` | nginx en reverse-proxy vers `app` | déployé par Terraform |
-| `app-eN` | Debian 13 | `vprod` | une appli qui écoute en 8080 | déployé par Terraform |
-| `data-eN` | Rocky Linux 10 | `vdb` | PostgreSQL | déployé par Terraform |
-| `cache-eN` | Alpine (LXC) | `vprod` | Redis ou nginx cache | déployé par Terraform |
+| `front-<nœud>` | Ubuntu 26.04 | `vpub` | nginx en reverse-proxy vers `app` | déployé par Terraform |
+| `app-<nœud>` | Debian 13 | `vprod` | une appli qui écoute en 8080 | déployé par Terraform |
+| `data-<nœud>` | Rocky Linux 10 | `vdb` | PostgreSQL | déployé par Terraform |
+| `cache-<nœud>` | Alpine (LXC) | `vprod` | Redis ou nginx cache | déployé par Terraform |
 | — | — | — | Stockage | `front` et `app` sur **Ceph** · `data` sur **`local-lvm`** — ⚠️ voir ci-dessous |
-| `adm-eN` | Windows Server 2025 | `vprod` | poste d'administration | RDP depuis `vprod` **seulement** |
+| `adm-<nœud>` | Windows Server 2025 | `vprod` | poste d'administration | RDP depuis `vprod` **seulement** |
+
+> 🧠 **Terraform en cluster** : comme dans toutes les stacks du jour 3, **pas de
+> `vm_id`** — le provider prend le prochain VMID libre du cluster, comme
+> `pvesh get /cluster/nextid`. Fixez `pve_node` à votre nœud
+> (`pve_node = "pve3"`), et créez un **pool dédié à votre rendu** (ex. `karembeu-<nœud>`) :
+> c'est lui que ciblera votre job de sauvegarde.
 
 > 🎯 **`data` sur `local-lvm` : ce n'est pas un oubli, c'est l'arbitrage à défendre.**
 >
@@ -92,7 +101,8 @@ Matrice de flux attendue :
 - [ ] Les disques de `front` et `app` sont sur **`vm-store` (Ceph)**
 - [ ] `front` et `app` sont en **HA**, avec une règle d'**anti-affinité**
 - [ ] `data` n'est **pas** en HA, et je sais dire pourquoi (RPO/RTO à l'appui)
-- [ ] Un job de **sauvegarde par pool** tourne, avec une rétention définie
+- [ ] Mes machines sont dans **mon pool** (`karembeu-<nœud>`) et un job de **sauvegarde par
+      pool** les couvre, avec une rétention définie
 - [ ] Le **firewall** applique exactement la matrice ci-dessus, en *default deny*
 - [ ] Le dépôt Git contient tout le code : `terraform apply` + `ansible-playbook`
       doivent reconstruire l'ensemble depuis zéro
@@ -172,7 +182,7 @@ curl -sI http://<ip-front>/     # → 200, la chaîne complète refonctionne
 ### Épreuve 7 — Reproductibilité 🔁
 
 ```bash
-terraform destroy -target=proxmox_virtual_environment_vm.cache
+terraform destroy -target=proxmox_virtual_environment_container.cache   # cache est un LXC
 terraform apply
 ansible-playbook site.yml
 # → la machine est de retour, configurée, sans intervention manuelle
@@ -195,7 +205,7 @@ minutes :
 Un dépôt Git, poussé ou remis au formateur :
 
 ```
-rendu-eleveN/
+rendu-<nœud>/
 ├── README.md                ← ⭐ le document le plus important
 ├── docs/
 │   ├── schema-reseau.md     schéma ASCII ou image
@@ -222,20 +232,22 @@ rendu-eleveN/
 
 ```bash
 # Extraire la configuration réelle pour le rendu
-ssh root@172.30.30.15N 'tar cz /etc/pve/sdn /etc/pve/firewall' \
-  | tar xz -C rendu-eleveN/ --strip-components=2
+PVE=172.30.30.___            # ⚠ l'IP de VOTRE nœud
+R=rendu-$(ssh root@$PVE hostname)          # ex. rendu-pve3
+mkdir -p $R/ceph $R/docs
+ssh root@$PVE 'tar cz /etc/pve/sdn /etc/pve/firewall' \
+  | tar xz -C $R/ --strip-components=2
 
-mkdir -p rendu-eleveN/ceph
-ssh root@172.30.30.15N 'cat /etc/pve/ceph.conf'  > rendu-eleveN/ceph/ceph.conf
-ssh root@172.30.30.15N 'ceph -s'                 > rendu-eleveN/ceph/ceph-s.txt
-ssh root@172.30.30.15N 'ceph osd tree'           > rendu-eleveN/ceph/ceph-osd-tree.txt
-ssh root@172.30.30.15N 'lvs; vgs'                > rendu-eleveN/docs/lvm.txt
+ssh root@$PVE 'cat /etc/pve/ceph.conf'  > $R/ceph/ceph.conf
+ssh root@$PVE 'ceph -s'                 > $R/ceph/ceph-s.txt
+ssh root@$PVE 'ceph osd tree'           > $R/ceph/ceph-osd-tree.txt
+ssh root@$PVE 'lvs; vgs'                > $R/docs/lvm.txt
 ```
 
 🪤 **Vérifiez qu'aucun secret ne part dans le dépôt** :
 
 ```bash
-grep -rniE 'password|secret|token|BEGIN .*PRIVATE KEY' rendu-eleveN/ \
+grep -rniE 'password|secret|token|BEGIN .*PRIVATE KEY' $R/ \
   --exclude-dir=.git | grep -v example
 ```
 
@@ -269,10 +281,11 @@ grep -rniE 'password|secret|token|BEGIN .*PRIVATE KEY' rendu-eleveN/ \
 
 ## 💡 Conseils
 
+> ⚠️ **Avant tout : `ceph -s` doit être vert.** Si Ceph est dégradé, la HA ne servira à
+> rien et vous perdrez des points sur deux épreuves.
+
 1. **Commencez par le schéma et la matrice de flux.** Écrire les règles avant d'avoir
    décidé de la politique, c'est se condamner à bricoler.
-0. **Avant tout : `ceph -s` doit être vert.** Si Ceph est dégradé, la HA ne servira à
-   rien et vous perdrez des points sur deux épreuves.
 2. **Faites tourner l'ensemble avant d'optimiser.** Un truc moche qui marche vaut mieux
    qu'un truc élégant à moitié fini.
 3. **`git commit` souvent.** Vous allez casser quelque chose. C'est certain.

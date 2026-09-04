@@ -24,14 +24,14 @@ vers Internet, **sans écrire une seule règle iptables ni éditer `/etc/network
                               └────┬────┘
                                    │
                           ╔════════╧════════╗
-                          ║   NŒUD pveN     ║
+                          ║   NŒUD pve      ║
                           ║   SNAT ×2       ║
                           ╚═══╤═════════╤═══╝
                     zone zint │         │ zone zdmz
                       vnet    │         │   vnet
                      ┌────────┴──┐   ┌──┴─────────┐
                      │   vint    │   │    vdmz    │
-                     │ 10.N.10.0 │   │ 10.N.20.0  │
+                     │ 10.10.10.0│   │ 10.10.20.0 │
                      │  /24      │   │   /24      │
                      │ gw .1     │   │  gw .1     │
                      │ DHCP      │   │  DHCP      │
@@ -46,8 +46,12 @@ vers Internet, **sans écrire une seule règle iptables ni éditer `/etc/network
 
 | VNet | Zone | Subnet | Gateway | DHCP | SNAT | Rôle |
 |---|---|---|---|---|---|---|
-| `vint` | `zint` | `10.N.10.0/24` | `10.N.10.1` | `.100-.200` | ✅ | Back-office, bases |
-| `vdmz` | `zdmz` | `10.N.20.0/24` | `10.N.20.1` | `.100-.200` | ✅ | Services exposés |
+| `vint` | `zint` | `10.10.10.0/24` | `10.10.10.1` | `.100-.200` | ✅ | Back-office, bases |
+| `vdmz` | `zdmz` | `10.10.20.0/24` | `10.10.20.1` | `.100-.200` | ✅ | Services exposés |
+
+🧠 Ces réseaux vivent **derrière le NAT de votre nœud** : ils sont identiques sur tous
+les postes de la salle sans jamais entrer en conflit, exactement comme six box Internet
+qui distribuent toutes du `192.168.1.0/24`.
 
 ---
 
@@ -65,6 +69,11 @@ sysctl net.ipv4.ip_forward          # → 1
 # Le TP07 est bien nettoyé
 ip -br a | grep vmbr1               # → aucune sortie
 iptables -t nat -L POSTROUTING -n | grep 10\\.        # → aucune sortie
+
+# Le dépôt de la formation, sur le nœud : c'est la première fois qu'on s'en sert ici
+# (scripts et fichiers de référence du SDN). Il restera utile aux TP 09, 10, 16…
+[ -d /root/formation ] || git clone <url-du-depot> /root/formation
+ls /root/formation/lab/sdn/standalone/
 ```
 
 🪤 Si `dnsmasq` est actif, le DHCP du SDN ne démarrera pas (port 67 occupé).
@@ -91,7 +100,7 @@ pvesh get /cluster/sdn/ipams
 | Champ | Valeur |
 |---|---|
 | ID | `zint` |
-| Nodes | `pveN` |
+| Nodes | vide (= tous les nœuds — il n'y en a qu'un) |
 | IPAM | `pve` |
 | Automatic DHCP | ✅ |
 | MTU | vide (1500) |
@@ -101,11 +110,14 @@ Puis la zone `zdmz`, à l'identique.
 ### En CLI
 
 ```bash
-N=3
-pvesh create /cluster/sdn/zones --zone zint --type simple --nodes pve$N --ipam pve --dhcp dnsmasq
-pvesh create /cluster/sdn/zones --zone zdmz --type simple --nodes pve$N --ipam pve --dhcp dnsmasq
+pvesh create /cluster/sdn/zones --zone zint --type simple --ipam pve --dhcp dnsmasq
+pvesh create /cluster/sdn/zones --zone zdmz --type simple --ipam pve --dhcp dnsmasq
 pvesh get /cluster/sdn/zones
 ```
+
+🧠 Pas de `--nodes` : sans cette option, la zone s'applique à **tous** les nœuds — et
+vous n'en avez qu'un. Elle servira au jour 4, pour restreindre une zone à une partie du
+cluster.
 
 🧠 **`--dhcp dnsmasq`** est ce qui déclenche la création d'une instance dnsmasq dédiée
 par zone. Sans cette option, l'IPAM attribuera bien des IP mais rien ne les distribuera.
@@ -119,15 +131,15 @@ par zone. Sans cette option, l'IPAM attribuera bien des IP mais rien ne les dist
 | Champ | `vint` | `vdmz` |
 |---|---|---|
 | Name | `vint` | `vdmz` |
-| Alias | `Réseau interne eN` | `DMZ eN` |
+| Alias | `Réseau interne` | `DMZ` |
 | Zone | `zint` | `zdmz` |
 | Tag | vide | vide |
 | VLAN Aware | non | non |
 | Isolate Ports | non | non |
 
 ```bash
-pvesh create /cluster/sdn/vnets --vnet vint --zone zint --alias "Reseau interne e$N"
-pvesh create /cluster/sdn/vnets --vnet vdmz --zone zdmz --alias "DMZ e$N"
+pvesh create /cluster/sdn/vnets --vnet vint --zone zint --alias "Reseau interne"
+pvesh create /cluster/sdn/vnets --vnet vdmz --zone zdmz --alias "DMZ"
 ```
 
 🪤 **Nom de VNet : 8 caractères alphanumériques maximum**, et il devient un nom
@@ -142,28 +154,32 @@ Sélectionnez `vint` → onglet **Subnets** → **Create**.
 **Onglet Subnet**
 | Champ | Valeur |
 |---|---|
-| Subnet | `10.N.10.0/24` |
-| Gateway | `10.N.10.1` |
+| Subnet | `10.10.10.0/24` |
+| Gateway | `10.10.10.1` |
 | SNAT | ✅ |
 | DNS zone prefix | vide |
 
 **Onglet DHCP Ranges**
 | Start | End |
 |---|---|
-| `10.N.10.100` | `10.N.10.200` |
+| `10.10.10.100` | `10.10.10.200` |
 
-Idem pour `vdmz` avec `10.N.20.0/24`.
+Idem pour `vdmz` avec `10.10.20.0/24`.
 
 ```bash
-N=3
 pvesh create /cluster/sdn/vnets/vint/subnets \
-  --subnet 10.$N.10.0/24 --type subnet --gateway 10.$N.10.1 --snat 1 \
-  --dhcp-range start-address=10.$N.10.100,end-address=10.$N.10.200
+  --subnet 10.10.10.0/24 --type subnet --gateway 10.10.10.1 --snat 1 \
+  --dhcp-range start-address=10.10.10.100,end-address=10.10.10.200
 
 pvesh create /cluster/sdn/vnets/vdmz/subnets \
-  --subnet 10.$N.20.0/24 --type subnet --gateway 10.$N.20.1 --snat 1 \
-  --dhcp-range start-address=10.$N.20.100,end-address=10.$N.20.200
+  --subnet 10.10.20.0/24 --type subnet --gateway 10.10.20.1 --snat 1 \
+  --dhcp-range start-address=10.10.20.100,end-address=10.10.20.200
 ```
+
+> 💡 Tout ce chapitre (zones, VNets, subnets, apply) est scripté dans
+> `/root/formation/lab/scripts/sdn-simple-bootstrap.sh`, et les fichiers de référence
+> sont dans `/root/formation/lab/sdn/standalone/` — à copier tels quels dans
+> `/etc/pve/sdn/`, rien à adapter.
 
 ---
 
@@ -194,8 +210,8 @@ ip -br a | grep -E 'vint|vdmz'
 Vous devez voir :
 
 ```
-vint    UNKNOWN  10.3.10.1/24
-vdmz    UNKNOWN  10.3.20.1/24
+vint    UNKNOWN  10.10.10.1/24
+vdmz    UNKNOWN  10.10.20.1/24
 ```
 
 ```bash
@@ -211,7 +227,7 @@ ls /etc/dnsmasq.d/
 Pour le NAT, vous devez voir une ligne par subnet en SNAT, du type :
 
 ```
--A POSTROUTING -s 10.3.10.0/24 -o vmbr0 -m mark --mark 0x0/0x80000000 -j SNAT --to-source 172.30.30.153
+-A POSTROUTING -s 10.10.10.0/24 -o vmbr0 -m mark --mark 0x0/0x80000000 -j SNAT --to-source <IP-de-votre-nœud>
 ```
 
 🧠 **`iptables` sur Debian 13, c'est `iptables-nft`.** Depuis Debian 10, la commande
@@ -244,57 +260,54 @@ C'est aussi l'occasion de voir qu'un changement de bridge est une opération ban
 
 | Machine | VMID | OS | Nouveau VNet | Rôle |
 |---|---|---|---|---|
-| `srv01-eN` | `N01` | Debian 13 (ISO) | `vint` | Poste d'admin / serveur interne |
-| `win01-eN` | `N02` | Windows Server 2025 | `vint` | Serveur Windows, RDP |
-| `ct-alpine-eN` | `N11` | Alpine (LXC) | `vdmz` | Frontal web |
-| `ct-rocky-eN` | `N12` | Rocky (LXC) | `vdmz` | Second frontal web |
+| `srv01` | `101` | Debian 13 (ISO) | `vint` | Poste d'admin / serveur interne |
+| `win01` | `102` | Windows Server 2025 | `vint` | Serveur Windows, RDP |
+| `ct-alpine` | `111` | Alpine (LXC) | `vdmz` | Frontal web |
+| `ct-rocky` | `112` | Rocky (LXC) | `vdmz` | Second frontal web |
 
 ```bash
-N=3
-
 # --- Zone interne ------------------------------------------------------------
-qm set ${N}01 --net0 virtio,bridge=vint,firewall=1,mtu=1
-qm set ${N}02 --net0 virtio,bridge=vint,firewall=1,mtu=1
+qm set 101 --net0 virtio,bridge=vint,firewall=1,mtu=1
+qm set 102 --net0 virtio,bridge=vint,firewall=1,mtu=1
 
 # --- DMZ ---------------------------------------------------------------------
-pct set ${N}11 --net0 name=eth0,bridge=vdmz,firewall=1,ip=dhcp
-pct set ${N}12 --net0 name=eth0,bridge=vdmz,firewall=1,ip=dhcp
+pct set 111 --net0 name=eth0,bridge=vdmz,firewall=1,ip=dhcp
+pct set 112 --net0 name=eth0,bridge=vdmz,firewall=1,ip=dhcp
 ```
 
 🧠 **`mtu=1` sur la carte virtio** signifie « hérite du MTU du bridge ». Ici le bridge
 est à 1500, ça ne change rien — mais **au jour 4, en EVPN à 1450, ce réglage sera
 vital**. Prenez l'habitude dès maintenant.
 
-### Repasser les VM en DHCP
+### Faire reprendre un bail aux machines
 
-`srv01` et `win01` ont une IP statique du LAN salle configurée **à l'intérieur** du
-système. Il faut les repasser en DHCP pour que l'IPAM fasse son travail.
-
-**Debian** (`srv01`, console `qm terminal N01`) :
-
-```bash
-sudo sed -i 's/^iface ens18 inet static/iface ens18 inet dhcp/' /etc/network/interfaces
-sudo sed -i '/address\|gateway\|netmask/d' /etc/network/interfaces
-sudo systemctl restart networking
-ip -br a
-```
-
-**Windows** (`win01`, console noVNC, PowerShell) :
-
-```powershell
-$if = (Get-NetAdapter | Where-Object Status -eq 'Up').ifIndex
-Remove-NetIPAddress -InterfaceIndex $if -Confirm:$false
-Remove-NetRoute -InterfaceIndex $if -Confirm:$false -ErrorAction SilentlyContinue
-Set-NetIPInterface -InterfaceIndex $if -Dhcp Enabled
-Set-DnsClientServerAddress -InterfaceIndex $if -ResetServerAddresses
-ipconfig /renew
-ipconfig /all
-```
+`srv01` et `win01` sont **déjà en DHCP** depuis leur installation (TP 03 et 04) : elles
+n'ont rien à changer à l'intérieur, il leur suffit de redemander un bail — c'est
+maintenant le `dnsmasq@zint` du SDN qui répond, plus le routeur de la salle. Un
+redémarrage fait l'affaire :
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-pct reboot ${N}11 ; pct reboot ${N}12 ; qm reboot ${N}01 ; qm reboot ${N}02
+pct reboot 111 ; pct reboot 112 ; qm reboot 101 ; qm reboot 102
 ```
+
+> 🪤 Si vous aviez mis une IP **statique** dans une VM (une adresse du LAN salle
+> attribuée par le formateur, faute de DHCP), repassez-la en DHCP avant :
+>
+> **Debian** (`qm terminal 101`) :
+> ```bash
+> sudo sed -i 's/^iface ens18 inet static/iface ens18 inet dhcp/' /etc/network/interfaces
+> sudo sed -i '/address\|gateway\|netmask/d' /etc/network/interfaces
+> sudo systemctl restart networking
+> ```
+> **Windows** (console noVNC, PowerShell) :
+> ```powershell
+> $if = (Get-NetAdapter | Where-Object Status -eq 'Up').ifIndex
+> Remove-NetIPAddress -InterfaceIndex $if -Confirm:$false
+> Remove-NetRoute -InterfaceIndex $if -Confirm:$false -ErrorAction SilentlyContinue
+> Set-NetIPInterface -InterfaceIndex $if -Dhcp Enabled
+> Set-DnsClientServerAddress -InterfaceIndex $if -ResetServerAddresses
+> ipconfig /renew
+> ```
 
 ### Vérifier l'attribution par l'IPAM
 
@@ -306,17 +319,16 @@ pvesh get /cluster/sdn/ipam/pve/status --output-format json | jq -r \
 ```
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-for id in ${N}01 ${N}02; do
+for id in 101 102; do
   echo -n "VM $id : "
   qm agent $id network-get-interfaces 2>/dev/null \
     | jq -r '[.[]|."ip-addresses"[]?|select(."ip-address-type"=="ipv4")|."ip-address"]|join(" ")'
 done
-pct exec ${N}11 -- ip -4 -br a show eth0
-pct exec ${N}12 -- ip -4 -br a show eth0
+pct exec 111 -- ip -4 -br a show eth0
+pct exec 112 -- ip -4 -br a show eth0
 ```
 
-✅ Vous devez voir des adresses en `10.N.10.1xx` (interne) et `10.N.20.1xx` (DMZ).
+✅ Vous devez voir des adresses en `10.10.10.1xx` (interne) et `10.10.20.1xx` (DMZ).
 
 ---
 
@@ -325,60 +337,73 @@ pct exec ${N}12 -- ip -4 -br a show eth0
 ### Depuis `srv01` (zone interne)
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-qm terminal ${N}01      # Ctrl+O pour sortir
+qm terminal 101      # Ctrl+O pour sortir
 ```
 
 ```bash
 ip -br a ; ip route
-ping -c2 10.3.10.1        # gateway locale        → OK
+ping -c2 10.10.10.1       # gateway locale        → OK
 ping -c2 1.1.1.1          # Internet via SNAT     → OK
 curl -sI https://deb.debian.org | head -1
-ping -c2 10.3.20.100      # une machine de la DMZ → OK (rien ne bloque encore !)
+ping -c2 10.10.20.100     # une machine de la DMZ → OK (rien ne bloque encore !)
 ```
 
 ### Depuis Windows
 
 ```powershell
-Test-NetConnection 10.3.10.1
+Test-NetConnection 10.10.10.1
 Test-NetConnection 1.1.1.1
-Test-NetConnection 10.3.20.100 -Port 80
+Test-NetConnection 10.10.20.100 -Port 80
 ```
 
+### Depuis votre PC 💻
+
+La route posée au TP 07 couvre déjà ces réseaux (`10.10.0.0/16 via $PVE`) :
+
+```bash
+PVE=172.30.30.___                         # ⚠ l'IP de VOTRE nœud
+ip route | grep 10.10.0.0 || sudo ip route add 10.10.0.0/16 via $PVE   # si elle a sauté
+ping -c2 <IP-de-srv01>                    # 10.10.10.1xx
+ssh eleve@<IP-de-srv01> hostname          # ✅ direct : le nœud route, le PC entre
+curl -sI http://<IP-de-ct-alpine>/ | head -1
+```
+
+🧠 Le SNAT du subnet ne concerne que le trafic **sortant** des VM vers le LAN et
+Internet. Dans l'autre sens, le nœud route simplement — tant que son firewall le
+permet, ce qui sera l'affaire du TP 09.
+
 🚨 **Constat important** : `vint` et `vdmz` sont **deux réseaux différents, mais l'hôte
-route entre les deux**. Rien n'est cloisonné. Un serveur compromis en DMZ atteint
-directement votre serveur Windows et son RDP.
+route entre les deux** — et depuis le LAN de la salle vers chacun d'eux. Rien n'est
+cloisonné. Un serveur compromis en DMZ atteint directement votre serveur Windows et son
+RDP.
 
 C'est exactement le problème que le **TP 09** va résoudre.
 
 ### Préparer les services pour le TP 09
 
-Sur `ct-alpine-eN` (DMZ) — nginx est déjà installé au TP 05 :
+Sur `ct-alpine` (DMZ) — nginx est déjà installé au TP 05 :
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-pct exec ${N}11 -- sh -c 'rc-service nginx status || rc-service nginx start'
-pct exec ${N}11 -- sh -c 'echo "<h1>Alpine en DMZ 🏔️</h1>" > /var/lib/nginx/html/index.html'
+pct exec 111 -- sh -c 'rc-service nginx status || rc-service nginx start'
+pct exec 111 -- sh -c 'echo "<h1>Alpine en DMZ 🏔️</h1>" > /var/lib/nginx/html/index.html'
 ```
 
-Sur `ct-rocky-eN` (DMZ) :
+Sur `ct-rocky` (DMZ) :
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-pct exec ${N}12 -- bash -c 'systemctl enable --now nginx; echo "<h1>Rocky en DMZ 🪨</h1>" > /usr/share/nginx/html/index.html'
+pct exec 112 -- bash -c 'systemctl enable --now nginx; echo "<h1>Rocky en DMZ 🪨</h1>" > /usr/share/nginx/html/index.html'
 ```
 
-Sur `srv01-eN` (interne), on simule une base de données :
+Sur `srv01` (interne), on simule une base de données :
 
 ```bash
-N=3     # ⚠ VOTRE numéro d'élève
-qm terminal ${N}01
+qm terminal 101
 sudo apt install -y postgresql netcat-openbsd
 sudo systemctl enable --now postgresql
 sudo ss -tlnp | grep 5432
 ```
 
-Sur `win01-eN`, RDP est déjà actif (TP 04) : ce sera notre cible de test « service
+Sur `win01`, RDP est déjà actif (TP 04) : ce sera notre cible de test « service
 interne sensible » au TP 09.
 
 ---
@@ -420,8 +445,8 @@ tcpdump -ni vdmz icmp -c 5
 Faites une modification, par exemple élargir la plage DHCP :
 
 ```bash
-pvesh set /cluster/sdn/vnets/vint/subnets/zint-10.3.10.0-24 \
-  --dhcp-range start-address=10.3.10.50,end-address=10.3.10.200
+pvesh set /cluster/sdn/vnets/vint/subnets/zint-10.10.10.0-24 \
+  --dhcp-range start-address=10.10.10.60,end-address=10.10.10.200
 ```
 
 🌐 Observez : dans l'UI, le subnet passe en *pending* (italique).
@@ -448,14 +473,15 @@ la relire, et l'appliquer d'un seul coup. C'est un vrai avantage opérationnel.
 | « zone already exists » | Nettoyer avec `pvesh delete /cluster/sdn/zones/<zone>` (supprimer d'abord subnets puis vnets) |
 | Bridge présent mais VM isolée | La VM est sur `vmbr0`, pas sur `vint` : `qm config <id> \| grep net0` |
 
-Script de remise à zéro complet : `lab/scripts/reset-sdn.sh`.
+Script de remise à zéro complet : `/root/formation/lab/scripts/reset-sdn.sh`.
 
 ---
 
 ## ✅ Checklist de validation
 
 - [ ] Les zones `zint` et `zdmz` existent et sont appliquées (pas de *pending*)
-- [ ] `ip -br a` montre `vint` en `10.N.10.1/24` et `vdmz` en `10.N.20.1/24`
+- [ ] `ip -br a` montre `vint` en `10.10.10.1/24` et `vdmz` en `10.10.20.1/24`
+- [ ] Depuis mon PC, `ssh eleve@<IP-de-srv01>` répond directement (route du TP 07)
 - [ ] Les 4 machines ont obtenu une IP **par DHCP**
 - [ ] L'écran IPAM liste ces IP avec leur VMID
 - [ ] Chaque machine ping Internet (SNAT fonctionnel)

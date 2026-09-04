@@ -51,12 +51,16 @@ vim terraform.tfvars
 Renseignez :
 
 ```hcl
-pve_endpoint  = "https://172.30.30.153:8006/"     # VOTRE nœud
-pve_api_token = "terraform@pve!tf=xxxxxxxx-...."  # VOTRE token
-pve_node      = "pve3"
-eleve         = 3
-ssh_public_key = "ssh-ed25519 AAAA... eleve3@formation"
+pve_endpoint   = "https://172.30.30.151:8006/"    # ⚠ l'IP de VOTRE nœud ($PVE)
+pve_host       = "172.30.30.151"                  # ⚠ idem (pour le SSH du provider)
+pve_api_token  = "terraform@pve!tf=xxxxxxxx-...." # VOTRE token
+ssh_public_key = "ssh-ed25519 AAAA... eleve@formation"
+# pve_node = "pve"   ← valeur par défaut : le hostname des jours 1-3, rien à changer
 ```
+
+🧠 **Aucun numéro à renseigner.** Aux jours 1-3, chacun est seul sur son nœud : les
+VMID, les noms et les réseaux sont fixés par le plan du TP 00, identiques pour tout le
+monde. La seule chose qui vous distingue, c'est l'IP de votre nœud.
 
 ```bash
 terraform init
@@ -105,22 +109,22 @@ provider "proxmox" {
 🧠 **Pourquoi un bloc `ssh` ?** L'API Proxmox ne permet pas de téléverser un
 *snippet* cloud-init. Le provider passe donc par SCP pour ces opérations.
 Sans clé SSH sur le nœud, la ressource `proxmox_virtual_environment_file`
-en `snippets` échoue. Assurez-vous que `ssh root@172.30.30.15N` fonctionne sans
+en `snippets` échoue. Assurez-vous que `ssh root@$PVE` fonctionne sans
 mot de passe.
 
 ### `main.tf` — une VM clonée depuis le template
 
 ```hcl
 resource "proxmox_virtual_environment_vm" "web" {
-  name      = "web01-e${var.eleve}"
+  name      = "web01"
   node_name = var.pve_node
-  # ⚠ +21 et non +20 : le VMID N20 est déjà pris par app01, cloné à la main au TP 10.
-  vm_id   = var.eleve * 100 + 21
-  pool_id = "eleve${var.eleve}"
-  tags    = ["terraform", "web", "eleve${var.eleve}"]
+  # Pas de vm_id : le provider demande le prochain VMID libre à Proxmox,
+  # comme « pvesh get /cluster/nextid ». Rien à calculer, ni seul ni en cluster.
+  pool_id = "lab"
+  tags    = ["terraform", "web", "dmz", "debian"]
 
   clone {
-    vm_id = var.template_debian # N90
+    vm_id = var.template_debian # 190 : tpl-debian13 (TP 10)
     full  = false               # linked clone : rapide, mais NON migrable (TP 10 §5)
   }
 
@@ -136,7 +140,7 @@ resource "proxmox_virtual_environment_vm" "web" {
   }
 
   network_device {
-    bridge   = "vint"          # le VNet SDN du TP 08
+    bridge   = var.vnet        # "vint" par défaut : le VNet SDN du TP 08
     model    = "virtio"
     mtu      = 1                # hérite du MTU du VNet
     firewall = true
@@ -189,14 +193,17 @@ terraform output
 Vérifiez côté Proxmox :
 
 ```bash
-ssh root@172.30.30.15N 'qm list; qm config <vmid> | head -20'
+ssh root@$PVE 'qm list; qm config <vmid> | head -20'
 ```
 
 Puis testez la VM :
 
 ```bash
+# le VMID a été choisi par Proxmox : « terraform output vm_id » le donne
+VMID=$(terraform output -raw vm_id)
 # l'IP est distribuée par l'IPAM : on la récupère via l'agent
-ssh root@$PVE_HOST "qm agent \$(qm list | awk '/web01/{print \$1}') network-get-interfaces" | jq -r '.[]|."ip-addresses"[]?|select(."ip-address-type"=="ipv4")|."ip-address"'
+ssh root@$PVE "qm agent $VMID network-get-interfaces" \
+  | jq -r '.[]|."ip-addresses"[]?|select(."ip-address-type"=="ipv4")|."ip-address"'
 ```
 
 ### Modifier
@@ -206,7 +213,7 @@ Changez `memory.dedicated` de 2048 à 4096 dans `main.tf`, puis :
 ```bash
 terraform plan     # doit montrer un ~ update in-place
 terraform apply
-ssh eleve@10.$N.10.<ip> 'free -m'
+ssh eleve@10.10.10.<ip> 'free -m'     # depuis votre PC, via la route du TP 07
 ```
 
 ### Détruire
@@ -222,8 +229,17 @@ terraform destroy
 ```bash
 cd ~/ProxmoxFormation/lab/terraform/02-parc-multi-os
 cp ../01-premiere-vm/terraform.tfvars .
+
+# Cette stack a une variable de plus : le template LXC Alpine (nom exact : pveam list local)
+ssh root@$PVE 'pveam list local | grep alpine'
+echo 'lxc_template_alpine = "local:vztmpl/alpine-3.22-default_20250617_amd64.tar.xz"' >> terraform.tfvars
+
 terraform init && terraform plan
 ```
+
+🪤 Sans cette ligne : `No value for required variable "lxc_template_alpine"`. Le
+`terraform.tfvars.example` de la stack la contient — c'est lui qu'on copierait en
+partant de zéro.
 
 Cette stack utilise `for_each` sur une **map de machines** : ajouter une VM = ajouter
 trois lignes de configuration.
@@ -249,14 +265,13 @@ variable "machines" {
 resource "proxmox_virtual_environment_vm" "parc" {
   for_each  = var.machines
 
-  name      = "${each.key}-e${var.eleve}"
+  name      = each.key
   node_name = var.pve_node
-  # Un VMID déterministe et stable : la map est triée, donc l'ordre ne bouge pas
-  # quand on ajoute une machine. Base à +22 pour ne heurter ni app01 (N20) ni
-  # web01 (N21) de la stack précédente.
-  vm_id   = var.eleve * 100 + 22 + index(sort(keys(var.machines)), each.key)
-  pool_id = "eleve${var.eleve}"
-  tags    = concat(["terraform", "eleve${var.eleve}"], each.value.tags)
+  # Pas de vm_id : Proxmox attribue le prochain libre à chaque machine. Le VMID
+  # n'est donc pas prévisible — on retrouve une machine par son NOM (« qm list »),
+  # ou dans « terraform output vmids ».
+  pool_id = "lab"
+  tags    = concat(["terraform"], each.value.tags)
 
   clone {
     vm_id = var.templates[each.value.template]
@@ -314,14 +329,13 @@ terraform output -json ips | jq
 ### Le conteneur Alpine, en Terraform aussi
 
 ```hcl
-resource "proxmox_virtual_environment_container" "alpine" {
+resource "proxmox_virtual_environment_container" "cache" {
   node_name = var.pve_node
-  vm_id     = var.eleve * 100 + 15
-  pool_id   = "eleve${var.eleve}"
-  tags      = ["terraform", "lxc"]
+  pool_id   = "lab"
+  tags      = ["terraform", "cache", "dmz", "alpine"]
 
   initialization {
-    hostname = "ct-tf-e${var.eleve}"
+    hostname = "ct-cache"
     ip_config { ipv4 { address = "dhcp" } }
 
     # ⚠ La clé va sur ROOT du conteneur, pas sur « eleve ».
@@ -336,7 +350,7 @@ resource "proxmox_virtual_environment_container" "alpine" {
   }
 
   operating_system {
-    template_file_id = var.lxc_template     # ex. "local:vztmpl/alpine-3.22-..."
+    template_file_id = var.lxc_template_alpine # ex. "local:vztmpl/alpine-3.22-..."
     type             = "alpine"
   }
 
@@ -364,7 +378,8 @@ resource "proxmox_virtual_environment_container" "alpine" {
 Le bloc `initialization` de Terraform couvre 80 % des besoins. Pour le reste
 (paquets, fichiers, scripts), on écrit un vrai `user-data`.
 
-`lab/cloud-init/user-data-web.yaml` :
+`lab/cloud-init/user-data-web.yaml` (version simplifiée — le fichier du dépôt ajoute
+le compte `eleve`, un vhost `/health` sur 8080 et `node-exporter`) :
 
 ```yaml
 #cloud-config
@@ -403,7 +418,7 @@ resource "proxmox_virtual_environment_file" "user_data_web" {
   node_name    = var.pve_node
 
   source_raw {
-    file_name = "user-data-web-e${var.eleve}.yaml"
+    file_name = "user-data-web.yaml"
     data      = file("${path.module}/../../cloud-init/user-data-web.yaml")
   }
 }
@@ -427,7 +442,7 @@ Test :
 ```bash
 terraform apply
 sleep 60
-curl http://10.$N.20.<ip-web01>/     # depuis srv01, autorisé par le TP 09
+curl http://10.10.20.<ip-web01>/     # depuis srv01 (zone interne), autorisé par le TP 09
 ```
 
 ---
@@ -459,8 +474,8 @@ crash.log
 
 🪤 **`.terraform.lock.hcl`, lui, se COMMIT.** C'est une erreur classique de le mettre
 dans le `.gitignore` : ce fichier fige la version exacte du provider **et ses sommes
-de contrôle**. Sans lui, `terraform init` peut installer une version différente chez
-chaque élève — exactement le problème que l'épinglage `~> 0.111` cherche à éviter.
+de contrôle**. Sans lui, `terraform init` peut installer une version différente sur
+chaque poste — exactement le problème que l'épinglage `~> 0.111` cherche à éviter.
 
 ```
    versions.tf          « je veux du ~> 0.111 »        ← l'intention
@@ -469,7 +484,7 @@ chaque élève — exactement le problème que l'épinglage `~> 0.111` cherche �
 
 🪤 **Un lock généré sur un Mac ne suffit pas à une salle sous Linux.** Le fichier
 enregistre un hash `h1:` **par plateforme** : si vous ne verrouillez que la vôtre,
-le premier `terraform init` de chaque élève modifiera le fichier — donc un `git diff`
+le premier `terraform init` de chaque poste modifiera le fichier — donc un `git diff`
 parasite chez tout le monde. Verrouillez explicitement les plateformes visées :
 
 ```bash
@@ -496,8 +511,8 @@ terraform state list
 terraform state rm proxmox_virtual_environment_vm.web
 terraform apply
 
-# Importer une VM existante dans le state
-terraform import proxmox_virtual_environment_vm.web pve3/320
+# Importer une VM existante dans le state (<vmid> : voir « qm list »)
+terraform import proxmox_virtual_environment_vm.web pve/<vmid>
 ```
 
 | Erreur | Cause | Solution |
@@ -505,7 +520,7 @@ terraform import proxmox_virtual_environment_vm.web pve3/320
 | `401 authentication failure` | Format du token | `user@realm!tokenid=secret` |
 | `403 Permission check failed` | Rôle incomplet | Ajouter le privilège manquant au rôle `TerraformProv` |
 | `unable to parse directory volume name` | Snippet sans SSH | Vérifier le bloc `ssh` du provider et `ssh root@node` |
-| `VM <id> already exists` | Conflit de VMID | Respecter le plan de VMID (TP 00) |
+| `VM <id> already exists` | Deux `apply` simultanés ont obtenu le même `nextid` (rare) | Relancer `terraform apply` |
 | `timeout while waiting for agent` | Agent absent dans le template | Réinstaller le template avec `qemu-guest-agent` |
 | Le clone reste bloqué | Template sur un stockage sans COW | `full = true` |
 | `Invalid resource type: ..._sdn_vnet` | Provider < 0.84.0 | Épingler `~> 0.111`, `terraform init -upgrade` |
@@ -521,7 +536,8 @@ terraform import proxmox_virtual_environment_vm.web pve3/320
 - [ ] `curl http://<ip-web01>/` renvoie la page cloud-init
 - [ ] `terraform plan` après `apply` affiche « No changes »
 - [ ] Une modification de RAM produit un `~ update in-place` et s'applique à chaud
-- [ ] `terraform destroy` nettoie tout, `qm list` ne montre plus que les templates
+- [ ] `terraform destroy` nettoie tout : `qm list` ne montre plus aucune machine Terraform (les templates, `srv01`, `win01`, `cloud01` et les CT manuels restent)
+- [ ] **Puis `terraform apply` à nouveau** : les TP 12 et 13 ont besoin du parc `web01`/`app01`/`db01`/`ct-cache`
 - [ ] Je sais lire un plan et repérer un `-/+` (recréation)
 - [ ] `terraform fmt && terraform validate` passent sans rien signaler
 
