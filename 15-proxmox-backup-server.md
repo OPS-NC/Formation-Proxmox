@@ -77,6 +77,7 @@ qm create 901 \
   --cores 2 --memory 4096 --cpu x86-64-v2-AES \
   --net0 virtio,bridge=vmbr0,firewall=1 \
   --agent enabled=1 \
+  --serial0 socket \
   --protection 1
 qm start 901
 ```
@@ -110,6 +111,7 @@ L'installateur est le même que celui de PVE. Après le premier démarrage :
 PBS=172.30.30.___            # ⚠ l'adresse annoncée par le formateur
 ssh root@$PBS
 proxmox-backup-manager version
+systemctl enable --now serial-getty@ttyS0.service   # console série : qm terminal 901
 ```
 
 Interface web : **`https://$PBS:8007`** (port **8007**, pas 8006).

@@ -147,17 +147,12 @@ FORWARD ACCEPT -source +sdn/vdmz-all -p udp -dport 123 -log nolog # NTP
 # FORWARD ACCEPT -source +sdn/vsrv-all -p udp -dport 53 -log nolog
 
 # ── Jour 4 — VNets EVPN (à décommenter au TP 17, quand vprod/vpub/vdb existent) ──
-# Même logique : DHCP par interface, DNS/ping vers la gateway anycast, puis la
-# matrice inter-VNet en FORWARD (voir TP 17 §10). Tant que les IPSets n'existent
-# pas, proxmox-firewall ignore ces lignes en silence — d'où le commentaire.
-# IN ACCEPT -i vprod -p udp -dport 67 -log nolog
-# IN ACCEPT -i vpub -p udp -dport 67 -log nolog
-# IN ACCEPT -i vdb -p udp -dport 67 -log nolog
-# IN ACCEPT -source +sdn/vprod-all -p udp -dport 53 -log nolog
+# Pas de DHCP ni de DNS en EVPN (adressage statique, TP 17 §8) : seul le ping de la
+# gateway anycast, puis la matrice inter-VNet en FORWARD (voir TP 17 §10). Tant que
+# les IPSets n'existent pas, proxmox-firewall ignore ces lignes en silence — d'où le
+# commentaire.
 # IN ACCEPT -source +sdn/vprod-all -p icmp -log nolog
-# IN ACCEPT -source +sdn/vpub-all -p udp -dport 53 -log nolog
 # IN ACCEPT -source +sdn/vpub-all -p icmp -log nolog
-# IN ACCEPT -source +sdn/vdb-all -p udp -dport 53 -log nolog
 # IN ACCEPT -source +sdn/vdb-all -p icmp -log nolog
 # FORWARD ACCEPT -source +sdn/vprod-all -dest +sdn/vdb-all -p tcp -dport 5432 -log nolog
 # FORWARD ACCEPT -source +sdn/vprod-all -dest +sdn/vdb-all -p tcp -dport 3306 -log nolog

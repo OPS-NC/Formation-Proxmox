@@ -83,7 +83,8 @@ SSH** dans cette formation.
 
 ## 🌐 Réseaux SDN — jour 4 (cluster, zone `EVPN`)
 
-**Partagés par tout le monde.** L'IPAM cluster garantit l'unicité des adresses.
+**Partagés par tout le monde**, en **adressage statique** : le DHCP du SDN n'existe que
+sur les zones Simple. Le dernier octet code le nœud (`X` = numéro du nœud).
 
 | Objet | Valeur |
 |---|---|
@@ -92,11 +93,23 @@ SSH** dans cette formation.
 | Exit nodes | `pve1`, `pve2` — **primaire : `pve1`** |
 | Options | `advertise-subnets 1`, `exitnodes-local-routing 1` |
 
-| VNet | VNI | Subnet | Gateway | DHCP | SNAT | Usage |
+| VNet | VNI | Subnet | Gateway | Adressage | SNAT | Usage |
 |---|---|---|---|---|---|---|
-| `vprod` | `11010` | `10.60.10.0/24` | `10.60.10.1` | `.100`–`.240` | ✅ | Production |
-| `vpub` | `11020` | `10.60.20.0/24` | `10.60.20.1` | `.100`–`.240` | ✅ | DMZ publique |
-| `vdb` | `11030` | `10.60.30.0/24` | `10.60.30.1` | `.100`–`.240` | ❌ | Bases, **sans Internet** |
+| `vprod` | `11010` | `10.60.10.0/24` | `10.60.10.1` | statique | ✅ | Production |
+| `vpub` | `11020` | `10.60.20.0/24` | `10.60.20.1` | statique | ✅ | DMZ publique |
+| `vdb` | `11030` | `10.60.30.0/24` | `10.60.30.1` | statique | ❌ | Bases, **sans Internet** |
+
+| Machine (sur `pveX`) | VNet | IP | TP |
+|---|---|---|---|
+| `evpn-prod-pveX` | `vprod` | `10.60.10.1X` | 17 |
+| `evpn-pub-pveX` | `vpub` | `10.60.20.1X` | 17 |
+| `evpn-db-pveX` (facultative) | `vdb` | `10.60.30.1X` | 17 |
+| `ceph-vm-pveX` | `vprod` | `10.60.10.2X` | 18 |
+| `app-pveX` · `cache-pveX` · `adm-pveX` | `vprod` | `10.60.10.3X` · `.4X` · `.5X` | 21 |
+| `front-pveX` | `vpub` | `10.60.20.3X` | 21 |
+| `data-pveX` | `vdb` | `10.60.30.3X` | 21 |
+
+DNS des VM : `1.1.1.1`. Gateway : le `.1` du subnet (anycast, présente sur les six nœuds).
 
 **Ports à laisser passer entre nœuds** :
 

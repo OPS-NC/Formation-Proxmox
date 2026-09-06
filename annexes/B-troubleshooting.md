@@ -395,14 +395,15 @@ journalctl -u corosync | grep -i -E 'token|retransmit'
 
 ### L'interface ne propose aucun disque pour créer un OSD
 
-C'est normal : elle ne liste que les **disques entiers non utilisés**. Un volume LVM
-n'en est pas un. Passez en CLI :
+C'est normal : elle ne liste que les **disques entiers non utilisés**, et `pveceph osd
+create` non plus. Un volume LVM n'en est pas un. Commande Ceph native (TP 18 §6.5) :
 
 ```bash
-pveceph osd create /dev/pve/ceph-osd
-# ou, si pveceph refuse :
+mkdir -p /var/lib/ceph/bootstrap-osd
 ceph auth get client.bootstrap-osd -o /var/lib/ceph/bootstrap-osd/ceph.keyring
+chown -R ceph:ceph /var/lib/ceph/bootstrap-osd
 ceph-volume lvm create --data pve/ceph-osd --bluestore
+ceph-volume lvm activate --all
 ```
 
 ### `ceph-volume` : `unable to find keyring`

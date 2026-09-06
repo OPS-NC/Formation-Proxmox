@@ -78,6 +78,12 @@ nœud** (`<nœud>` = `pve3` → `front-pve3`) pour vous y retrouver dans la vue 
 > `pvesh get /cluster/nextid`. Fixez `pve_node` à votre nœud
 > (`pve_node = "pve3"`), et créez un **pool dédié à votre rendu** (ex. `karembeu-<nœud>`) :
 > c'est lui que ciblera votre job de sauvegarde.
+>
+> ⚠️ **Adressage statique** : pas de DHCP en zone EVPN (TP 17 §8). Dans `ip_config`,
+> remplacez `address = "dhcp"` par une adresse fixe et un `gateway`. Plan par nœud
+> (`X` = votre numéro) : `app` `10.60.10.3X`, `cache` `10.60.10.4X`, `adm` `10.60.10.5X`,
+> `front` `10.60.20.3X`, `data` `10.60.30.3X`. DNS `1.1.1.1`. CPU `x86-64-v3` pour `data`
+> (Rocky 10), `x86-64-v2-AES` ailleurs ; `serial_device {}` + `vga serial0` partout.
 
 > 🎯 **`data` sur `local-lvm` : ce n'est pas un oubli, c'est l'arbitrage à défendre.**
 >

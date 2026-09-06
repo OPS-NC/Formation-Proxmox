@@ -224,7 +224,10 @@ pveceph init --network 172.30.30.0/24 --size 3 --min_size 2
 pveceph mon create                      # sur 3 nœuds
 pveceph mgr create                      # sur 2 nœuds
 pveceph mds create                      # pour CephFS
-pveceph osd create /dev/pve/ceph-osd    # ⭐ un LV : CLI obligatoire, l'UI ne le propose pas
+pveceph osd create /dev/sdb              # disque entier seulement
+# ⭐ sur un volume logique : ni l'UI ni pveceph ne l'acceptent → commande Ceph native
+ceph auth get client.bootstrap-osd -o /var/lib/ceph/bootstrap-osd/ceph.keyring
+ceph-volume lvm create --data pve/ceph-osd --bluestore && ceph-volume lvm activate --all
 pveceph osd destroy <id> --cleanup
 pveceph pool create vm-store --size 3 --min_size 2 --pg_autoscale_mode on --add_storages 1
 pveceph fs create --name cephfs --add-storage 1

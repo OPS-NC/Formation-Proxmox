@@ -13,6 +13,7 @@ set -euo pipefail
 # ─── Valeurs par défaut ──────────────────────────────────────────────────────
 OS=""; VMID=""
 POOL="lab"
+CPU="x86-64-v2-AES"   # migrable entre nœuds hétérogènes ; Rocky 10 exige x86-64-v3
 STORAGE="local-lvm"
 BRIDGE="vint"        # le VNet interne du TP 08 ; --bridge vmbr0 avant le SDN
 DISK_SIZE="20G"
@@ -86,7 +87,9 @@ case "$OS" in
     FILE="Rocky-10-GenericCloud-Base.latest.x86_64.qcow2"; NAME="tpl-rocky10"
     PKGS="qemu-guest-agent,curl,vim,python3"
     # firewalld est actif par défaut sur Rocky : on filtre côté Proxmox (TP 09)
-    EXTRA_CMD="systemctl enable qemu-guest-agent; systemctl disable firewalld || true" ;;
+    EXTRA_CMD="systemctl enable qemu-guest-agent; systemctl disable firewalld || true"
+    # Rocky 10 est compilé pour la base x86-64-v3 : en v2 le noyau refuse de démarrer
+    CPU="x86-64-v3" ;;
   *) die "OS inconnu : $OS" ;;
 esac
 
@@ -129,7 +132,7 @@ qm create "$VMID" \
   --pool "$POOL" \
   --ostype l26 \
   --machine q35 \
-  --cpu x86-64-v2-AES \
+  --cpu "$CPU" \
   --cores "$CORES" --sockets 1 \
   --memory "$MEMORY" --balloon 0 \
   --scsihw virtio-scsi-single \

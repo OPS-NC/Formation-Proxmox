@@ -443,6 +443,9 @@ resource "proxmox_virtual_environment_vm" "mon" {
 
   agent { enabled = true }
 
+  serial_device {}
+  vga { type = "serial0" }
+
   cpu {
     cores = 2
     type  = "x86-64-v2-AES"

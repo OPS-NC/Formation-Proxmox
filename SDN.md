@@ -291,7 +291,8 @@ Ce que l'IPAM fait pour vous :
 ## 6. DHCP et DNS intégrés 🎫
 
 ### DHCP (dnsmasq)
-Activable **par zone** (`dhcp: dnsmasq`). Proxmox lance une instance dnsmasq par zone
+Activable **par zone** (`dhcp: dnsmasq`), **sur les zones Simple uniquement** : en EVPN
+(jour 4), les VM sont en statique. Proxmox lance une instance dnsmasq par zone
 (`systemctl status dnsmasq@<zone>`), pilotée par l'IPAM. On définit un ou plusieurs
 `dhcp-range` sur le subnet.
 

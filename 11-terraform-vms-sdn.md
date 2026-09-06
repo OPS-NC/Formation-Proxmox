@@ -126,6 +126,9 @@ resource "proxmox_virtual_environment_vm" "web" {
 
   agent { enabled = true }
 
+  serial_device {}                 # console série : qm terminal, logs de boot
+  vga { type = "serial0" }
+
   cpu {
     cores = 2
     type  = "x86-64-v2-AES"
@@ -276,9 +279,13 @@ resource "proxmox_virtual_environment_vm" "parc" {
 
   agent { enabled = true }
 
+  serial_device {}
+  vga { type = "serial0" }
+
   cpu {
     cores = each.value.cores
-    type  = "x86-64-v2-AES"
+    # Rocky 10 exige la base x86-64-v3 ; v2-AES pour le reste
+    type = each.value.template == "rocky" ? "x86-64-v3" : "x86-64-v2-AES"
   }
 
   memory {

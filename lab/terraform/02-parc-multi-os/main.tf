@@ -24,9 +24,16 @@ resource "proxmox_virtual_environment_vm" "parc" {
     enabled = true
   }
 
+  # Console série : c'est ce que « qm terminal » et les cloud-images utilisent
+  serial_device {}
+  vga {
+    type = "serial0"
+  }
+
   cpu {
     cores = each.value.cores
-    type  = "x86-64-v2-AES"
+    # Rocky 10 exige la base x86-64-v3 ; v2-AES pour le reste (migrable partout)
+    type = each.value.template == "rocky" ? "x86-64-v3" : "x86-64-v2-AES"
   }
 
   memory {

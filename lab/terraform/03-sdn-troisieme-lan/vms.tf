@@ -20,6 +20,10 @@ resource "proxmox_virtual_environment_vm" "mon" {
 
   agent { enabled = true }
 
+  # Console série : « qm terminal » et logs de boot des cloud-images
+  serial_device {}
+  vga { type = "serial0" }
+
   cpu {
     cores = 2
     type  = "x86-64-v2-AES"

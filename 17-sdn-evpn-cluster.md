@@ -198,7 +198,7 @@ route-reflectors, ou à de l'eBGP *unnumbered* : le rôle des **Fabrics** de PVE
 | Disable ARP-ND Suppression | ❌ | (à cocher seulement si IP flottantes/VRRP) |
 | MTU | **`1450`** | ⭐ 1500 − 50 octets d'entête VXLAN |
 | IPAM | `pve` | |
-| DHCP | `dnsmasq` | |
+| DHCP | *(vide)* | ⭐ le DHCP du SDN n'existe **que sur les zones Simple** : ici, adressage statique |
 
 ```bash
 pvesh create /cluster/sdn/zones \
@@ -211,8 +211,13 @@ pvesh create /cluster/sdn/zones \
   --exitnodes-local-routing 1 \
   --advertise-subnets 1 \
   --mtu 1450 \
-  --ipam pve --dhcp dnsmasq
+  --ipam pve
 ```
+
+🧠 **Pas de `--dhcp dnsmasq`.** Le DHCP intégré du SDN (une instance dnsmasq par zone)
+n'est supporté que sur les zones **Simple**. En EVPN, les VM sont adressées en
+**statique**, par cloud-init (`--ipconfig0`), selon le plan du §8. Pas de DNS servi par la
+gateway non plus : les VM utilisent `1.1.1.1`.
 
 ### 🪤 Les deux réglages qui font échouer 95 % des déploiements
 
@@ -265,16 +270,13 @@ for v in "vprod 11010 10" "vpub 11020 20" "vdb 11030 30"; do
 done
 
 pvesh create /cluster/sdn/vnets/vprod/subnets --subnet 10.60.10.0/24 --type subnet \
-  --gateway 10.60.10.1 --snat 1 \
-  --dhcp-range start-address=10.60.10.100,end-address=10.60.10.240
+  --gateway 10.60.10.1 --snat 1
 
 pvesh create /cluster/sdn/vnets/vpub/subnets --subnet 10.60.20.0/24 --type subnet \
-  --gateway 10.60.20.1 --snat 1 \
-  --dhcp-range start-address=10.60.20.100,end-address=10.60.20.240
+  --gateway 10.60.20.1 --snat 1
 
 pvesh create /cluster/sdn/vnets/vdb/subnets --subnet 10.60.30.0/24 --type subnet \
-  --gateway 10.60.30.1 \
-  --dhcp-range start-address=10.60.30.100,end-address=10.60.30.240
+  --gateway 10.60.30.1
 ```
 
 🧠 **`vdb` sans SNAT** : les VM se parlent, joignent leur gateway, sont routées vers les
@@ -409,7 +411,7 @@ NAT se fait sur `pve1`, après décapsulation du VXLAN.
    pas de SNAT ici    le SNAT est ICI, et seulement ici
 ```
 
-📌 Depuis le shell de pve4, `ping 10.60.10.<vm>` échoue si `exitnodes-local-routing`
+📌 Depuis le shell de pve4, `ping 10.60.10.1X` échoue si `exitnodes-local-routing`
 n'est pas activé : l'hôte n'a pas de route vers le VRF. **Testez depuis une VM, pas
 depuis l'hyperviseur.**
 
@@ -426,26 +428,57 @@ Il enchaîne les contrôles ci-dessus et signale ce qui cloche.
 ## 8. Déployer et tester 🚀
 
 Chaque stagiaire déploie **sur son nœud**, dans les VNets partagés. Le cluster choisit
-les VMID ; le nom porte celui du nœud pour s'y retrouver dans la vue globale.
+les VMID ; le nom et l'adresse portent le **numéro du nœud** pour s'y retrouver dans la
+vue globale et ne pas se marcher dessus.
+
+### Le plan d'adressage statique
+
+Pas de DHCP en EVPN : chaque VM reçoit son IP par cloud-init. Le dernier octet code le
+nœud (`X` = numéro du nœud, `pve3` → `X=3`) :
+
+| Machine | VNet | IP | Gateway |
+|---|---|---|---|
+| `evpn-prod-pveX` | `vprod` | `10.60.10.1X` | `10.60.10.1` |
+| `evpn-pub-pveX` | `vpub` | `10.60.20.1X` | `10.60.20.1` |
+| VM de test `vdb` (facultative) | `vdb` | `10.60.30.1X` | `10.60.30.1` |
+| `ceph-vm-pveX` (TP 18) | `vprod` | `10.60.10.2X` | `10.60.10.1` |
+| challenge (TP 21) | selon le rôle | `.3X` à `.5X` | |
+
+DNS : `1.1.1.1` (les VM de `vdb` n'ont pas Internet, donc pas de résolution : voulu).
 
 ```bash
+X=${HOSTNAME#pve}                           # pve3 → 3
+
 # Vos templates du TP 16 §7.4
 TPL_D=$(qm list | awk '/tpl-debian13/   {print $1}')
 TPL_U=$(qm list | awk '/tpl-ubuntu2604/ {print $1}')
 
 VMID_PROD=$(pvesh get /cluster/nextid)
 qm clone $TPL_D $VMID_PROD --name evpn-prod-$(hostname) --pool lab --full 1
-qm set $VMID_PROD --net0 virtio,bridge=vprod,firewall=1,mtu=1 --ipconfig0 ip=dhcp
+qm set $VMID_PROD --net0 virtio,bridge=vprod,firewall=1,mtu=1 \
+  --ipconfig0 ip=10.60.10.1$X/24,gw=10.60.10.1 --nameserver 1.1.1.1
 qm set $VMID_PROD --tags "evpn,prod"
 qm start $VMID_PROD
 
 VMID_PUB=$(pvesh get /cluster/nextid)
 qm clone $TPL_U $VMID_PUB --name evpn-pub-$(hostname) --pool lab --full 1
-qm set $VMID_PUB --net0 virtio,bridge=vpub,firewall=1,mtu=1 --ipconfig0 ip=dhcp
+qm set $VMID_PUB --net0 virtio,bridge=vpub,firewall=1,mtu=1 \
+  --ipconfig0 ip=10.60.20.1$X/24,gw=10.60.20.1 --nameserver 1.1.1.1
 qm set $VMID_PUB --tags "evpn,pub"
 qm start $VMID_PUB
 
-echo "prod=$VMID_PROD pub=$VMID_PUB"      # 📌 notez-les : TP 18 et 19 les réutilisent
+echo "prod=$VMID_PROD (10.60.10.1$X)  pub=$VMID_PUB (10.60.20.1$X)"   # 📌 TP 18 et 19 les réutilisent
+```
+
+Pour le test n°11 du §8.2, une VM dans `vdb` :
+
+```bash
+VMID_DB=$(pvesh get /cluster/nextid)
+qm clone $TPL_D $VMID_DB --name evpn-db-$(hostname) --pool lab --full 1
+qm set $VMID_DB --net0 virtio,bridge=vdb,firewall=1,mtu=1 \
+  --ipconfig0 ip=10.60.30.1$X/24,gw=10.60.30.1
+qm set $VMID_DB --tags "evpn,db"
+qm start $VMID_DB
 ```
 
 🪤 **`--full 1` est obligatoire ici.** Sur un template, `qm clone` fait un **clone lié**
@@ -459,15 +492,16 @@ autre stockage »*.
 ⚠️ **`mtu=1` n'est pas optionnel.** C'est ce qui fait hériter le MTU 1450 du VNet. Sans
 lui, `apt` gèle et vous cherchez pourquoi pendant vingt minutes.
 
-### 8.1 L'IPAM à l'échelle du cluster
+### 8.1 Qui est où
 
 ```bash
-pvesh get /cluster/sdn/ipam/pve/status --output-format json | jq -r \
-  '.[] | select(.subnet != null) | "\(.ip)\t\(.vmid // "-")\t\(.hostname // "-")"' | sort -V
+pvesh get /cluster/resources --type vm --output-format json \
+  | jq -r '.[] | select(.name | startswith("evpn-")) | "\(.node)\t\(.vmid)\t\(.name)"' | sort
 ```
 
-🧠 **Six stagiaires déploient en même temps, personne n'obtient la même IP ni le même
-VMID.** L'IPAM est dans `/etc/pve`, donc clusterisé, donc atomique.
+🧠 Le cluster garantit l'unicité des **VMID** (`nextid`). Pour les **IP**, en l'absence
+de DHCP, c'est le plan ci-dessus qui la garantit : le numéro du nœud dans le dernier
+octet. Sur une zone Simple, l'IPAM et dnsmasq feraient ce travail ; en EVPN, non.
 
 ### 8.2 Les tests qui comptent
 
@@ -476,8 +510,8 @@ seuls les **exit nodes** relient au LAN (`exitnodes-local-routing`) : on passe p
 
 ```bash
 sudo ip route add 10.60.0.0/16 via 172.30.30.151     # pve1, exit node primaire
-ping -c2 10.60.10.<votre-vm>
-ssh eleve@10.60.10.<votre-vm> hostname               # ✅ direct, comme aux jours 2-3
+ping -c2 10.60.10.1X                                 # votre evpn-prod (X = votre nœud)
+ssh eleve@10.60.10.1X hostname                       # ✅ direct, comme aux jours 2-3
 ```
 
 Depuis votre VM `evpn-prod-<nœud>` :
@@ -485,20 +519,20 @@ Depuis votre VM `evpn-prod-<nœud>` :
 | # | Test | Commande | Attendu |
 |---|---|---|---|
 | 1 | Gateway locale | `ping -c2 10.60.10.1` | ✅ |
-| 2 | **VM d'un autre stagiaire, autre nœud** | `ping -c2 10.60.10.<autre>` | ✅ 🎯 |
-| 3 | **Routage inter-VNet** | `ping -c2 10.60.20.<vpub>` | ✅ 🎯 |
+| 2 | **VM d'un autre stagiaire, autre nœud** | `ping -c2 10.60.10.1Y` (Y = son nœud) | ✅ 🎯 |
+| 3 | **Routage inter-VNet** | `ping -c2 10.60.20.1X` (votre `evpn-pub`) | ✅ 🎯 |
 | 4 | Internet | `ping -c2 1.1.1.1` | ✅ |
 | 5 | **MTU — juste en dessous** | `ping -M do -s 1422 -c2 1.1.1.1` | ✅ |
 | 6 | **MTU — juste au-dessus** | `ping -M do -s 1423 -c2 1.1.1.1` | ❌ *frag needed* 🎯 |
 | 7 | **Gros transfert** | `curl -o /dev/null https://cdimage.debian.org/.../SHA256SUMS` | ✅ |
 | 8 | `apt update` complet | `sudo apt update && sudo apt install -y htop` | ✅ |
 
-Depuis une VM de `vdb` :
+Depuis `evpn-db-<nœud>` (`vdb`) :
 
 | # | Test | Attendu |
 |---|---|---|
 | 9 | `ping 10.60.30.1` | ✅ |
-| 10 | `ping 10.60.10.<prod>` | ✅ routage inter-VNet |
+| 10 | `ping 10.60.10.1X` | ✅ routage inter-VNet |
 | 11 | **`ping 1.1.1.1`** | ❌ **pas de SNAT, c'est voulu** 🎯 |
 
 
@@ -543,7 +577,7 @@ tcpdump -ni vmbr0 -c 10 'udp port 4789'      # le trafic VXLAN vers pve1
 
 ```bash
 # Depuis votre PC, un ping continu vers la VM
-ping 10.60.10.<votre-vm>
+ping 10.60.10.1X                       # votre evpn-prod
 ```
 
 Pendant ce temps, sur le nœud :
@@ -559,7 +593,7 @@ son réseau n'a pas bougé.
 ```bash
 # la VM est maintenant sur pve5 : « qm config » ne la connaît plus ici, on passe par l'API
 pvesh get /nodes/pve5/qemu/$VMID_PROD/config | grep -E 'net0'
-ssh eleve@10.60.10.<ip> 'ip -br a; ip route; arp -n'
+ssh eleve@10.60.10.1X 'ip -br a; ip route; arp -n'
 ```
 
 L'entrée ARP de la gateway est identique avant et après : c'est l'anycast.
@@ -593,11 +627,7 @@ enable: 1
 policy_forward: DROP
 
 [RULES]
-# DHCP (TP 09 §5.4)
-FORWARD ACCEPT -p udp -dport 67:68 -log nolog
-
-# Infra
-FORWARD ACCEPT -source +sdn/vdb-all -dest +sdn/vdb-gateway -p udp -dport 53 -log nolog
+# Infra : ping de la gateway (pas de DHCP ni de DNS en EVPN, adressage statique)
 FORWARD ACCEPT -source +sdn/vdb-all -dest +sdn/vdb-gateway -p icmp -log nolog
 
 # Depuis le poste (lan_salle) : SSH, HTTP, PostgreSQL, ping
@@ -626,7 +656,7 @@ FORWARD DROP -source +sdn/vpub-all -dest +sdn/vdb-all -log warning
 ```
 
 🧠 Sans les deux lignes `-source +sdn/vdb-all`, le test #10 du §8.2 (« depuis `vdb` :
-`ping 10.60.10.<prod>` ✅ ») devient ❌ dès que vous posez ce fichier. Même piège
+`ping 10.60.10.1X` ✅ ») devient ❌ dès que vous posez ce fichier. Même piège
 qu'aux TP 09 et 12 : **une règle FORWARD est unidirectionnelle**, le firewall du VNet
 **source** compte autant que celui du VNet destination.
 
@@ -641,8 +671,7 @@ enable: 1
 policy_forward: DROP
 
 [RULES]
-FORWARD ACCEPT -p udp -dport 67:68 -log nolog   # DHCP
-FORWARD ACCEPT -source +sdn/vpub-all -dest +sdn/vpub-gateway -p udp -dport 53 -log nolog
+FORWARD ACCEPT -source +sdn/vpub-all -dest +sdn/vpub-gateway -p icmp -log nolog
 # Depuis le poste (lan_salle) : SSH, HTTP, PostgreSQL, ping
 # (défense en profondeur : le flux est routé, il se décide dans cluster.fw, FORWARD lan_salle → net_*)
 FORWARD ACCEPT -source lan_salle -dest +sdn/vpub-all -p tcp -dport 22 -log nolog
@@ -661,8 +690,8 @@ FORWARD ACCEPT -source +sdn/vpub-all -p udp -dport 53 -log nolog
 ```
 
 Et dans `/etc/pve/firewall/cluster.fw`, décommentez le bloc « Jour 4 — VNets EVPN » de
-`lab/firewall/cluster.fw.example` (reposé au TP 16 §7.1) : DHCP par interface, DNS et
-ping vers la gateway pour `vprod`/`vpub`/`vdb`, et la matrice inter-VNet en `FORWARD`
+`lab/firewall/cluster.fw.example` (reposé au TP 16 §7.1) : ping vers la gateway pour
+`vprod`/`vpub`/`vdb`, et la matrice inter-VNet en `FORWARD`
 (prod → db 5432, db → prod ping/SSH, pub → prod et pub → db interdits, `vdb` sans
 Internet). Sans lui, `policy_forward: DROP` bloque tout ce qui sort d'un VNet, quoi que
 disent `vdb.fw` et `vpub.fw`.
@@ -767,6 +796,7 @@ journalctl -u frr -n 50
 - [ ] `frr` + `frr-pythontools` sur les 6 nœuds
 - [ ] `vtysh -c "show bgp l2vpn evpn summary"` : 5 voisins `Established` partout
 - [ ] `ip -br a show vprod` : **même IP et même MAC** sur tous les nœuds
+- [ ] Mes VM EVPN sont en **statique** selon le plan du §8 (pas de DHCP en zone EVPN)
 - [ ] Deux VM sur deux **nœuds différents**, même VNet, se pingent 🎯
 - [ ] Le routage inter-VNet fonctionne (`vprod` ↔ `vpub`)
 - [ ] Les VM de `vprod`/`vpub` accèdent à Internet

@@ -173,11 +173,8 @@ FREE_AFTER=$(vgs --noheadings --units g -o vg_free "$VG" | tr -dc '0-9.' | cut -
 
 cat <<EOF
 
-${GREEN}✔ Prêt.${NC} Créez maintenant l'OSD (en CLI : l'interface web ne propose pas les LV) :
-
-    pveceph osd create /dev/$VG/$LVNAME
-
-  Si pveceph refuse le volume logique, passez par la commande Ceph native :
+${GREEN}✔ Prêt.${NC} Créez maintenant l'OSD avec la commande Ceph native : ni l'interface
+  web ni « pveceph osd create » n'acceptent un volume logique, seulement un disque entier.
 
     mkdir -p /var/lib/ceph/bootstrap-osd
     ceph auth get client.bootstrap-osd -o /var/lib/ceph/bootstrap-osd/ceph.keyring

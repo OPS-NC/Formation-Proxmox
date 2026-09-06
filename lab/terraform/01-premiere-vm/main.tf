@@ -23,6 +23,12 @@ resource "proxmox_virtual_environment_vm" "web" {
     enabled = true
   }
 
+  # Console série : c'est ce que « qm terminal » et les cloud-images utilisent
+  serial_device {}
+  vga {
+    type = "serial0"
+  }
+
   cpu {
     cores = 2
     # Pas « host » : on veut pouvoir migrer à chaud au jour 4

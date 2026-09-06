@@ -120,6 +120,11 @@ quand il en manque. Utile en lab surchargé, à éviter pour les bases de donné
 
 ⚠️ **Ne cochez pas** « Start after created » : on veut d'abord vérifier la config.
 
+### Après création : un port série
+
+L'assistant n'en propose pas. `srv01 → Hardware → Add → Serial Port → 0`. C'est ce qui
+permettra `qm terminal 101` depuis le nœud, sans noVNC (TP 08, 09).
+
 ---
 
 ## 3. La même chose en CLI 🖥️
@@ -145,6 +150,7 @@ qm create $VMID \
   --memory 2048 --balloon 1024 \
   --net0 virtio,bridge=vmbr0,firewall=1 \
   --agent enabled=1,fstrim_cloned_disks=1 \
+  --serial0 socket \
   --onboot 0
 
 qm config $VMID
@@ -220,6 +226,7 @@ Dans la VM (console ou SSH) :
 ```bash
 apt update && apt install -y qemu-guest-agent
 systemctl enable --now qemu-guest-agent
+systemctl enable --now serial-getty@ttyS0.service   # une console sur le port série
 ```
 
 Sur le nœud :
@@ -230,7 +237,17 @@ qm agent $VMID network-get-interfaces | jq -r '.[] | "\(.name) \(."ip-addresses"
 qm guest cmd $VMID get-osinfo
 ```
 
-✅ Le Summary de la VM dans l'interface web affiche maintenant son IP. **Notez-la** :
+✅ Le Summary de la VM dans l'interface web affiche maintenant son IP.
+
+Et la console série répond :
+
+```bash
+qm terminal $VMID        # Entrée pour le login, Ctrl+O pour sortir
+```
+
+🧠 `qm terminal` a besoin des deux : un port `serial0` côté Proxmox, et un `getty` sur
+`ttyS0` côté invité. Les cloud-images du TP 10 l'ont d'origine ; une Debian installée
+par ISO, non. **Notez-la** :
 c'est celle que vous utiliserez pour `ssh eleve@<IP-de-srv01>` depuis votre PC.
 
 ```bash
@@ -334,7 +351,8 @@ tcpdump -ni tap${VMID}i0 -c 20
 - [ ] Depuis mon PC : `ssh eleve@<IP-de-srv01>` fonctionne
 - [ ] Depuis la VM : `ping 1.1.1.1` et `apt update` fonctionnent
 - [ ] `qm agent 101 ping` répond
-- [ ] Le Summary de la VM affiche son IP, et je l'ai notée
+- [ ] Le Summary de la VM affiche son IP
+- [ ] `qm terminal 101` donne un login (port série + getty), et je l'ai notée
 - [ ] Un snapshot existe et le rollback a été testé
 - [ ] Une sauvegarde `vzdump` est présente dans `/var/lib/vz/dump/`
 - [ ] Je sais retrouver l'interface `tap101i0` et capturer dessus

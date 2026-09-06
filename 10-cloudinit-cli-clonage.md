@@ -115,7 +115,7 @@ qm create $VMID \
 
 - **`--cpu x86-64-v2-AES`** et non `host` : les VM issues du template doivent rester
   migrables à chaud entre nœuds au CPU différent (TP 03). 2 % de perf contre la
-  migration.
+  migration. Exception : **Rocky 10** exige la base **`x86-64-v3`** (le script le fait).
 - **`--serial0 socket --vga serial0`** : les cloud-images sortent leurs logs de boot
   sur la console série. Sans ça, l'écran noVNC reste noir alors que la VM boote.
 
@@ -219,8 +219,14 @@ Lisez-le : c'est ce que vous venez de taper, avec la gestion d'erreurs.
 | Pare-feu par défaut | aucun | aucun | **firewalld actif** ⚠️ |
 | SELinux | non | non | **enforcing** ⚠️ |
 | Paquets | `apt` | `apt` | `dnf` |
+| CPU minimal | `x86-64-v2-AES` | `x86-64-v2-AES` | **`x86-64-v3`** ⚠️ |
 
-🪤 **Rocky Linux, les deux pièges** :
+🪤 **Rocky Linux, les trois pièges** :
+
+Rocky 10 est compilé pour la base **x86-64-v3** (AVX2). Avec `--cpu x86-64-v2-AES`, le
+noyau s'arrête au boot : « Fatal glibc error: CPU does not support x86-64-v3 ». Le
+template Rocky est donc en `x86-64-v3`, et les clones Terraform aussi. Un CPU physique
+récent ne suffit pas si le modèle virtuel masque ses instructions.
 
 ```bash
 # firewalld bloque tout sauf SSH → vos tests HTTP échouent
@@ -369,7 +375,7 @@ qm list | grep -E '19[0-2]'
 - [ ] Le disque est bien à 20 Go (partition étendue automatiquement)
 - [ ] `qm agent <vmid> ping` répond
 - [ ] Je sais expliquer pourquoi on tronque `/etc/machine-id`
-- [ ] Je sais expliquer pourquoi le template est en `x86-64-v2-AES` et pas `host`
+- [ ] Je sais expliquer pourquoi le template est en `x86-64-v2-AES` et pas `host`, et pourquoi Rocky est en `x86-64-v3`
 
 ---
 

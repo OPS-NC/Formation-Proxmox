@@ -151,8 +151,9 @@ au TP 07 : `sudo ip route add 10.10.0.0/16 via $PVE`. Jamais de rebond SSH par l
 Le VRF de la zone utilise le **VNI 10000**. Depuis le PC : `sudo ip route add
 10.60.0.0/16 via 172.30.30.151` (l'exit node primaire, TP 17).
 
-> Dans le cluster, l'IPAM distribue les IP : deux stagiaires ne peuvent pas obtenir la
-> même adresse.
+> Pas de DHCP en zone EVPN (le DHCP du SDN n'existe que sur les zones Simple) : les VM
+> du jour 4 sont en **statique**, le dernier octet codant le nœud (`10.60.10.1X` pour
+> `evpn-prod-pveX`, plan complet au TP 17 §8).
 
 ---
 

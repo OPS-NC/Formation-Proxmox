@@ -51,7 +51,7 @@ applicatif.
 
 | Prérequis | Vérification |
 |---|---|
-| Même type de CPU exposé | `qm config <id> \| grep cpu` → `x86-64-v2-AES`, pas `host` |
+| Même type de CPU exposé | `qm config <id> \| grep cpu` → `x86-64-v2-AES` (`x86-64-v3` pour Rocky), pas `host` |
 | Stockage partagé (`vm-store`/Ceph), **ou** `--with-local-disks` | `pvesm status` |
 | Le bridge/VNet existe sur la cible | EVPN : ✅ partout (TP 17) |
 | Pas de matériel passthrough | pas de PCI, pas d'USB attaché |
@@ -119,7 +119,7 @@ ceph osd map vm-store vm-$VMID-disk-0
 
 ```bash
 # Depuis votre PC, un ping continu
-ping 10.60.10.<ip-de-la-vm>
+ping 10.60.10.1X                 # votre evpn-prod (TP 17 §8)
 ```
 
 ```bash
@@ -304,7 +304,7 @@ systemctl status pve-ha-crm pve-ha-lrm --no-pager | head -12
 watch -n1 'ha-manager status; echo; pvecm status | grep -E "Quorate|Total"'
 
 # Terminal 2 — un ping continu vers la VM en HA
-ping 10.60.10.<ip>
+ping 10.60.10.1X
 ```
 
 Puis, **débranchez physiquement l'alimentation** du nœud cible.

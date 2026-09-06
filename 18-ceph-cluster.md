@@ -377,17 +377,14 @@ ceph -s | grep -A2 services
 L'interface ne propose que les disques entiers non utilisés, et votre volume LVM n'en
 est pas un. D'où la CLI.
 
+`pveceph osd create` n'accepte pas un volume logique : il n'ouvre que des disques
+entiers. On passe par la commande Ceph native, celle que `pveceph` appelle en interne.
+
 **Sur chaque nœud** :
 
 ```bash
 ls -l /dev/pve/ceph-osd
-pveceph osd create /dev/pve/ceph-osd
-```
 
-Si `pveceph` refuse le volume logique, utilisez la commande Ceph native, celle que
-`pveceph` appelle en interne :
-
-```bash
 # Récupérer la clé de bootstrap (ceph-volume l'exige à cet emplacement)
 mkdir -p /var/lib/ceph/bootstrap-osd
 ceph auth get client.bootstrap-osd -o /var/lib/ceph/bootstrap-osd/ceph.keyring
@@ -534,9 +531,11 @@ rbd -p vm-store info vm-$VMID-disk-0
 # Créer directement sur Ceph
 TPL=$(qm list | awk '/tpl-debian13/{print $1}')
 NEW=$(pvesh get /cluster/nextid)
+X=${HOSTNAME#pve}
 qm clone $TPL $NEW --name ceph-vm-$(hostname) --pool lab --full 1
 qm move-disk $NEW scsi0 vm-store --delete 1
-qm set $NEW --net0 virtio,bridge=vprod,firewall=1,mtu=1 --ipconfig0 ip=dhcp
+qm set $NEW --net0 virtio,bridge=vprod,firewall=1,mtu=1 \
+  --ipconfig0 ip=10.60.10.2$X/24,gw=10.60.10.1 --nameserver 1.1.1.1   # statique : pas de DHCP en EVPN (TP 17 §8)
 qm start $NEW
 ```
 
@@ -569,7 +568,7 @@ et hôte de PBS) ni un monitor.
 watch -n2 'ceph -s; echo; ceph osd tree | head -20'
 
 # Terminal 2 — une VM sur Ceph, avec des écritures continues
-ssh eleve@10.60.10.<ip> \
+ssh eleve@10.60.10.2X \      # votre ceph-vm (X = votre nœud)
   'while true; do dd if=/dev/urandom of=/tmp/t bs=1M count=20 2>/dev/null; sync; date; done'
 ```
 
@@ -681,7 +680,7 @@ comme `df -h`.
 
 | Symptôme | Cause | Solution |
 |---|---|---|
-| L'UI ne propose aucun disque pour l'OSD | volume LVM, pas disque entier | CLI : `pveceph osd create /dev/pve/ceph-osd` ou `ceph-volume lvm create` |
+| L'UI ne propose aucun disque pour l'OSD, `pveceph osd create` refuse le LV | volume LVM, pas disque entier | `ceph-volume lvm create --data pve/ceph-osd --bluestore` (§6.5) |
 | `lvreduce` refuse | thin pool non réductible | chemin B du §5 |
 | `Device /dev/... is in use` | reste d'un usage précédent | `ceph-volume lvm zap /dev/pve/ceph-osd --destroy` |
 | `ceph-volume` : `unable to find keyring` | clé bootstrap absente | `ceph auth get client.bootstrap-osd -o /var/lib/ceph/bootstrap-osd/ceph.keyring` |
