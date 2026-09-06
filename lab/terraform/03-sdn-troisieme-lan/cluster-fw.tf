@@ -1,5 +1,5 @@
 # ── Le firewall du DATACENTER, en code ───────────────────────────────────────
-# Équivalent de /etc/pve/firewall/cluster.fw (modèle : lab/firewall/cluster.fw.example),
+# Équivalent de /etc/pve/firewall/cluster.fw (modèle : lab/firewall/standalone/cluster.fw.example),
 # porté par des ressources NATIVES du provider : options, alias, IPSet, groupes de
 # sécurité, règles. Tout ce que le TP 09 a écrit à la main est ici, versionné — y compris
 # la matrice inter-VNet en FORWARD (TP 09 §5.4) : un paquet qui sort de son VNet est routé
@@ -28,6 +28,7 @@ locals {
   fw_lan_to_nets = {
     ssh      = { proto = "tcp", dport = "22", comment = "SSH depuis le poste (Ansible, TP 13)" }
     http     = { proto = "tcp", dport = "80", comment = "HTTP depuis le poste" }
+    https    = { proto = "tcp", dport = "443", comment = "HTTPS depuis le poste" }
     postgres = { proto = "tcp", dport = "5432", comment = "PostgreSQL depuis le poste" }
     icmp     = { proto = "icmp", dport = null, comment = "ping depuis le poste" }
   }
@@ -58,18 +59,25 @@ locals {
     { action = "ACCEPT", source = "+sdn/vint-all", dest = "+sdn/vsrv-all", proto = "tcp", dport = "3000", comment = "admin int -> srv Grafana" },
     { action = "ACCEPT", source = "+sdn/vint-all", dest = "+sdn/vsrv-all", proto = "tcp", dport = "9090", comment = "admin int -> srv Prometheus" },
     { action = "DROP", source = "+sdn/vdmz-all", dest = "+sdn/vsrv-all", comment = "DMZ -> SERVICES interdit", log = "warning" },
+    # Fermer les autres flux inter-zones AVANT les règles de sortie sans destination.
+    { action = "DROP", source = "+sdn/vint-all", dest = "+sdn/vsrv-all", comment = "autres int -> srv interdits", log = "info" },
+    { action = "DROP", source = "+sdn/vsrv-all", dest = "+sdn/vint-all", comment = "autres srv -> int interdits", log = "info" },
+    { action = "DROP", source = "+sdn/vsrv-all", dest = "+sdn/vdmz-all", comment = "autres srv -> dmz interdits", log = "info" },
     # sortie Internet (sans dest : EN DERNIER)
     { action = "ACCEPT", source = "+sdn/vint-all", comment = "int -> Internet libre" },
     { action = "ACCEPT", source = "+sdn/vdmz-all", proto = "tcp", dport = "80", comment = "dmz -> Internet HTTP" },
     { action = "ACCEPT", source = "+sdn/vdmz-all", proto = "tcp", dport = "443", comment = "dmz -> Internet HTTPS" },
     { action = "ACCEPT", source = "+sdn/vdmz-all", proto = "udp", dport = "53", comment = "dmz -> Internet DNS" },
+    { action = "ACCEPT", source = "+sdn/vdmz-all", proto = "tcp", dport = "53", comment = "dmz -> Internet DNS TCP" },
     { action = "ACCEPT", source = "+sdn/vdmz-all", proto = "udp", dport = "123", comment = "dmz -> Internet NTP" },
     { action = "ACCEPT", source = "+sdn/vsrv-all", proto = "tcp", dport = "80", comment = "srv -> Internet HTTP" },
     { action = "ACCEPT", source = "+sdn/vsrv-all", proto = "tcp", dport = "443", comment = "srv -> Internet HTTPS" },
     { action = "ACCEPT", source = "+sdn/vsrv-all", proto = "udp", dport = "53", comment = "srv -> Internet DNS" },
+    { action = "ACCEPT", source = "+sdn/vsrv-all", proto = "tcp", dport = "53", comment = "srv -> Internet DNS TCP" },
   ]
 
   # Produit cartésien réseaux × flux → une règle FORWARD par couple, ordre stable.
+  # L'ajout HTTPS est standalone : conserver les autorisations EVPN historiques telles quelles.
   fw_forward_rules = flatten([
     for net_name, net in local.fw_nets : [
       for flow_name, flow in local.fw_lan_to_nets : {
@@ -78,7 +86,7 @@ locals {
         proto   = flow.proto
         dport   = flow.dport
         comment = "${flow.comment} → ${net.comment}"
-      }
+      } if net_name != "net_evpn" || flow_name != "https"
     ]
   ])
 }
@@ -204,6 +212,7 @@ resource "proxmox_virtual_environment_cluster_firewall_security_group" "srv_db" 
 # Sans node_name ni vm_id, la ressource cible /cluster/firewall/rules.
 resource "proxmox_virtual_environment_firewall_rules" "cluster" {
   depends_on = [
+    proxmox_sdn_applier.apply,
     proxmox_virtual_environment_firewall_alias.lan_salle,
     proxmox_virtual_environment_firewall_alias.nets,
     proxmox_virtual_environment_firewall_ipset.management,
@@ -351,6 +360,21 @@ resource "proxmox_virtual_environment_firewall_rules" "cluster" {
       proto   = rule.value.proto
       dport   = rule.value.dport
       comment = rule.value.comment
+      log     = "nolog"
+    }
+  }
+
+  # Interfaces de supervision depuis le LAN (pas vers les autres réseaux).
+  dynamic "rule" {
+    for_each = toset(["3000", "9090"])
+    content {
+      type    = "forward"
+      action  = "ACCEPT"
+      source  = "lan_salle"
+      dest    = "net_services"
+      proto   = "tcp"
+      dport   = rule.value
+      comment = "supervision depuis le LAN"
       log     = "nolog"
     }
   }

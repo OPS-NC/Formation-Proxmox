@@ -44,16 +44,17 @@ On ajoute une troisième zone : `zsrv`, un réseau de **services d'infrastructur
                             │
               SERVICES peut SCRAPER les deux zones
               mais rien ne peut initier vers SERVICES
-                 (sauf SSH depuis INTERNAL)
+                 (sauf admin depuis INTERNAL et LAN salle)
 ```
 
 Matrice de flux ciblée :
 
 | De ↓ / Vers → | INTERNAL | DMZ | SERVICES | Internet |
 |---|:---:|:---:|:---:|:---:|
-| INTERNAL | ✅ | 🟡 22/80/443 | 🟡 22, 3000, 9090 | ✅ |
-| DMZ | ❌ | 🟡 80/443 | ❌ | 🟡 80/443/53 |
-| **SERVICES** | 🟡 **9100, 22** | 🟡 **9100** | ✅ | 🟡 80/443/53 |
+| INTERNAL | ✅ | 🟡 TCP 22/80/443 + ICMP | 🟡 22, 3000, 9090 | ✅ |
+| DMZ | ❌ | 🟡 TCP 80/443 | ❌ | 🟡 TCP 80/443, DNS UDP+TCP 53, NTP UDP 123 |
+| **SERVICES** | 🟡 **TCP 9100, 22** | 🟡 **TCP 9100** | ✅ | 🟡 TCP 80/443, DNS UDP+TCP 53 |
+| **LAN salle** | 🟡 TCP 22/80/443/5432, ICMP | 🟡 TCP 22/80/443/5432, ICMP | 🟡 TCP 22/80/443/5432/3000/9090, ICMP | — |
 
 ---
 
@@ -214,46 +215,31 @@ template et on le dépose par SSH.
 
 `templates/vsrv.fw.tftpl` :
 
-```
+```ini
+# /etc/pve/sdn/firewall/vsrv.fw — standalone uniquement
+# Commutation intra-VNet et échanges avec l'hôte.
+# Le routage inter-zones / LAN / Internet est filtré dans cluster.fw, pas ici.
 [OPTIONS]
 enable: 1
 policy_forward: DROP
 
 [RULES]
-# DHCP : le DISCOVER part de 0.0.0.0, l'OFFER repart de la gateway (TP 09 §5.4)
+# DHCP initial et réponse (le client commence avec 0.0.0.0).
 FORWARD ACCEPT -p udp -dport 67:68 -log nolog
-
-# Infra : DNS et ICMP vers la gateway
 FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vsrv-gateway -p udp -dport 53 -log nolog
+FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vsrv-gateway -p tcp -dport 53 -log nolog
 FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vsrv-gateway -p icmp -log nolog
-
-# Depuis le poste (lan_salle) : SSH, HTTP, PostgreSQL, ping
-# (défense en profondeur : le flux est routé, il se décide dans cluster.fw, FORWARD lan_salle → net_*)
+# Trafic émis par l'hôte avec une IP source du LAN (hook OUTPUT de l'hôte).
+# Le trafic LAN routé depuis le PC reste contrôlé dans cluster.fw.
 FORWARD ACCEPT -source lan_salle -dest +sdn/vsrv-all -p tcp -dport 22 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vsrv-all -p tcp -dport 80 -log nolog
+FORWARD ACCEPT -source lan_salle -dest +sdn/vsrv-all -p tcp -dport 443 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vsrv-all -p tcp -dport 5432 -log nolog
+FORWARD ACCEPT -source lan_salle -dest +sdn/vsrv-all -p tcp -dport 3000 -log nolog
+FORWARD ACCEPT -source lan_salle -dest +sdn/vsrv-all -p tcp -dport 9090 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vsrv-all -p icmp -log nolog
-
-# Interne au réseau services
+# Entre invités du même réseau : libre.
 FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vsrv-all -log nolog
-
-# Supervision : SERVICES scrape les autres zones
-FORWARD ACCEPT -source +sdn/vsrv-all -dest ${net_int} -p tcp -dport 9100 -log nolog
-FORWARD ACCEPT -source +sdn/vsrv-all -dest ${net_dmz} -p tcp -dport 9100 -log nolog
-FORWARD ACCEPT -source +sdn/vsrv-all -dest ${net_int} -p tcp -dport 22 -log info
-
-# Accès admin depuis INTERNAL uniquement
-FORWARD ACCEPT -source ${net_int} -dest +sdn/vsrv-all -p tcp -dport 22 -log nolog
-FORWARD ACCEPT -source ${net_int} -dest +sdn/vsrv-all -p tcp -dport 3000 -log nolog
-FORWARD ACCEPT -source ${net_int} -dest +sdn/vsrv-all -p tcp -dport 9090 -log nolog
-
-# La DMZ n'a rien à faire ici
-FORWARD DROP   -source ${net_dmz} -dest +sdn/vsrv-all -log warning
-
-# Sortie Internet limitée
-FORWARD ACCEPT -source +sdn/vsrv-all -p tcp -dport 80 -log nolog
-FORWARD ACCEPT -source +sdn/vsrv-all -p tcp -dport 443 -log nolog
-FORWARD ACCEPT -source +sdn/vsrv-all -p udp -dport 53 -log nolog
 ```
 
 `firewall.tf` :
@@ -273,7 +259,7 @@ resource "local_file" "fw_vsrv" {
 }
 
 resource "terraform_data" "push_fw" {
-  depends_on = [proxmox_sdn_applier.apply]
+  depends_on = [proxmox_sdn_applier.apply, proxmox_virtual_environment_cluster_firewall.options]
 
   triggers_replace = [local_file.fw_vsrv.content_md5]
 
@@ -299,49 +285,33 @@ Alternative 100 % API : le provider
 [`Mastercard/restapi`](https://registry.terraform.io/providers/Mastercard/restapi/latest/docs)
 appelle n'importe quel endpoint Proxmox en ressource Terraform.
 
-### ⚠️ Ce que `vsrv.fw` ne peut pas faire tout seul
+### Où autoriser les flux SERVICES ?
 
-Rappel du TP 09 §5.4 : les flux `vsrv → vint:9100` et `vint → vsrv:22` sont **routés**.
-Ce qui les autorise réellement, ce sont les règles `FORWARD` du Datacenter, portées ici
-par `cluster-fw.tf` (`local.fw_matrix`). Les fichiers de VNet restent la défense en
-profondeur, et doivent être cohérents des deux côtés :
+Les flux `vsrv → vint:9100`, `vsrv → vdmz:9100` et `vint → vsrv:22/3000/9090`
+sont routés : la matrice est dans `cluster-fw.tf`, pas dupliquée dans les VNets.
+Il n'y a **aucune ligne vsrv à décommenter** dans vint.fw/vdmz.fw du standalone.
 
-Ce fichier autorise `vsrv → vint:9100`. **Ça ne suffit pas.** Le paquet traverse
-**deux** VNets, et `vint.fw` (écrit au TP 09, `policy_forward: DROP`) n'a aucune
-règle dont la **source** est `vsrv` : il jettera le paquet à l'arrivée.
+Après les autorisations ciblées, on refuse les autres flux inter-zones **avant** les
+règles « Internet » sans destination. Sinon celles-ci acceptent aussi INTERNAL →
+SERVICES sur tout port, et SERVICES → INTERNAL/DMZ sur 80/443.
 
-Les règles nécessaires sont **déjà dans `vint.fw` et `vdmz.fw`** — vous les aviez
-copiées au TP 09 §5 puis **neutralisées** (`#`) parce que `vsrv` n'existait pas encore.
-Maintenant qu'il existe, décommentez-les :
+Le LAN `172.30.30.0/24` conserve SSH vers les trois réseaux ; HTTP(S), PostgreSQL
+et ICMP sont également ouverts comme au TP 09. Les interfaces 3000/9090 sont ouvertes
+du LAN vers SERVICES uniquement. Cela ne donne pas ces droits à la DMZ.
 
-```bash
-ssh root@$PVE '
-  sed -i "s/^#\(FORWARD .*+sdn\/vsrv-all\)/\1/" /etc/pve/sdn/firewall/{vint,vdmz}.fw
-  grep -n "vsrv-all" /etc/pve/sdn/firewall/vint.fw /etc/pve/sdn/firewall/vdmz.fw
-  systemctl reload proxmox-firewall
-'
-```
-
-Ce que vous venez de réactiver :
+Si un invité applique Input Policy DROP, compléter ses règles : SSH depuis le LAN,
+TCP 9100 depuis `+sdn/vsrv-all` pour un exporter ; sur les serveurs de supervision,
+TCP 22/3000/9090 depuis INTERNAL et TCP 3000/9090 depuis le LAN.
+Ne pas référencer vsrv dans un firewall invité avant sa création.
 
 ```ini
-# dans vint.fw — Supervision : la zone SERVICES scrape l'interne
-FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vint-all -p tcp -dport 9100 -log nolog
-FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vint-all -p tcp -dport 22 -log info
-
-# dans vdmz.fw
-FORWARD ACCEPT -source +sdn/vsrv-all -dest +sdn/vdmz-all -p tcp -dport 9100 -log nolog
-FORWARD DROP -source +sdn/vdmz-all -dest +sdn/vsrv-all -log warning   # la DMZ n'approche pas SERVICES
+# Exemple à ajouter sur un invité hébergeant un exporter, après création de vsrv :
+IN ACCEPT -source +sdn/vsrv-all -p tcp -dport 9100 -log nolog
 ```
 
-🧠 Le piège du [TP 09 §5.2](09-firewall-inter-zones.md) : une règle FORWARD est
-unidirectionnelle, et le firewall du VNet destination compte autant que celui du VNet
-source. Le conntrack gère le retour d'une connexion acceptée, pas le sens initial.
-Pour chaque flux de la matrice, deux fichiers à modifier.
-
-> 🎁 **Exercice** : faites générer `vint.fw` et `vdmz.fw` par Terraform, comme
-> `vsrv.fw` (un template chacun, un `local_file`, un `scp`). Trois VNets, six blocs de
-> règles à garder cohérents : c'est là qu'on modularise.
+Les services doivent écouter et le firewall de l'OS doit également les autoriser.
+Le rôle common installe l'exporter au TP 13 : le test 9100 n'est donc pas validable
+sur une VM vierge au TP 12. Reporter ce test après ce déploiement.
 
 ---
 
@@ -372,7 +342,7 @@ resource "proxmox_virtual_environment_firewall_rules" "cluster" {
 
   # ⭐ Depuis le poste vers CHAQUE réseau privé : SSH, HTTP, PostgreSQL, ping
   dynamic "rule" {
-    for_each = { for r in local.fw_forward_rules : r.key => r }   # 4 réseaux × 4 flux
+    for_each = { for r in local.fw_forward_rules : r.key => r }   # flux LAN générés (réseaux standalone + compatibilité existante)
     content {
       type   = "forward"
       action = "ACCEPT"
@@ -398,7 +368,7 @@ resource "proxmox_virtual_environment_cluster_firewall" "options" {
 ```
 
 🧠 Ajouter un réseau (`net_services`, `net_evpn`) ou un flux se fait en une ligne dans
-un `local` : les 16 règles FORWARD se régénèrent. À la main, c'est 4 lignes par réseau,
+un `local` : les règles FORWARD se régénèrent. À la main, chaque flux doit être ajouté,
 et un oubli est silencieux.
 
 #### ⚠️ Reprise en main : Terraform ne cohabite pas avec le fichier du TP 09
@@ -417,12 +387,12 @@ Vérification, une fois l'`apply` passé :
 
 ```bash
 ssh root@$PVE 'cat /etc/pve/firewall/cluster.fw'            # le fichier, regénéré par l'API
-ssh root@$PVE 'pve-firewall compile | grep -c FORWARD'        # les règles FORWARD sont là
+ssh root@$PVE 'nft list chain inet proxmox-firewall cluster-forward' # règles nftables actives
 ssh eleve@10.10.10.50 hostname                                # ✅ depuis le PC, toujours direct
 ```
 
 🪤 Un `terraform destroy` **retire aussi le firewall Datacenter** (règles, alias, options).
-Après un destroy, reposez `lab/firewall/cluster.fw.example` à la main (TP 09 §4), ou
+Après un destroy, reposez `lab/firewall/standalone/cluster.fw.example` à la main (TP 09 §4), ou
 relancez `apply`.
 
 ---
@@ -555,7 +525,7 @@ ssh root@$PVE '
 '
 ```
 
-Tests fonctionnels :
+Tests fonctionnels (un port fermé faute de listener ne prouve pas un refus firewall) :
 
 ```bash
 # depuis mon01 (SERVICES)
@@ -563,7 +533,7 @@ ping -c2 10.10.30.1             # ✅ gateway
 ping -c2 1.1.1.1                # ❌ ICMP non autorisé vers Internet
 curl -sI https://debian.org     # ✅ 443 autorisé
 nc -zvw2 10.10.10.<db01> 5432   # ❌ refusé
-nc -zvw2 10.10.10.<app01> 9100  # ✅ autorisé — SI les lignes vsrv de vint.fw sont décommentées (§5)
+nc -zvw2 10.10.10.<app01> 9100  # ✅ après déploiement de l’exporter au TP 13 et autorisation invité (§5)
 #   (app01, Debian : node-exporter est installé par le rôle common du TP 13 ;
 #    db01 est une Rocky, sans exporter — le test y donnerait ❌ pour une autre raison)
 
@@ -577,26 +547,43 @@ ssh root@$PVE 'tail -20 /var/log/pve-firewall.log'
 
 ---
 
+Après le TP 13, refaire la recette depuis le poste avec le script dédié :
+
+```bash
+bash lab/scripts/test-firewall-standalone.sh --int <ip-srv01> --dmz <ip-alpine> \
+  --services <ip-mon01> --exporter <ip-app01>
+```
+
+Les prérequis du TP 09 restent nécessaires. Pour vérifier le refus INTERNAL →
+SERVICES:8080, lancer temporairement sur mon01 `python3 -m http.server 8080` dans
+une console distincte ; arrêter avec Ctrl+C à la fin. Les tests doivent couvrir
+SERVICES → INTERNAL:22/9100 autorisés, → INTERNAL:5432 interdit, → DMZ:80 interdit
+et DMZ → SERVICES:22 interdit. Le script refuse un verdict vert si un listener manque.
+
 ## 8. Le vrai test de l'IaC : modifier 🔁
 
 Le développeur demande : « ajoutez le port 9093 (Alertmanager) accessible depuis
 INTERNAL ».
 
-1. Ouvrir `templates/vsrv.fw.tftpl`
-2. Ajouter une ligne :
-   ```
-   FORWARD ACCEPT -source ${net_int} -dest +sdn/vsrv-all -p tcp -dport 9093 -log nolog
-   ```
-3. ```bash
-   terraform plan     # → 1 modification : local_file + terraform_data recréés
-   terraform apply
-   ```
-4. `git commit -m "feat(fw): ouvre 9093 Alertmanager depuis INTERNAL — ticket INFRA-512"`
+1. Ouvrir `cluster-fw.tf`, dans `local.fw_matrix`.
+2. Ajouter **avant le DROP INTERNAL → SERVICES** :
 
-Trente secondes, tracé dans Git, revu en pull request. Contre cinq minutes de clics et
-zéro trace.
+   ```hcl
+   { action = "ACCEPT", source = "+sdn/vint-all", dest = "+sdn/vsrv-all", proto = "tcp", dport = "9093", comment = "Alertmanager INFRA-512" },
+   ```
+
+3. Si le firewall de l'invité est actif avec INPUT DROP, y ajouter
+   `IN ACCEPT -source +sdn/vint-all -p tcp -dport 9093 -log nolog`.
+   Autoriser également le port dans le firewall de l'OS ; Alertmanager doit écouter.
+4. `terraform plan`, puis `terraform apply` : la modification concerne les règles
+   Datacenter. Il n'y a pas de changement nécessaire dans `vsrv.fw`.
+5. Tester depuis INTERNAL vers le listener 9093, puis depuis la DMZ où il doit rester
+   interdit. Adapter le test de matrice local si cette exception est conservée.
+6. Versionner l'exception avec son ticket.
 
 ### Et le retour arrière ?
+
+Retirer aussi l’autorisation invitée/OS ajoutée pour l’exercice, puis :
 
 ```bash
 git revert HEAD
@@ -619,7 +606,7 @@ Reposez le fichier de référence tout de suite : le nœud est sans firewall Dat
 et `vint.fw` / `vdmz.fw` référencent l'alias `lan_salle`, qui n'existe plus.
 
 ```bash
-ssh root@$PVE 'cp /root/formation/lab/firewall/cluster.fw.example /etc/pve/firewall/cluster.fw'
+ssh root@$PVE 'cp /root/formation/lab/firewall/standalone/cluster.fw.example /etc/pve/firewall/cluster.fw'
 ```
 
 ```bash
@@ -640,7 +627,7 @@ l'UI bloque le `destroy`.
 - [ ] `ip -br a` montre `vsrv` avec `10.10.30.1/24`
 - [ ] Les 2 guests obtiennent une IP par DHCP dans le nouveau réseau
 - [ ] SERVICES → INTERNAL:9100 ✅ · SERVICES → INTERNAL:5432 ❌
-- [ ] J'ai **décommenté** les règles `vsrv` dans `vint.fw` et `vdmz.fw`, et je sais pourquoi elles sont nécessaires
+- [ ] Les flux SERVICES sont dans le FORWARD Datacenter ; aucun doublon inter-zone à décommenter dans les VNets
 - [ ] DMZ → SERVICES ❌ et journalisé
 - [ ] L'ajout d'une règle se fait en modifiant le template + `apply`
 - [ ] `terraform destroy` supprime tout, dans le bon ordre

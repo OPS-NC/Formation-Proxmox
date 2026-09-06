@@ -1,4 +1,3 @@
-# GÉNÉRÉ PAR TERRAFORM — ne pas modifier le fichier déployé.
 # /etc/pve/sdn/firewall/vsrv.fw — standalone uniquement
 # Commutation intra-VNet et échanges avec l'hôte.
 # Le routage inter-zones / LAN / Internet est filtré dans cluster.fw, pas ici.

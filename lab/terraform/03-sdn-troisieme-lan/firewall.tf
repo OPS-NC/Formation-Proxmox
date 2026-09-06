@@ -25,7 +25,7 @@ resource "local_file" "fw_vsrv" {
 }
 
 resource "terraform_data" "push_fw" {
-  depends_on = [proxmox_sdn_applier.apply]
+  depends_on = [proxmox_sdn_applier.apply, proxmox_virtual_environment_cluster_firewall.options]
 
   triggers_replace = [local_file.fw_vsrv.content_md5]
 

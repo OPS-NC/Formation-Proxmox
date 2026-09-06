@@ -3,7 +3,12 @@
 ⏱️ **1 h 45** · Jour 2
 
 Objectif : fermer par défaut, ouvrir explicitement. On sépare `vint` et `vdmz` avec des
-règles au niveau VNet, en nftables, en s'appuyant sur les IPSets générés par le SDN.
+règles FORWARD du Datacenter pour le routage, et des règles VNet pour la commutation,
+en nftables, en s'appuyant sur les IPSets générés par le SDN.
+
+Périmètre : standalone (TP 01–15). Les exemples dédiés sont dans
+`lab/firewall/standalone/` ; les exemples historiques utilisés en cluster restent inchangés.
+Même sur un seul nœud, le fichier du Datacenter s'appelle `cluster.fw`.
 
 📖 Doc : <https://pve.proxmox.com/pve-docs/chapter-pve-firewall.html>
 📖 Référence maison : [`SDN.md`](SDN.md) §8
@@ -16,9 +21,10 @@ Le document à produire avant d'écrire la moindre règle.
 
 | De ↓ / Vers → | INTERNAL | DMZ | Hôte / gw | Internet |
 |---|:---:|:---:|:---:|:---:|
-| **INTERNAL** | ✅ libre | 🟡 22, 80, 443 | 🟡 DNS, ICMP | ✅ libre |
-| **DMZ** | ❌ **interdit** | 🟡 80, 443 | 🟡 DNS, ICMP | 🟡 80, 443, 53 |
-| **Internet** | ❌ | ❌ (sauf DNAT explicite) | 🟡 8006, 22 | — |
+| **INTERNAL** | ✅ libre | 🟡 TCP 22/80/443, ICMP | 🟡 DHCP, DNS, ICMP | ✅ libre |
+| **DMZ** | ❌ **interdit** | 🟡 TCP 80/443 | 🟡 DHCP, DNS, ICMP | 🟡 TCP 80/443, DNS UDP+TCP 53, NTP UDP 123 |
+| **LAN salle 172.30.30.0/24** | 🟡 TCP 22/80/443/5432, ICMP | 🟡 TCP 22/80/443/5432, ICMP | 🟡 administration PVE | — |
+| **Internet** | ❌ | ❌ (sauf DNAT explicite) | ❌ nouvelle connexion non sollicitée | — |
 
 Légende : ✅ tout · 🟡 liste blanche · ❌ bloqué et journalisé
 
@@ -206,22 +212,22 @@ pvesh create /cluster/firewall/groups/srv-web --action ACCEPT --type in --proto 
 | IN | ACCEPT | tcp | 8006 | `+management` | Interface web |
 | IN | ACCEPT | tcp | 22 | `+management` | SSH |
 | IN | ACCEPT | tcp | 5900:5999 | `+management` | noVNC |
-| IN | ACCEPT | udp | 5405:5412 | `lan_salle` | Corosync (jour 4) |
 | IN | ACCEPT | — | — | `lan_salle` | ICMP (proto `icmp`) |
 | **FORWARD** | ACCEPT | tcp | 22 | `lan_salle` → `net_internal` | ⭐ SSH depuis le poste |
 | **FORWARD** | ACCEPT | tcp | 80 | `lan_salle` → `net_internal` | HTTP depuis le poste |
+| **FORWARD** | ACCEPT | tcp | 443 | `lan_salle` → `net_internal` | HTTPS depuis le poste |
 | **FORWARD** | ACCEPT | tcp | 5432 | `lan_salle` → `net_internal` | PostgreSQL depuis le poste |
 | **FORWARD** | ACCEPT | icmp | — | `lan_salle` → `net_internal` | ping depuis le poste |
-| **FORWARD** | ACCEPT | … | … | `lan_salle` → `net_dmz` | les 4 mêmes flux vers la DMZ |
+| **FORWARD** | ACCEPT | … | … | `lan_salle` → `net_dmz` | les 5 mêmes flux vers la DMZ |
 
 🧠 **Pourquoi des règles FORWARD ?** Depuis le TP 07, votre PC route vers `10.10.0.0/16`
 à travers le nœud. Ce trafic n'est ni entrant ni sortant pour lui : il le traverse, et
 `Forward Policy: DROP` le jette — avec vos `ssh eleve@10.10.x.y`, le `curl` vers la DMZ
 et bientôt Ansible (TP 13). On rouvre donc, depuis le LAN et vers chaque réseau privé,
-quatre flux : SSH, HTTP, PostgreSQL, ICMP. Le TP 12 ajoutera `net_services` et
-`net_evpn` (le réseau EVPN du jour 4) en Terraform. Chaque VNet ayant son propre
-`policy_forward: DROP` (§5), les mêmes quatre flux sont répétés en miroir dans `vint.fw`
-et `vdmz.fw`.
+cinq flux : SSH, HTTP, HTTPS, PostgreSQL, ICMP. Le TP 12 ajoutera SERVICES.
+Ces autorisations du trafic routé sont dans le FORWARD du Datacenter. Les fichiers
+VNet autorisent aussi ces sources lorsqu'un paquet est émis localement par l'hôte
+avec son IP LAN (hook OUTPUT), ce qui n'est pas le chemin routé depuis le poste.
 
 Puis `Datacenter → Firewall → Options` :
 
@@ -233,7 +239,7 @@ Puis `Datacenter → Firewall → Options` :
 | **Forward Policy** | **`DROP`** ★ |
 
 Fichier résultant (`/etc/pve/firewall/cluster.fw`) — modèle complet dans
-`lab/firewall/cluster.fw.example` :
+`lab/firewall/standalone/cluster.fw.example` :
 
 ```ini
 [OPTIONS]
@@ -256,16 +262,17 @@ gw_salle     172.30.30.2
 IN ACCEPT -source +management -p tcp -dport 8006 -log nolog # UI Proxmox
 IN ACCEPT -source +management -p tcp -dport 22 -log nolog   # SSH
 IN ACCEPT -source +management -p tcp -dport 5900:5999 -log nolog # noVNC
-IN ACCEPT -source lan_salle -p udp -dport 5405:5412 -log nolog   # Corosync
 IN ACCEPT -source lan_salle -p icmp -log nolog
 
 # ⭐ depuis le poste, vers les réseaux privés (via la route du TP 07)
 FORWARD ACCEPT -source lan_salle -dest net_internal -p tcp -dport 22 -log nolog
 FORWARD ACCEPT -source lan_salle -dest net_internal -p tcp -dport 80 -log nolog
+FORWARD ACCEPT -source lan_salle -dest net_internal -p tcp -dport 443 -log nolog
 FORWARD ACCEPT -source lan_salle -dest net_internal -p tcp -dport 5432 -log nolog
 FORWARD ACCEPT -source lan_salle -dest net_internal -p icmp -log nolog
 FORWARD ACCEPT -source lan_salle -dest net_dmz -p tcp -dport 22 -log nolog
 FORWARD ACCEPT -source lan_salle -dest net_dmz -p tcp -dport 80 -log nolog
+FORWARD ACCEPT -source lan_salle -dest net_dmz -p tcp -dport 443 -log nolog
 FORWARD ACCEPT -source lan_salle -dest net_dmz -p tcp -dport 5432 -log nolog
 FORWARD ACCEPT -source lan_salle -dest net_dmz -p icmp -log nolog
 
@@ -318,179 +325,92 @@ Proxmox génère automatiquement, pour chaque VNet :
 | `+sdn/vint-all` | toutes les IP du VNet `vint`, gateway comprise |
 | `+sdn/vint-gateway` | uniquement `10.10.10.1` |
 | `+sdn/vint-no-gateway` | tout le VNet **sauf** la gateway |
-| `+sdn/zint-all` | toutes les IP de la zone `zint` |
 
 Aucune IP en dur dans les règles : si le plan d'adressage change, les règles suivent.
 
 ### 5.2 Règles de `vint` (réseau interne)
 
-🌐 `Datacenter → SDN → VNets → vint → Firewall`
-
-Ou directement le fichier `/etc/pve/sdn/firewall/vint.fw` :
+Le VNet ne porte que les règles des échanges commutés et avec sa gateway :
+DHCP, DNS UDP/TCP, ping gateway et trafic interne libre.
 
 ```ini
+# /etc/pve/sdn/firewall/vint.fw — standalone uniquement
+# Commutation intra-VNet et échanges avec l'hôte.
+# Le routage inter-zones / LAN / Internet est filtré dans cluster.fw, pas ici.
 [OPTIONS]
 enable: 1
 policy_forward: DROP
 
 [RULES]
-# --- Services d'infrastructure -----------------------------------------------
-FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vint-gateway -p udp -dport 53 -log nolog # DNS
-FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vint-gateway -p tcp -dport 53 -log nolog # DNS TCP
-FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vint-gateway -p icmp -log nolog
-
-# --- Depuis le poste (lan_salle) : SSH, HTTP, PostgreSQL, ping ---------------
-# Défense en profondeur : ce flux est ROUTÉ (LAN → VNet), il se décide dans cluster.fw
-# (FORWARD lan_salle → net_*). Ces lignes ne couvrent que ce que la chaîne VNet voit.
-FORWARD ACCEPT -source lan_salle -dest +sdn/vint-all -p tcp -dport 22 -log nolog
-FORWARD ACCEPT -source lan_salle -dest +sdn/vint-all -p tcp -dport 80 -log nolog
-FORWARD ACCEPT -source lan_salle -dest +sdn/vint-all -p tcp -dport 5432 -log nolog
-FORWARD ACCEPT -source lan_salle -dest +sdn/vint-all -p icmp -log nolog
-
-# --- Interne vers interne : libre --------------------------------------------
-FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vint-all -log nolog
-
-# --- Interne vers DMZ : liste blanche ----------------------------------------
-FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 22 -log nolog  # admin SSH
-FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 80 -log nolog
-FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 443 -log nolog
-FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p icmp -log nolog
-
-# --- Interne vers Internet : tout --------------------------------------------
-FORWARD ACCEPT -source +sdn/vint-all -log nolog
-
-# --- Tout le reste tombe dans policy_forward: DROP ---------------------------
-```
-
-🪤 La dernière règle n'a pas de `-dest` : elle accepte tout ce qui vient de `vint`, y
-compris vers `vdmz`. La liste blanche au-dessus ne sert à rien.
-
-Correction : refuser explicitement `vint → vdmz` avant la règle fourre-tout.
-
-```ini
-[RULES]
+# DHCP initial et réponse (le client commence avec 0.0.0.0).
+FORWARD ACCEPT -p udp -dport 67:68 -log nolog
 FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vint-gateway -p udp -dport 53 -log nolog
 FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vint-gateway -p tcp -dport 53 -log nolog
 FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vint-gateway -p icmp -log nolog
-
-# --- Depuis le poste (lan_salle) : SSH, HTTP, PostgreSQL, ping ---------------
+# Trafic émis par l'hôte avec une IP source du LAN (hook OUTPUT de l'hôte).
+# Le trafic LAN routé depuis le PC reste contrôlé dans cluster.fw.
 FORWARD ACCEPT -source lan_salle -dest +sdn/vint-all -p tcp -dport 22 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vint-all -p tcp -dport 80 -log nolog
+FORWARD ACCEPT -source lan_salle -dest +sdn/vint-all -p tcp -dport 443 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vint-all -p tcp -dport 5432 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vint-all -p icmp -log nolog
-
+# Entre invités du même réseau : libre.
 FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vint-all -log nolog
-
-# liste blanche vers la DMZ (AVANT le fourre-tout)
-FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 22 -log nolog
-FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 80 -log nolog
-FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 443 -log nolog
-FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p icmp -log nolog
-# tout autre flux vers la DMZ est refusé et journalisé
-FORWARD DROP   -source +sdn/vint-all -dest +sdn/vdmz-all -log info
-
-# Internet
-FORWARD ACCEPT -source +sdn/vint-all -log nolog
 ```
 
-🧠 Première correspondance gagnante. Relisez vos règles de haut en bas : à quelle ligne
-ce paquet s'arrête-t-il ?
+### 5.3 Règles de `vdmz` (DMZ)
 
-### 🪤 La subtilité qui piège tout le monde : un paquet traverse DEUX VNets
-
-Un flux `vint → vdmz` est évalué par `vint.fw` **et** par `vdmz.fw`, et doit être
-accepté par les deux. D'où la liste blanche 22/80/443 dans les deux fichiers, en sortie
-et en entrée.
-
-La doc Proxmox est explicite :
-
-> *« Since traffic passing the FORWARD chain is bi-directional, you need to create
-> rules for both directions if you want traffic to pass both ways. »*
-
-⚠️ Ne confondez pas avec le **conntrack**, qui gère le paquet **retour** d'une
-connexion déjà acceptée. Ici on parle du **sens initial** : `A → B` et `B → A`
-sont deux flux distincts, chacun a besoin de sa règle, dans les deux fichiers.
-
-```
-   vint.fw                          vdmz.fw
-   ┌──────────────────┐             ┌──────────────────┐
-   │ ACCEPT vint→vdmz │  ──── 22 ──►│ ACCEPT vint→vdmz │  ✅ passe
-   │      :22         │             │      :22         │
-   ├──────────────────┤             ├──────────────────┤
-   │ (rien)           │  ◄─── 22 ───│ ACCEPT vint→vdmz │  ❌ jeté par vint.fw
-   └──────────────────┘             └──────────────────┘
-        ▲ le DROP est ici, pas là où on l'attend
-```
-
-Le même piège revient au **TP 12** avec la zone `services`.
-
-### 5.3 Règles de `vdmz` (DMZ, régime strict)
-
-`/etc/pve/sdn/firewall/vdmz.fw` :
+Même infrastructure, mais entre invités de la DMZ seuls HTTP et HTTPS sont ouverts.
 
 ```ini
+# /etc/pve/sdn/firewall/vdmz.fw — standalone uniquement
+# Commutation intra-VNet et échanges avec l'hôte.
+# Le routage inter-zones / LAN / Internet est filtré dans cluster.fw, pas ici.
 [OPTIONS]
 enable: 1
 policy_forward: DROP
 
 [RULES]
-# --- Services d'infrastructure -----------------------------------------------
+# DHCP initial et réponse (le client commence avec 0.0.0.0).
+FORWARD ACCEPT -p udp -dport 67:68 -log nolog
 FORWARD ACCEPT -source +sdn/vdmz-all -dest +sdn/vdmz-gateway -p udp -dport 53 -log nolog
 FORWARD ACCEPT -source +sdn/vdmz-all -dest +sdn/vdmz-gateway -p tcp -dport 53 -log nolog
 FORWARD ACCEPT -source +sdn/vdmz-all -dest +sdn/vdmz-gateway -p icmp -log nolog
-
-# --- Depuis le poste (lan_salle) : SSH, HTTP, PostgreSQL, ping ---------------
-# Défense en profondeur : ce flux est ROUTÉ (LAN → VNet), il se décide dans cluster.fw
-# (FORWARD lan_salle → net_*). Ces lignes ne couvrent que ce que la chaîne VNet voit.
+# Trafic émis par l'hôte avec une IP source du LAN (hook OUTPUT de l'hôte).
+# Le trafic LAN routé depuis le PC reste contrôlé dans cluster.fw.
 FORWARD ACCEPT -source lan_salle -dest +sdn/vdmz-all -p tcp -dport 22 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vdmz-all -p tcp -dport 80 -log nolog
+FORWARD ACCEPT -source lan_salle -dest +sdn/vdmz-all -p tcp -dport 443 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vdmz-all -p tcp -dport 5432 -log nolog
 FORWARD ACCEPT -source lan_salle -dest +sdn/vdmz-all -p icmp -log nolog
-
-# --- Entre machines de la DMZ : web uniquement -------------------------------
+# Entre invités de la DMZ : HTTP(S) uniquement.
 FORWARD ACCEPT -source +sdn/vdmz-all -dest +sdn/vdmz-all -p tcp -dport 80 -log nolog
 FORWARD ACCEPT -source +sdn/vdmz-all -dest +sdn/vdmz-all -p tcp -dport 443 -log nolog
-
-# --- Flux entrant depuis l'interne (retour de connexion géré par conntrack) ---
-FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 22 -log nolog
-FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 80 -log nolog
-FORWARD ACCEPT -source +sdn/vint-all -dest +sdn/vdmz-all -p tcp -dport 443 -log nolog
-
-# --- 🚨 DMZ vers INTERNE : INTERDIT, et on le journalise ----------------------
-FORWARD DROP -source +sdn/vdmz-all -dest +sdn/vint-all -log warning
-
-# --- DMZ vers Internet : mises à jour uniquement ------------------------------
-FORWARD ACCEPT -source +sdn/vdmz-all -p tcp -dport 80 -log nolog
-FORWARD ACCEPT -source +sdn/vdmz-all -p tcp -dport 443 -log nolog
-FORWARD ACCEPT -source +sdn/vdmz-all -p udp -dport 53 -log nolog
-FORWARD ACCEPT -source +sdn/vdmz-all -p udp -dport 123 -log nolog # NTP = UDP
 ```
 
-🧠 Le DROP DMZ→INTERNE précède les règles Internet : celles-ci n'ont pas de `-dest` et
-laisseraient passer un `vdmz → vint:443`.
+Le trafic **routé** `vint → vdmz` est filtré dans le FORWARD du Datacenter (§5.4),
+pas par deux copies de la matrice dans les VNets. Les réponses d'une connexion
+acceptée sont suivies par conntrack ; une nouvelle connexion en sens inverse reste
+soumise à sa propre règle. Le firewall de la VM destination reste applicable (§6).
 
 ### Appliquer
 
 ```bash
 # Fichiers d'exemple utilisables tels quels : IPSets +sdn/… et alias du Datacenter, aucune
-# IP en dur (lab/firewall/README.md). Le dépôt est sur le nœud depuis le TP 08 §2.
+# IP en dur (lab/firewall/standalone/README.md). Le dépôt est sur le nœud depuis le TP 08 §2.
 [ -d /root/formation ] || git clone <url-du-depot> /root/formation
 mkdir -p /etc/pve/sdn/firewall
-cp /root/formation/lab/firewall/vint.fw.example /etc/pve/sdn/firewall/vint.fw
-cp /root/formation/lab/firewall/vdmz.fw.example /etc/pve/sdn/firewall/vdmz.fw
+cp /root/formation/lab/firewall/standalone/vint.fw.example /etc/pve/sdn/firewall/vint.fw
+cp /root/formation/lab/firewall/standalone/vdmz.fw.example /etc/pve/sdn/firewall/vdmz.fw
 
-# ⚠ Ces fichiers contiennent déjà les règles « supervision » vers un VNet vsrv qui
-#   n'existe qu'au TP 12 : on les neutralise, le TP 12 les décommentera.
-sed -i '/+sdn\/vsrv-all/s/^/#/' /etc/pve/sdn/firewall/{vint,vdmz}.fw
-grep -c '^#FORWARD' /etc/pve/sdn/firewall/vint.fw /etc/pve/sdn/firewall/vdmz.fw
-
+# Aucune référence à vsrv avant sa création au TP 12.
 pvesh set /cluster/sdn
 systemctl reload proxmox-firewall 2>/dev/null || systemctl restart proxmox-firewall
 nft list ruleset | grep -c .
 ```
 
 🪤 `proxmox-firewall` **ignore silencieusement** toute règle qui référence un IPSet
-inconnu (d'où la neutralisation des lignes `vsrv` ci-dessus). Rien à l'écran, il faut
+inconnu. Rien à l'écran, il faut
 aller le lire :
 
 ```bash
@@ -501,9 +421,8 @@ journalctl -u proxmox-firewall -n 50 --no-pager | grep -i "could not find ipset"
 
 ### 5.4 ⚠️ Ce que les règles VNet ne filtrent PAS — à lire deux fois
 
-Le §5.2 laisse croire qu'un fichier `vint.fw` suffit à rouvrir ce que
-`policy_forward: DROP` a fermé. **C'est faux**, et la documentation officielle est
-formelle sur le périmètre de chaque zone :
+Un fichier `vint.fw` ne suffit pas à autoriser le trafic routé. Voici le périmètre
+de chaque zone :
 
 > **VNet** — *Traffic passing through a SDN VNet, either from guest to guest or from
 > host to guest and vice-versa.*
@@ -554,7 +473,7 @@ jamais visiter `bridge-vint`**. Voilà pourquoi vos règles VNet « ne servent �
 #### Les règles `FORWARD` de `cluster.fw`
 
 Elles reprennent la matrice du §1. Même logique d'ordre qu'au niveau VNet : les `DROP`
-explicites **avant** les règles fourre-tout sans `-dest`. `lab/firewall/cluster.fw.example`
+explicites **avant** les règles fourre-tout sans `-dest`. `lab/firewall/standalone/cluster.fw.example`
 les contient déjà, à la suite des règles `lan_salle` du §4.4 ; si vous l'avez copié,
 elles sont en place.
 
@@ -570,6 +489,7 @@ FORWARD ACCEPT -source +sdn/vint-all -log nolog                          # inter
 FORWARD ACCEPT -source +sdn/vdmz-all -p tcp -dport 80 -log nolog
 FORWARD ACCEPT -source +sdn/vdmz-all -p tcp -dport 443 -log nolog
 FORWARD ACCEPT -source +sdn/vdmz-all -p udp -dport 53 -log nolog
+FORWARD ACCEPT -source +sdn/vdmz-all -p tcp -dport 53 -log nolog
 FORWARD ACCEPT -source +sdn/vdmz-all -p udp -dport 123 -log nolog
 ```
 
@@ -642,7 +562,7 @@ EOF
 la VM ; en `policy_in: DROP`, la VM doit encore l'accepter. D'où la ligne
 `-source lan_salle` (le port 80 est couvert par `srv-web`).
 
-Sur `srv01`, on n'ouvre PostgreSQL qu'à l'interne, et RDP de `win01` qu'à l'interne :
+Sur `srv01`, PostgreSQL est accessible depuis l'interne et le LAN salle :
 
 ```bash
 cat > /etc/pve/firewall/101.fw <<'EOF'
@@ -670,6 +590,7 @@ policy_in: DROP
 policy_out: ACCEPT
 
 [RULES]
+IN ACCEPT -source lan_salle -p tcp -dport 22 -log nolog   # SSH si OpenSSH est activé
 IN ACCEPT -source +sdn/vint-all -p tcp -dport 3389 -log info   # RDP
 IN ACCEPT -source +sdn/vint-all -p tcp -dport 445 -log nolog   # SMB
 IN ACCEPT -p icmp -log nolog
@@ -684,23 +605,93 @@ on vous demandera qui s'est connecté et quand.
 
 ---
 
+### SSH depuis le LAN : règle obligatoire sur chaque invité
+
+Pour **toute VM/CT avec Input Policy DROP**, conserver dans `[RULES]`, avant un
+éventuel DROP explicite :
+
+```ini
+IN ACCEPT -source lan_salle -p tcp -dport 22 -log nolog
+```
+
+Cela vaut aussi pour les nouveaux guests Terraform et PBS si leur firewall Proxmox
+est activé. Pour les invités sur `vmbr0` (dont PBS), le LAN est directement connecté :
+la règle FORWARD vers les VNets ne remplace pas cette autorisation invité.
+
+Vérifier également le service SSH, la clé et le firewall **dans l'OS**. Sur Rocky avec
+firewalld actif, autoriser TCP 22 depuis `172.30.30.0/24` dans la zone de la carte :
+
+```bash
+# Dans Rocky uniquement, SI firewalld est actif ; adapter à la zone de sa carte.
+sudo firewall-cmd --get-active-zones
+sudo firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" source address="172.30.30.0/24" port port="22" protocol="tcp" accept'
+sudo firewall-cmd --reload
+```
+
+Sur Windows, depuis PowerShell administrateur dans noVNC :
+
+```powershell
+$sshCapability = Get-WindowsCapability -Online -Name 'OpenSSH.Server*'
+if ($sshCapability.State -ne 'Installed') {
+    Add-WindowsCapability -Online -Name $sshCapability.Name
+}
+Set-Service sshd -StartupType Automatic
+Start-Service sshd
+if (Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue) {
+    Set-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -Enabled True -RemoteAddress 172.30.30.0/24
+} else {
+    New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'SSH depuis LAN salle' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 22 -RemoteAddress 172.30.30.0/24
+}
+```
+
+Configurer ensuite la clé publique du compte Windows (administrateur :
+`C:\ProgramData\ssh\administrators_authorized_keys`, avec les [ACL requises](https://learn.microsoft.com/fr-fr/windows-server/administration/openssh/openssh_keymanagement)), et tester
+depuis le poste. RDP reste réservé à INTERNAL. Référence :
+[installation OpenSSH Windows](https://learn.microsoft.com/fr-fr/windows-server/administration/openssh/openssh_install_firstuse).
+
+### PostgreSQL : rendre les tests du TP effectivement possibles
+
+Sur srv01, le TP 08 installe PostgreSQL mais le laisse sur loopback. Depuis SSH ou
+noVNC, définir l'écoute, puis redémarrer :
+
+```bash
+sudo -u postgres psql -c "ALTER SYSTEM SET listen_addresses = '*';"
+sudo systemctl restart postgresql
+sudo ss -lntp | grep ':5432'
+sudo -u postgres psql -Atc 'SHOW hba_file;'
+```
+
+Dans le fichier indiqué, autoriser uniquement les bases/rôles nécessaires depuis
+`10.10.10.0/24` et `172.30.30.0/24` avec `scram-sha-256`, puis recharger le service.
+Ne pas utiliser `trust` ni ouvrir `0.0.0.0/0`. Un `nc` réussi teste TCP ; utiliser
+ensuite `psql` avec un rôle et son mot de passe pour vérifier le service applicatif.
+
+---
+
 ## 7. Tests de validation 🧪
 
-Le script `lab/scripts/test-firewall.sh` se lance depuis `srv01` (zone interne).
-Copiez-le :
+Le script standalone se lance depuis le **poste Linux du LAN salle**, pas depuis
+le nœud ni une VM. Il se connecte directement aux deux zones pour exécuter les sondes
+avec la bonne IP source, sans transférer de clé privée ni utiliser agent forwarding.
 
 ```bash
-scp /root/formation/lab/scripts/test-firewall.sh eleve@10.10.10.<srv01>:
+bash lab/scripts/test-firewall-standalone.sh --int <ip-srv01> --dmz <ip-alpine>
 ```
 
-```bash
-# sur srv01
-bash test-firewall.sh --int <ip-srv01> --dmz <ip-alpine> --win <ip-win01>
-```
+Prérequis : route `10.10.0.0/16 via $PVE`, clés du poste autorisées sur les deux
+invités, empreintes SSH vérifiées et enregistrées. `--int-user eleve` et
+`--dmz-user root` sont les valeurs par défaut. Installer `netcat-openbsd`, `curl`
+et `iproute2` sur les deux invités (Alpine : `apk add netcat-openbsd curl iproute2`).
+nginx doit écouter sur la DMZ, PostgreSQL sur l'IP de srv01 (voir ci-dessous).
 
-Il se connecte en SSH à la machine DMZ pour tester depuis elle. Sur `ct-alpine` la clé
-est sur `root` (TP 05), donc `root@` par défaut ; `--dmz-user eleve` pour une VM
-cloud-init. Ou à la main :
+Pour le test négatif TCP 8080, lancer temporairement sur ct-alpine, dans une console
+distincte : `busybox httpd -f -p 8080 -h /tmp` ; arrêter avec Ctrl+C après le test.
+Le script contrôle localement ce listener avant d'interpréter un refus réseau.
+L'absence de SSH, d'outil ou de listener obligatoire est une **erreur**, jamais un succès.
+
+Pour vérifier SSH vers **chaque autre machine**, relancer depuis le poste
+`ssh <compte>@<IP> hostname` (Linux, CT, Windows avec OpenSSH, PVE et PBS).
+La liste d'inventaire doit être complète : deux machines sondées ne valident pas tout le parc.
 
 ### Depuis `srv01` (INTERNAL)
 
@@ -731,7 +722,7 @@ qm terminal 101
 | **DMZ → SSH interne** | `nc -zvw2 10.10.10.<srv01> 22` | ❌ **timeout** 🎯 |
 | **DMZ → RDP Windows** | `nc -zvw2 10.10.10.<win01> 3389` | ❌ **timeout** 🎯 |
 
-🧠 DMZ → INTERNAL:22 échoue alors que `vdmz.fw` autorise `vint → vdmz:22` : la règle
+🧠 DMZ → INTERNAL:22 échoue alors que le FORWARD du Datacenter autorise `vint → vdmz:22` : la règle
 est unidirectionnelle. Le SSH part de l'interne, jamais l'inverse.
 
 ### Lire les journaux
@@ -764,10 +755,23 @@ Ne pas ouvrir 5432 de la DMZ vers l'interne. Par ordre de préférence :
    sur un seul port, et journaliser.
 
 ```ini
-# Dans vdmz.fw — AVANT la règle DROP globale DMZ→INTERNE
-FORWARD ACCEPT -source 10.10.20.101 -dest 10.10.10.100 -p tcp -dport 5432 -log info \
-    # ticket INFRA-421, ct-alpine -> srv01, revoir le 2026-12-31
+# Dans /etc/pve/firewall/cluster.fw — AVANT le DROP DMZ→INTERNE.
+# Remplacer ces deux IP par les adresses réelles, réservées pour cet exercice.
+FORWARD ACCEPT -source 10.10.20.101 -dest 10.10.10.100 -p tcp -dport 5432 -log info # INFRA-421
+
+# Dans /etc/pve/firewall/101.fw, section [RULES] :
+IN ACCEPT -source 10.10.20.101 -p tcp -dport 5432 -log info # INFRA-421
 ```
+
+Sur srv01, ajouter aussi à `pg_hba.conf` une autorisation SCRAM limitée à la base,
+au rôle applicatif et à `10.10.20.101/32` ; recharger PostgreSQL. Le service doit
+écouter sur l'IP interne, pas seulement localhost (§6). Vérifier avec `psql` depuis
+ct-alpine : une connexion TCP ne prouve pas que l'authentification fonctionne.
+
+Cette exception change temporairement la matrice : le test « DMZ → PostgreSQL refusé »
+doit alors échouer. Après l'exercice, retirer les deux règles et l'entrée pg_hba,
+puis refaire les tests négatifs. Au TP 12, une exception persistante se déclare dans
+Terraform avant le DROP correspondant, jamais en éditant un fichier géré par lui.
 
 🧠 Documentez chaque exception : qui, pourquoi, jusqu'à quand. Sans ça, en deux ans,
 plus personne n'ose supprimer une règle.
@@ -779,7 +783,7 @@ plus personne n'ose supprimer une règle.
 | Symptôme | Cause | Solution |
 |---|---|---|
 | Les règles VNet n'ont aucun effet | `pve-firewall` iptables actif | `nftables: 1` dans `host.fw` + `apt install proxmox-firewall` |
-| Plus d'accès à `:8006` | `policy_in: DROP` sans règle d'autorisation | Console physique → `pve-firewall stop`, corriger `cluster.fw` |
+| Plus d'accès à `:8006` | `policy_in: DROP` sans règle d'autorisation | Console physique → `systemctl stop proxmox-firewall`, corriger `cluster.fw`, puis relancer le service |
 | **Les VM n'ont plus Internet, ni accès à l'autre VNet** | Règles écrites **uniquement** au niveau VNet : elles ne couvrent pas le trafic routé | Ajouter les règles `FORWARD` dans `cluster.fw` (**§5.4**) |
 | Plus de DNS ni de ping vers la gateway | `policy_in: DROP` : la gateway est une IP de l'hôte | Règles `IN ACCEPT -source +sdn/<vnet>-all` (**§4.4**) |
 | **Un guest redémarré n'obtient plus d'IP** | Le `drop` final du VNet tue le `DHCPDISCOVER` (source `0.0.0.0`) et l'`OFFER` | `FORWARD ACCEPT -p udp -dport 67:68` dans le `.fw` du VNet (**§5.4**) |
@@ -816,11 +820,12 @@ systemctl start proxmox-firewall
 - [ ] Je sais dire quel étage filtre un flux routé, et lequel filtre un flux intra-VNet
 - [ ] INTERNAL → Internet : ✅
 - [ ] INTERNAL → DMZ sur 80/443/22 : ✅
-- [ ] INTERNAL → DMZ sur 3306 : ❌
+- [ ] INTERNAL → DMZ sur 8080 : ❌, avec listener temporaire contrôlé
 - [ ] DMZ → Internet sur 443 : ✅
 - [ ] **DMZ → INTERNAL : ❌ sur tous les ports**
 - [ ] Les refus DMZ → INTERNAL apparaissent dans les journaux
 - [ ] J'ai toujours accès à l'interface web et au SSH du nœud
+- [ ] SSH depuis `172.30.30.0/24` fonctionne vers chaque VM/CT, y compris Windows avec OpenSSH, et PBS au TP 15
 - [ ] Je sais expliquer pourquoi l'ordre des règles est critique
 
 ---
