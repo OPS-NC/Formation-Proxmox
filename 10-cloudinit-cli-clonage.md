@@ -350,15 +350,16 @@ reboot depuis l'invité ne le relit pas).
 
 ---
 
-## 7. Les trois templates de la formation 📚
+## 7. Les templates de la formation 📚
 
-À la fin de ce TP, vous devez avoir :
+À la fin de ce TP, vous devez avoir, avec le template Windows du TP 04 §10 :
 
 | VMID | Nom | OS | Rôle dans la suite |
 |---|---|---|---|
 | `190` | `tpl-debian13` | Debian 13 | serveurs internes |
 | `191` | `tpl-ubuntu2604` | Ubuntu 26.04 | serveurs web / DMZ |
 | `192` | `tpl-rocky10` | Rocky Linux 10 | pour varier, et souffrir un peu 🪨 |
+| `193` | `tpl-win2025` | Windows Server 2025 | Cloudbase-Init (TP 04 §10) — `adm` du TP 21 |
 
 ```bash
 qm list | grep -E '19[0-2]'

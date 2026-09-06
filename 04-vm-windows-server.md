@@ -169,8 +169,12 @@ qm create $VMID \
   --memory 6144 --balloon 2048 \
   --net0 virtio,bridge=vmbr0,firewall=1 \
   --agent enabled=1 \
+  --serial0 socket \
   --vga std
 ```
+
+Le port série (`COM1` côté Windows) ne sert pas de console ici : il recevra les journaux
+de Cloudbase-Init au §10, lisibles avec `qm terminal 102`.
 
 ---
 
@@ -392,7 +396,158 @@ qm start $VMID
 
 ---
 
-## 10. Rôle Active Directory (optionnel, si le temps le permet) 🏢
+## 10. Cloudbase-Init : cloud-init pour Windows, et un template ☁️
+
+Au TP 10, les VM Linux naîtront de templates cloud-init : hostname, IP, mot de passe et
+clés injectés par Proxmox au premier démarrage. Windows sait faire la même chose avec
+**Cloudbase-Init** (<https://cloudbase.it/cloudbase-init/>), qui lit le lecteur cloud-init
+que Proxmox attache à la VM. On l'installe dans `win01`, puis on fabrique un template
+`tpl-win2025` à partir d'un **clone** : `win01` reste intacte pour les TP 08 et 09.
+
+📖 Doc : <https://cloudbase-init.readthedocs.io/> · Proxmox :
+<https://pve.proxmox.com/wiki/Cloud-Init_Support>
+
+### 10.1 Installer Cloudbase-Init dans `win01`
+
+Dans la session RDP ou la console, en PowerShell administrateur :
+
+```powershell
+Invoke-WebRequest https://www.cloudbase.it/downloads/CloudbaseInitSetup_Stable_x64.msi `
+  -OutFile $env:TEMP\CloudbaseInitSetup.msi
+Start-Process msiexec.exe -ArgumentList "/i $env:TEMP\CloudbaseInitSetup.msi" -Wait
+```
+
+L'assistant graphique s'ouvre. Écran **Configuration options** :
+
+| Option | Valeur | Pourquoi |
+|---|---|---|
+| Username | `Administrator` | Cloudbase-Init gère le mot de passe de **ce** compte ; pas de second admin |
+| Use metadata password | ✅ | le mot de passe vient de `qm set --cipassword`, pas d'un mot de passe aléatoire |
+| Run Cloudbase-Init service as LocalSystem | ✅ | le service doit pouvoir renommer la machine et configurer le réseau |
+| Serial port for logging | `COM1` | les journaux sortent sur le port série : `qm terminal <vmid>` depuis le nœud |
+
+Dernier écran, **deux cases à laisser décochées** : *Run Sysprep to create a generalized
+image* et *Shutdown when Sysprep terminates*. On ne généralise **pas** `win01` : ce
+serait la rendre inutilisable pour la suite. Le Sysprep se fera sur le clone (§10.3).
+
+### 10.2 Configurer le service pour Proxmox
+
+Proxmox génère pour un `ostype` Windows un lecteur cloud-init au format **`configdrive2`**
+(OpenStack), le format par défaut de Cloudbase-Init. Il reste à lui dire quoi appliquer.
+Les deux fichiers sont dans `C:\Program Files\Cloudbase Solutions\Cloudbase-Init\conf\`.
+
+`cloudbase-init.conf` (le premier démarrage d'un clone) :
+
+```ini
+[DEFAULT]
+username=Administrator
+groups=Administrators
+inject_user_password=true
+first_logon_behaviour=no
+config_drive_raw_hhd=true
+config_drive_cdrom=true
+config_drive_vfat=true
+bsdtar_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\bin\bsdtar.exe
+mtools_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\bin\
+verbose=true
+debug=true
+logdir=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\log\
+logfile=cloudbase-init.log
+default_log_levels=comtypes=INFO,suds=INFO,iso8601=WARN,requests=WARN
+logging_serial_port_settings=COM1,115200,N,8
+local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScripts\
+allow_reboot=true
+metadata_services=cloudbaseinit.metadata.services.configdrive.ConfigDriveService
+plugins=cloudbaseinit.plugins.common.mtu.MTUPlugin,
+        cloudbaseinit.plugins.common.sethostname.SetHostNamePlugin,
+        cloudbaseinit.plugins.windows.createuser.CreateUserPlugin,
+        cloudbaseinit.plugins.common.setuserpassword.SetUserPasswordPlugin,
+        cloudbaseinit.plugins.common.networkconfig.NetworkConfigPlugin,
+        cloudbaseinit.plugins.windows.extendvolumes.ExtendVolumesPlugin,
+        cloudbaseinit.plugins.common.sshpublickeys.SetUserSSHPublicKeysPlugin,
+        cloudbaseinit.plugins.common.userdata.UserDataPlugin,
+        cloudbaseinit.plugins.common.localscripts.LocalScriptsPlugin
+```
+
+Dans `cloudbase-init-unattend.conf` (exécuté pendant la phase Sysprep du clone), les
+mêmes `username`, `inject_user_password`, `first_logon_behaviour` et `metadata_services`.
+
+🪤 Trois réglages qui font la différence, tous les trois documentés dans les fils du forum
+Proxmox : `inject_user_password=true` **et** `SetUserPasswordPlugin` dans la liste, sinon le
+mot de passe de `--cipassword` n'est jamais appliqué ; `first_logon_behaviour=no`, sinon
+Windows exige un changement de mot de passe à la première ouverture de session ;
+`username=Administrator`, la valeur qui compte est celle de ce fichier, pas `--ciuser`.
+
+Test à blanc, sans lecteur cloud-init, le service doit démarrer et journaliser :
+
+```powershell
+Restart-Service cloudbase-init
+Get-Content "C:\Program Files\Cloudbase Solutions\Cloudbase-Init\log\cloudbase-init.log" -Tail 20
+```
+
+`No metadata service found` est la sortie attendue : pas de lecteur cloud-init sur `win01`.
+
+### 10.3 Le template : cloner, généraliser, sceller
+
+Sur le nœud, `win01` arrêtée proprement :
+
+```bash
+qm shutdown 102 --timeout 120
+qm clone 102 193 --name tpl-win2025 --full 1
+qm start 102                      # win01 reprend sa vie, on ne la touche plus
+qm start 193
+```
+
+Dans le **clone** (`193 → Console`), en PowerShell administrateur, le Sysprep avec le
+fichier de réponses fourni par Cloudbase-Init :
+
+```powershell
+& "C:\Windows\System32\Sysprep\sysprep.exe" /generalize /oobe /shutdown `
+  /unattend:"C:\Program Files\Cloudbase Solutions\Cloudbase-Init\conf\Unattend.xml"
+```
+
+La VM se généralise (SID, pilotes, activation) puis s'éteint. Sur le nœud :
+
+```bash
+qm set 193 --ide0 none --ide2 local-lvm:cloudinit --citype configdrive2
+qm set 193 --boot order=scsi0
+qm template 193
+```
+
+🧠 Le lecteur cloud-init remplace l'ISO Windows sur `ide2`. `--citype configdrive2` est le
+défaut pour un `ostype` Windows, on l'écrit pour que ce soit lisible. 🪤 **L'`ostype` doit
+être Windows avant tout `--cipassword`** : sinon Proxmox hache le mot de passe comme pour
+Linux, et Cloudbase-Init l'applique tel quel, haché.
+
+### 10.4 Le test : un clone qui se configure seul
+
+```bash
+qm clone 193 104 --name wintest --full 1
+qm set 104 --ciuser Administrator --cipassword 'Formation2026!' --ipconfig0 ip=dhcp
+qm start 104
+qm terminal 104                   # les journaux Cloudbase-Init défilent sur COM1 — Ctrl+O
+```
+
+Comptez deux à trois minutes et un ou deux redémarrages (passes *specialize* et *oobe*,
+puis renommage). Ensuite :
+
+```bash
+qm agent 104 get-host-name        # → wintest
+qm agent 104 network-get-interfaces | jq -r '.[]|."ip-addresses"[]?|select(."ip-address-type"=="ipv4")|."ip-address"'
+```
+
+Depuis le PC, RDP sur cette IP avec `Administrator` / `Formation2026!`, sans demande de
+changement de mot de passe. Puis :
+
+```bash
+qm stop 104 && qm destroy 104 --purge
+```
+
+Ce template servira au TP 21 (`adm-<nœud>`, adressé en statique via `--ipconfig0`).
+
+---
+
+## 11. Rôle Active Directory (optionnel, si le temps le permet) 🏢
 
 Un aperçu de ce que devient cette VM en usage réel :
 
@@ -417,6 +572,8 @@ La VM redémarre en contrôleur de domaine. On ne va pas plus loin dans cette fo
 - [ ] SPICE fonctionne avec `remote-viewer`
 - [ ] `xfreerdp3` ouvre une session RDP depuis mon PC
 - [ ] `qm shutdown` arrête proprement la VM (pas de timeout)
+- [ ] Cloudbase-Init est installé dans `win01`, `Administrator` + mot de passe metadata + COM1
+- [ ] Le template `tpl-win2025` (193) existe, et un clone a pris son hostname et son mot de passe tout seul
 - [ ] Je sais expliquer pourquoi Windows a besoin de l'ISO virtio-win
 
 ---
@@ -430,9 +587,9 @@ La VM redémarre en contrôleur de domaine. On ne va pas plus loin dans cette fo
    qm snapshot 102 avant-wu --vmstate 1
    ```
    Lancez les mises à jour, puis `qm rollback 102 avant-wu`.
-3. **Sysprep** : généralisez l'image (`C:\Windows\System32\Sysprep\sysprep.exe`
-   → *OOBE* + *Généraliser* + *Arrêter*), puis `qm template 102`. Vous avez un
-   template Windows clonable. Attention : un clone non sysprepé partage le même SID.
+3. **IP statique par cloud-init** : clonez `193` avec
+   `--ipconfig0 ip=172.30.30.240/24,gw=172.30.30.2 --nameserver 1.1.1.1` (adresse du pot
+   commun, à demander au formateur) et vérifiez `ipconfig` dans la VM.
 4. Comparez la consommation RAM affichée par Proxmox et par le Gestionnaire des tâches
    Windows, ballooning activé puis désactivé.
 

@@ -175,6 +175,8 @@ sur votre nœud.
 | *auto* | tout ce que crée **Terraform** (`web01`, `app01`, `db01`, `ct-cache`, `mon01`, `log01`) | 11, 12 |
 | `180`–`189` | bonus : dix Alpine d'un coup | 05 |
 | `190` / `191` / `192` | `tpl-debian13` / `tpl-ubuntu2604` / `tpl-rocky10` | 10 |
+| `193` | `tpl-win2025` — Windows Server 2025 + Cloudbase-Init | 04 |
+| `104` | `wintest` — clone de test du template Windows, détruit ensuite | 04 |
 | `901` | `pbs` — la VM Proxmox Backup Server (**hors pool** : sinon elle se sauvegarderait elle-même) | 15 |
 | `902` | `pulse` — le conteneur Pulse | 20 |
 

@@ -149,6 +149,8 @@ DNS des VM : `1.1.1.1`. Gateway : le `.1` du subnet (anycast, présente sur les 
 | `190` | `tpl-debian13` | 10 |
 | `191` | `tpl-ubuntu2604` | 10 |
 | `192` | `tpl-rocky10` | 10 |
+| `193` | `tpl-win2025` — Windows Server 2025 + Cloudbase-Init | 04 |
+| `104` | `wintest` — clone de test de `193`, détruit ensuite | 04 |
 | `901` | `pbs` — la VM Proxmox Backup Server, **hors pool** | 15 |
 | `902` | `pulse` (CT) | 20 |
 
@@ -345,7 +347,8 @@ Quatre trous à remplir, le reste est commun.
    │  Machines    101 srv01    102 win01                    │
    │              111 alpine   112 rocky    120 cloud01     │
    │              190 tpl-debian13  191 tpl-ubuntu2604      │
-   │              192 tpl-rocky10   901 pbs                 │
+   │              192 tpl-rocky10   193 tpl-win2025         │
+   │              901 pbs                                   │
    │  Jour 4      VMID = pvesh get /cluster/nextid          │
    │                                                        │
    │  LVM         pve/data     200 Go  → local-lvm          │

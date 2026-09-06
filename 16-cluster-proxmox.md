@@ -82,6 +82,7 @@ voulez garder.
 ```bash
 # Les guests que vous tenez à revoir (ex. cloud01, votre clone cloud-init du TP 10)
 vzdump 120 --storage nfs-pc --mode snapshot --compress zstd
+vzdump 193 --storage nfs-pc --mode stop --compress zstd     # le template Windows : long à refaire, court à restaurer
 ls -lh /mnt/pve/nfs-pc/dump/
 
 # Les configurations, qui ne sont dans aucune sauvegarde de guest
@@ -522,6 +523,13 @@ cluster prendrait la matinée. Là, il suffit de rejouer `terraform apply` puis
 
 🌐 `Datacenter → Search` montre les templates de tout le monde : six `tpl-debian13`,
 six VMID. Filtrez sur votre nœud.
+
+Le template Windows (`tpl-win2025`, TP 04 §10) ne se reconstruit pas par script : restaurez
+la sauvegarde déposée sur le NFS au §2.2, ou refaites le §10 du TP 04.
+
+```bash
+qmrestore /mnt/pve/nfs-$(hostname)/dump/vzdump-qemu-193-*.vma.zst $(pvesh get /cluster/nextid) --storage local-lvm
+```
 
 ### 7.5 Recréer le pool
 

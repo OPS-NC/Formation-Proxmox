@@ -71,7 +71,7 @@ nœud** (`<nœud>` = `pve3` → `front-pve3`) pour vous y retrouver dans la vue 
 | `data-<nœud>` | Rocky Linux 10 | `vdb` | PostgreSQL | déployé par Terraform |
 | `cache-<nœud>` | Alpine (LXC) | `vprod` | Redis ou nginx cache | déployé par Terraform |
 | — | — | — | Stockage | `front` et `app` sur **Ceph** · `data` sur **`local-lvm`** — ⚠️ voir ci-dessous |
-| `adm-<nœud>` | Windows Server 2025 | `vprod` | poste d'administration | RDP depuis `vprod` **seulement** |
+| `adm-<nœud>` | Windows Server 2025 | `vprod` | poste d'administration | clone de `tpl-win2025` (TP 04 §10), `--ciuser Administrator --cipassword … --ipconfig0` statique · RDP depuis `vprod` **seulement** |
 
 > 🧠 **Terraform en cluster** : comme dans toutes les stacks du jour 3, **pas de
 > `vm_id`** — le provider prend le prochain VMID libre du cluster, comme
