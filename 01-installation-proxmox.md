@@ -282,6 +282,44 @@ systemctl status dnsmasq --no-pager | head -3   # doit être inactive/disabled
 🪤 Si `dnsmasq` tourne en service système, il occupe le port 53/67 et **les instances
 `dnsmasq@<zone>` du SDN ne démarreront pas**.
 
+### Firewall : une seule pile, nftables — une fois pour toutes 🔥
+
+Proxmox VE 9 embarque **deux moteurs de firewall** : l'historique `pve-firewall`
+(iptables) et le nouveau `proxmox-firewall` (nftables, celui qu'on utilisera au TP 09).
+Debian 13 fournit en plus **deux back-ends** pour la commande `iptables` : `iptables-nft`
+(qui écrit dans nftables) et `iptables-legacy` (l'ancien noyau xtables). Quand les deux
+piles cohabitent sur le même hook, les règles sont invisibles l'une pour l'autre : NAT
+qui « disparaît », compteurs qui montent alors que les paquets sortent non natés,
+règles VNet ignorées en silence. On tranche **dès maintenant**, avant la moindre VM :
+
+```bash
+# 1. Le firewall iptables historique ne doit plus jamais démarrer
+systemctl mask --now pve-firewall
+
+# 2. Backend nft, une fois pour toutes
+update-alternatives --set iptables  /usr/sbin/iptables-nft
+update-alternatives --set ip6tables /usr/sbin/ip6tables-nft
+update-alternatives --set ebtables  /usr/sbin/ebtables-nft
+```
+
+Vérifiez :
+
+```bash
+systemctl is-enabled pve-firewall        # → masked
+iptables -V                              # → iptables v1.8.x (nf_tables) — surtout PAS (legacy)
+update-alternatives --display iptables | head -2
+```
+
+🧠 **`mask`** va plus loin que `disable` : l'unité est pointée sur `/dev/null`, donc
+même une dépendance ou un `systemctl start` à la main ne la relancera pas. La commande
+`pve-firewall compile` reste disponible : c'est le *service* qu'on neutralise, pas
+l'outil. Le firewall Proxmox de la formation sera **`proxmox-firewall`**, installé et
+activé au TP 09 avec `nftables: 1`.
+
+🪤 Sans cette étape, une bascule accidentelle sur `iptables-legacy` ou un `pve-firewall`
+qui redémarre après un `apt full-upgrade` suffit à mélanger les deux piles. C'est le
+piège n°1 des TP 07 et 09 : on l'élimine ici pour ne plus y revenir.
+
 ### Heure : indispensable pour le cluster
 
 ```bash
@@ -358,6 +396,8 @@ ping -c2 1.1.1.1
 - [ ] `hostname --ip-address` renvoie l'IP de mon nœud, pas `127.x`
 - [ ] `dpkg -l | grep frr-pythontools` renvoie une ligne
 - [ ] `systemctl is-enabled dnsmasq` renvoie `disabled`
+- [ ] `systemctl is-enabled pve-firewall` renvoie `masked`
+- [ ] `iptables -V` affiche `(nf_tables)`, pas `(legacy)`
 - [ ] `systemctl --failed` est vide
 - [ ] Le fuseau horaire est correct
 

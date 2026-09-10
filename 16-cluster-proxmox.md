@@ -136,14 +136,23 @@ différences :
 TP 18 (Ceph) se fera en trois commandes (« chemin A ») au lieu d'une chirurgie LVM.
 
 Puis rejouez le [TP 01 §5 et §6](01-installation-proxmox.md) : dépôts
-`no-subscription`, `apt full-upgrade`, paquets, `dnsmasq` désactivé, fuseau horaire.
+`no-subscription`, `apt full-upgrade`, paquets, `dnsmasq` désactivé, **`pve-firewall`
+masqué et back-end `iptables-nft`**, fuseau horaire.
 
 ```bash
 apt install -y vim tmux htop iftop tcpdump ethtool bridge-utils \
                frr frr-pythontools dnsmasq git proxmox-firewall
 systemctl disable --now dnsmasq
+systemctl mask --now pve-firewall
+update-alternatives --set iptables  /usr/sbin/iptables-nft
+update-alternatives --set ip6tables /usr/sbin/ip6tables-nft
+update-alternatives --set ebtables  /usr/sbin/ebtables-nft
 timedatectl set-timezone Pacific/Noumea    # ou Europe/Paris
 ```
+
+🪤 Le nœud est **neuf** : sans le `mask` et les `update-alternatives` du TP 01 §6, on
+repart avec deux piles de firewall qui se marchent dessus, exactement ce qu'on avait
+éliminé au jour 1.
 
 🪤 **`proxmox-firewall` n'est pas dans l'installation de base.** Sans lui, `nftables: 1`
 dans `host.fw` (TP 09 §2) n'a aucun effet et les règles VNet du TP 17 sont ignorées

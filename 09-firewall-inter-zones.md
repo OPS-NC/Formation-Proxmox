@@ -64,6 +64,9 @@ apt install -y proxmox-firewall
 
 ### 🪤 Avant d'aller plus loin : sur quel back-end pointe `iptables` ?
 
+Normalement, c'est réglé depuis le [TP 01 §6](01-installation-proxmox.md) : `pve-firewall`
+masqué, alternatives sur `*-nft`. On revérifie quand même, la suite du TP en dépend.
+
 Sur Debian 13, `iptables` doit être l'alternative **`iptables-nft`**. Basculée sur
 `iptables-legacy` (manipulation fréquente après le TP 07), le SDN écrit son SNAT dans
 les tables legacy, invisibles depuis `nft list ruleset` : diagnostic classique et faux,
