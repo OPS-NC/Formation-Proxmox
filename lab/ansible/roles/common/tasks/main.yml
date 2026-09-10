@@ -20,6 +20,7 @@
   delay: 5
   until: pkg is succeeded
 
+
 - name: Régler le fuseau horaire
   community.general.timezone:
     name: "{{ common_timezone }}"

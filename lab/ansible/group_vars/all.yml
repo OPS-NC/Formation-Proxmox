@@ -10,12 +10,11 @@ ansible_ssh_common_args: >-
   -o UserKnownHostsFile=/dev/null
 
 # ── Rôle common ──────────────────────────────────────────────────────────────
-common_timezone: "Pacific/Noumea"
+common_timezone: "Pacific/Tahiti"
 common_admin_user: "eleve"
 common_packages:
   - curl
   - vim
-  - htop
   - git
   - rsync
   - ca-certificates

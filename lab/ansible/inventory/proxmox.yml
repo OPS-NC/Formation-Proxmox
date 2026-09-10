@@ -68,15 +68,15 @@ compose:
       (proxmox_agent_interfaces | default([])
         | rejectattr('name', 'eq', 'lo')
         | map(attribute='ip-addresses') | flatten
-        | selectattr('ip-address-type', 'eq', 'ipv4')
-        | map(attribute='ip-address') | list)
+        | select('match', '^\d+\.\d+\.\d+\.\d+')
+        | map('regex_replace', '/.*$', '') | list)
       +
       (proxmox_lxc_interfaces | default([])
         | rejectattr('name', 'eq', 'lo')
         | selectattr('inet', 'defined')
         | map(attribute='inet')
         | map('regex_replace', '/.*$', '') | list)
-    ) | first | default(proxmox_name)
+    ) | default([proxmox_name], true) | first
 
 cache: true
 cache_plugin: jsonfile

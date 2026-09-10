@@ -63,10 +63,18 @@
   community.postgresql.postgresql_user:
     name: "{{ db_user }}"
     password: "{{ db_password }}"
-    db: "{{ db_name }}"
-    priv: ALL
     state: present
   no_log: true
+
+- name: Donner tous les droits sur la base
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_privs:
+    login_db: "{{ db_name }}"
+    roles: "{{ db_user }}"
+    type: database
+    privs: ALL
+    state: present
 
 - name: Vérifier que PostgreSQL écoute bien
   ansible.builtin.wait_for:

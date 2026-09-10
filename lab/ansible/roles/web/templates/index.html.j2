@@ -16,6 +16,7 @@
 <body>
   <h1>🌍 {{ inventory_hostname }}</h1>
   <p>OS : <code>{{ ansible_distribution }} {{ ansible_distribution_version }}</code></p>
+  <p>Kernel : <code> {{ ansible_kernel }} </code> </p>
   <p>IP : <code>{{ ansible_default_ipv4.address | default('n/a') }}</code></p>
   <p>Nœud Proxmox : <code>{{ proxmox_node | default('?') }}</code></p>
   <p>
