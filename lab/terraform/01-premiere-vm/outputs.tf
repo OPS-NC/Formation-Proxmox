@@ -7,12 +7,13 @@ output "vm_name" {
   value = proxmox_virtual_environment_vm.web.name
 }
 
-output "ipv4_addresses" {
-  description = "Adresses remontées par l'agent QEMU (vide si l'agent ne répond pas encore)"
-  value       = proxmox_virtual_environment_vm.web.ipv4_addresses
-}
-
 output "ssh_hint" {
   description = "Comment se connecter (route vers 10.10.0.0/16 via le nœud, cf. TP 07)"
-  value       = "ssh eleve@<ip-obtenue>"
+  value       = "ssh eleve@${try([for ip in flatten(proxmox_virtual_environment_vm.web.ipv4_addresses) : ip if ip != "127.0.0.1"][0], "<ip-obtenue>")}"
 }
+
+output "ssh_hint_dns" {
+  description = "Comment se connecter (route vers 10.10.0.0/16 via le nœud, cf. TP 07)"
+  value       = "ssh eleve@${try([for ip in flatten(proxmox_virtual_environment_vm.dns01.ipv4_addresses) : ip if ip != "127.0.0.1"][0], "<ip-obtenue>")}"
+}
+

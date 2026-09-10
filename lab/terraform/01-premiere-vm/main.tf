@@ -7,7 +7,7 @@ resource "proxmox_virtual_environment_vm" "web" {
   pool_id = "lab"
 
   # ⭐ Ces tags pilotent l'inventaire Ansible du TP 13
-  tags = ["terraform", "web", "dmz", "debian"]
+  tags = ["terraform", "web", "internal", "debian"]
 
   clone {
     vm_id = var.template_debian
@@ -16,7 +16,7 @@ resource "proxmox_virtual_environment_vm" "web" {
     #    (« can't migrate ... as it's a clone of ... »). C'est sans conséquence
     #    ici — cette VM ne quitte pas son nœud — mais les VM des TP 17 et 19
     #    doivent être des clones COMPLETS, ou vivre sur Ceph.
-    full = false
+    full = true
   }
 
   agent {
@@ -36,7 +36,7 @@ resource "proxmox_virtual_environment_vm" "web" {
   }
 
   memory {
-    dedicated = 2048
+    dedicated = 4096
   }
 
   network_device {
@@ -66,3 +66,5 @@ resource "proxmox_virtual_environment_vm" "web" {
     ]
   }
 }
+
+
