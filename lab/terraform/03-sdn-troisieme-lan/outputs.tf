@@ -6,7 +6,6 @@ output "gateway" { value = local.gw_srv }
 output "guests" {
   value = {
     mon01 = proxmox_virtual_environment_vm.mon.vm_id
-    log01 = proxmox_virtual_environment_container.log.vm_id
   }
 }
 

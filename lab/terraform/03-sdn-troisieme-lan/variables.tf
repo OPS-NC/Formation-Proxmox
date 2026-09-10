@@ -15,7 +15,7 @@ variable "ssh_public_key" { type = string }
 variable "template_debian" {
   description = "VMID du template Debian 13 (TP 10)"
   type        = number
-  default     = 190
+  default     = 9001
 }
 
 variable "lxc_template_alpine" { type = string }

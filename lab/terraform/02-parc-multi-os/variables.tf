@@ -36,9 +36,4 @@ variable "machines" {
     memory   = number
     tags     = list(string)
   }))
-  default = {
-    "web01" = { template = "ubuntu", vnet = "vdmz", cores = 2, memory = 2048, tags = ["web", "dmz", "ubuntu"] }
-    "app01" = { template = "debian", vnet = "vint", cores = 2, memory = 2048, tags = ["app", "interne", "debian"] }
-    "db01"  = { template = "rocky", vnet = "vint", cores = 2, memory = 3072, tags = ["db", "interne", "rocky"] }
-  }
 }

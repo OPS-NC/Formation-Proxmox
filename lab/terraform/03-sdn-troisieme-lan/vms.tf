@@ -4,7 +4,8 @@
 #   Erreur typique : bridge 'vsrv' does not exist.
 
 resource "proxmox_virtual_environment_vm" "mon" {
-  depends_on = [proxmox_sdn_applier.apply]
+  depends_on = [proxmox_sdn_applier.apply, terraform_data.push_fw]
+
 
   name        = "mon01"
   description = "Supervision — zone services — TP 12"
@@ -53,45 +54,4 @@ resource "proxmox_virtual_environment_vm" "mon" {
   lifecycle {
     ignore_changes = [initialization[0].user_account[0].password]
   }
-}
-
-resource "proxmox_virtual_environment_container" "log" {
-  depends_on = [proxmox_sdn_applier.apply]
-
-  node_name   = var.pve_node
-  pool_id     = "lab"
-  tags        = ["terraform", "services", "logs", "alpine"]
-  description = "Collecteur de journaux — TP 12"
-
-  initialization {
-    hostname = "log01"
-    ip_config {
-      ipv4 { address = "dhcp" }
-    }
-    user_account { keys = [var.ssh_public_key] }
-  }
-
-  network_interface {
-    name     = "eth0"
-    bridge   = proxmox_sdn_vnet.srv.id
-    firewall = true
-  }
-
-  operating_system {
-    template_file_id = var.lxc_template_alpine
-    type             = "alpine"
-  }
-
-  cpu { cores = 1 }
-  memory {
-    dedicated = 512
-    swap      = 256
-  }
-  disk {
-    datastore_id = "local-lvm"
-    size         = 4
-  }
-
-  unprivileged  = true
-  start_on_boot = true
 }
