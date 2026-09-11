@@ -10,6 +10,12 @@
 #    Comparez avec sdn.tf : là où une ressource native existe
 #    (proxmox_sdn_applier), on l'utilise. Le local-exec est
 #    le dernier recours, pas le réflexe.
+#
+# 🪤 Un local-exec ne s'exécute que si TOUTES ses dépendances ont réussi. Si une
+#    dépendance échoue, Terraform saute cette ressource SANS message : ni
+#    « Provisioning… », ni scp. On ne dépend donc que du strict nécessaire : le VNet
+#    appliqué (IPSets +sdn/vsrv-*) et le dépôt de cluster.fw, qui porte l'alias
+#    lan_salle référencé ici.
 
 locals {
   fw_vsrv = templatefile("${path.module}/templates/vsrv.fw.tftpl", {
@@ -25,18 +31,37 @@ resource "local_file" "fw_vsrv" {
 }
 
 resource "terraform_data" "push_fw" {
-  depends_on = [proxmox_sdn_applier.apply, proxmox_virtual_environment_cluster_firewall.options]
+  depends_on = [
+    proxmox_sdn_applier.apply,      # +sdn/vsrv-all et +sdn/vsrv-gateway existent
+    terraform_data.push_cluster_fw, # l'alias lan_salle référencé ici vit dans cluster.fw
+  ]
+
+  # Lisible par le provisioner de destruction (qui n'a pas accès à var.*).
+  input = { host = var.pve_host }
 
   triggers_replace = [local_file.fw_vsrv.content_md5]
 
+  # BatchMode=yes : sans clé acceptée par root, ssh échoue net au lieu d'attendre
+  # un mot de passe que Terraform ne saisira jamais.
   provisioner "local-exec" {
     command = <<-EOT
-      set -e
-      ssh -o StrictHostKeyChecking=no root@${var.pve_host} 'mkdir -p /etc/pve/sdn/firewall'
-      scp -o StrictHostKeyChecking=no ${local_file.fw_vsrv.filename} \
+      set -eu
+      SSH="ssh -o BatchMode=yes -o StrictHostKeyChecking=no root@${var.pve_host}"
+      echo ">> dépôt de vsrv.fw sur ${var.pve_host}:/etc/pve/sdn/firewall/"
+      $SSH 'mkdir -p /etc/pve/sdn/firewall'
+      scp -o BatchMode=yes -o StrictHostKeyChecking=no ${local_file.fw_vsrv.filename} \
           root@${var.pve_host}:/etc/pve/sdn/firewall/vsrv.fw
-      ssh -o StrictHostKeyChecking=no root@${var.pve_host} \
-          'systemctl reload proxmox-firewall 2>/dev/null || systemctl restart proxmox-firewall'
+      # L'unité n'a pas de ExecReload : « reload » échoue toujours, on redémarre.
+      $SSH 'systemctl restart proxmox-firewall'
+      echo ">> vsrv.fw déposé, proxmox-firewall redémarré"
     EOT
+  }
+
+  # Au destroy : retirer le fichier AVANT que le VNet disparaisse, sinon
+  # proxmox-firewall boucle sur « could not find ipset vsrv-all ».
+  provisioner "local-exec" {
+    when       = destroy
+    on_failure = continue
+    command    = "ssh -o BatchMode=yes -o StrictHostKeyChecking=no root@${self.input.host} 'rm -f /etc/pve/sdn/firewall/vsrv.fw && systemctl restart proxmox-firewall'"
   }
 }

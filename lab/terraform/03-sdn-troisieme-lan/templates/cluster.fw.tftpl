@@ -1,0 +1,42 @@
+# GÉNÉRÉ PAR TERRAFORM (cluster-fw.tf) — ne pas modifier le fichier déployé.
+# /etc/pve/firewall/cluster.fw — STANDALONE, TP 12 (reprend le TP 09 + zone SERVICES)
+#
+# ⭐ C'EST ICI QUE VIT LA SEGMENTATION INTER-ZONES, pas dans les .fw de VNet :
+#   un paquet qui sort de son VNet est routé par l'hôte et ne traverse que le hook
+#   FORWARD du Datacenter / du nœud (TP 09 §5.4).
+
+[OPTIONS]
+
+enable: 1
+policy_in: DROP
+policy_out: ACCEPT
+policy_forward: DROP
+log_ratelimit: enable=1,rate=5/second,burst=20
+
+[ALIASES]
+
+%{ for a in aliases ~}
+${a.name} ${a.cidr} # ${a.comment}
+%{ endfor ~}
+
+%{ for name, ipset in ipsets ~}
+[IPSET ${name}] # ${ipset.comment}
+
+%{ for entry in ipset.entries ~}
+${entry.cidr} # ${entry.comment}
+%{ endfor ~}
+
+%{ endfor ~}
+%{ for name, group in groups ~}
+[group ${name}] # ${group.comment}
+
+%{ for line in group.lines ~}
+${line}
+%{ endfor ~}
+
+%{ endfor ~}
+[RULES]
+
+%{ for line in rules ~}
+${line}
+%{ endfor ~}

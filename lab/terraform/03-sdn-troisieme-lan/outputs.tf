@@ -14,6 +14,7 @@ output "verification" {
 
     Vérifiez sur le nœud :
       ssh root@${var.pve_host} 'ip -br a | grep vsrv'
+      ssh root@${var.pve_host} 'head -3 /etc/pve/firewall/cluster.fw'
       ssh root@${var.pve_host} 'cat /etc/pve/sdn/firewall/vsrv.fw'
       ssh root@${var.pve_host} 'systemctl status dnsmasq@zsrv --no-pager | head -3'
 

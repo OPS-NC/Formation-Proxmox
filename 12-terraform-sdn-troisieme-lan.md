@@ -259,22 +259,46 @@ resource "local_file" "fw_vsrv" {
 }
 
 resource "terraform_data" "push_fw" {
-  depends_on = [proxmox_sdn_applier.apply, proxmox_virtual_environment_cluster_firewall.options]
+  depends_on = [
+    proxmox_sdn_applier.apply,                            # +sdn/vsrv-* existent
+    proxmox_virtual_environment_firewall_alias.lan_salle, # référencé dans vsrv.fw
+  ]
+
+  input = { host = var.pve_host } # lisible par le provisioner de destruction
 
   triggers_replace = [local_file.fw_vsrv.content_md5]
 
   provisioner "local-exec" {
     command = <<-EOT
-      set -e
-      ssh -o StrictHostKeyChecking=no root@${var.pve_host} 'mkdir -p /etc/pve/sdn/firewall'
-      scp -o StrictHostKeyChecking=no ${local_file.fw_vsrv.filename} \
+      set -eu
+      SSH="ssh -o BatchMode=yes -o StrictHostKeyChecking=no root@${var.pve_host}"
+      echo ">> dépôt de vsrv.fw sur ${var.pve_host}:/etc/pve/sdn/firewall/"
+      $SSH 'mkdir -p /etc/pve/sdn/firewall'
+      scp -o BatchMode=yes -o StrictHostKeyChecking=no ${local_file.fw_vsrv.filename} \
           root@${var.pve_host}:/etc/pve/sdn/firewall/vsrv.fw
-      ssh -o StrictHostKeyChecking=no root@${var.pve_host} \
-          'systemctl reload proxmox-firewall 2>/dev/null || systemctl restart proxmox-firewall'
+      $SSH 'systemctl restart proxmox-firewall'
+      echo ">> vsrv.fw déposé, proxmox-firewall redémarré"
     EOT
+  }
+
+  provisioner "local-exec" {
+    when       = destroy
+    on_failure = continue
+    command    = "ssh -o BatchMode=yes -o StrictHostKeyChecking=no root@${self.input.host} 'rm -f /etc/pve/sdn/firewall/vsrv.fw && systemctl restart proxmox-firewall'"
   }
 }
 ```
+
+🪤 **Le scp qui « ne se lance pas ».** Un `local-exec` ne tourne que si **toutes** ses
+dépendances ont réussi. Si un maillon amont échoue (un alias que l'API refuse, par
+exemple), Terraform affiche l'erreur de ce maillon et **saute** `push_fw` sans un mot :
+ni « Provisioning… », ni `scp`. Réflexe : lire la **première** ligne `Error:` de
+l'apply, et vérifier `terraform state list | grep push_fw`. C'est pourquoi `push_fw`
+ne dépend que du strict nécessaire (VNet appliqué, alias `lan_salle`), pas des règles
+et options Datacenter. `BatchMode=yes` fait échouer `ssh` immédiatement si la clé
+n'est pas acceptée, au lieu d'attendre un mot de passe. Le provisioner `when = destroy`
+retire le fichier avant que le VNet disparaisse : sinon `proxmox-firewall` boucle sur
+`could not find ipset vsrv-all`.
 
 🧠 **Pourquoi un `local-exec` ici et pas au §4 ?** Au §4 une ressource native
 existait. Dès qu'une ressource couvre le besoin, elle gagne (état suivi, plan lisible,
@@ -607,6 +631,19 @@ et `vint.fw` / `vdmz.fw` référencent l'alias `lan_salle`, qui n'existe plus.
 
 ```bash
 ssh root@$PVE 'cp /root/formation/lab/firewall/standalone/cluster.fw.example /etc/pve/firewall/cluster.fw'
+```
+
+🪤 **Et si vous relancez `apply` ensuite ?** Le fichier reposé contient déjà les alias,
+l'IPSet et les groupes que `cluster-fw.tf` veut créer. Le provider ne fait pas
+d'« upsert » : l'API répond `alias 'lan_salle' already exists`, et tout ce qui en
+dépend (règles, options, et par ricochet le dépôt de `vsrv.fw`) est sauté. Avant un
+nouvel `apply`, soit retirer le fichier à nouveau (§5), soit adopter ce qui existe :
+
+```bash
+for a in lan_salle gw_salle; do terraform import "proxmox_virtual_environment_firewall_alias.$a" "$a"; done
+for n in net_internal net_dmz net_services net_evpn; do
+  terraform import "proxmox_virtual_environment_firewall_alias.nets[\"$n\"]" "$n"
+done
 ```
 
 ```bash
